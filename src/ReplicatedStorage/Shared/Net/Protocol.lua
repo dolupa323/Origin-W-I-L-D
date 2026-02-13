@@ -1,6 +1,10 @@
 -- Protocol.lua
 -- 네트워크 프로토콜 정의
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Enums = require(Shared.Enums.Enums)
+
 local Protocol = {}
 
 -- RemoteFunction / RemoteEvent 이름 (고정)
@@ -14,11 +18,7 @@ Protocol.Commands = {
 	["Net.Echo"] = true,
 }
 
--- 에러 코드
-Protocol.Errors = {
-	NET_UNKNOWN_COMMAND = "NET_UNKNOWN_COMMAND",
-	NET_INVALID_REQUEST = "NET_INVALID_REQUEST",
-	NET_DUPLICATE_REQUEST = "NET_DUPLICATE_REQUEST",
-}
+-- 에러 코드는 Enums.ErrorCode 사용
+Protocol.Errors = Enums.ErrorCode
 
 return Protocol

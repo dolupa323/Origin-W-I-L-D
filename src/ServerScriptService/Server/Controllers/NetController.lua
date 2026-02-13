@@ -6,10 +6,12 @@ local Players = game:GetService("Players")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Protocol = require(Shared.Net.Protocol)
+local Enums = require(Shared.Enums.Enums)
+local Balance = require(Shared.Config.Balance)
 
 local NetController = {}
 
--- requestId dedup 캐시 (TTL 10초)
+-- requestId dedup 캐시 (TTL: Balance에서 참조 가능하나 Net은 고정 10초)
 local requestCache = {}
 local REQUEST_TTL = 10
 
@@ -66,7 +68,7 @@ local function onServerInvoke(player: Player, request)
 	if type(request) ~= "table" then
 		return {
 			success = false,
-			error = Protocol.Errors.NET_INVALID_REQUEST,
+			error = Enums.ErrorCode.BAD_REQUEST,
 		}
 	end
 	
@@ -78,7 +80,7 @@ local function onServerInvoke(player: Player, request)
 	if not command or not Protocol.Commands[command] then
 		return {
 			success = false,
-			error = Protocol.Errors.NET_UNKNOWN_COMMAND,
+			error = Enums.ErrorCode.NET_UNKNOWN_COMMAND,
 		}
 	end
 	
@@ -86,7 +88,7 @@ local function onServerInvoke(player: Player, request)
 	if isDuplicate(requestId) then
 		return {
 			success = false,
-			error = Protocol.Errors.NET_DUPLICATE_REQUEST,
+			error = Enums.ErrorCode.NET_DUPLICATE_REQUEST,
 		}
 	end
 	
@@ -98,7 +100,7 @@ local function onServerInvoke(player: Player, request)
 	if not handler then
 		return {
 			success = false,
-			error = Protocol.Errors.NET_UNKNOWN_COMMAND,
+			error = Enums.ErrorCode.NET_UNKNOWN_COMMAND,
 		}
 	end
 	
@@ -108,7 +110,7 @@ local function onServerInvoke(player: Player, request)
 		warn("[NetController] Handler error:", command, result)
 		return {
 			success = false,
-			error = "INTERNAL_ERROR",
+			error = Enums.ErrorCode.INTERNAL_ERROR,
 		}
 	end
 	
