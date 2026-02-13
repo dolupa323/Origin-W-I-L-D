@@ -1,0 +1,23 @@
+-- ClientInit.client.lua
+-- 클라이언트 초기화 스크립트
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterPlayerScripts = script.Parent
+
+local Client = StarterPlayerScripts:WaitForChild("Client")
+local NetClient = require(Client.NetClient)
+
+-- NetClient 초기화
+local success = NetClient.Init()
+
+if success then
+	-- 테스트: Ping
+	local pingOk, pingResult = NetClient.Ping()
+	print("[ClientInit] Ping:", pingOk, pingResult and pingResult.ok)
+	
+	-- 테스트: Echo
+	local echoOk, echoResult = NetClient.Echo("Hello")
+	print("[ClientInit] Echo:", echoOk, echoResult and echoResult.text)
+end
+
+print("[ClientInit] Client initialized")
