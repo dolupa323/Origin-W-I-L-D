@@ -22,6 +22,11 @@ local function generateRequestId(): string
 	return HttpService:GenerateGUID(false)
 end
 
+-- 서버에 요청 전송 (request 메서드 추가)
+function NetClient.request(command: string, payload: any?): (boolean, any)
+	return NetClient.Request(command, payload)
+end
+
 -- 서버에 요청 전송
 function NetClient.Request(command: string, payload: any?): (boolean, any)
 	if not Cmd then
