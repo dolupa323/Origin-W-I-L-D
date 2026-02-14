@@ -413,6 +413,123 @@ function InventoryService.drop(player: Player, slot: number, count: number?): (b
 end
 
 --========================================
+-- Public API: MoveInternal (범용 컨테이너 간 이동)
+-- StorageService 등에서 재사용
+--========================================
+
+--- 슬롯 범위 검증 (커스텀 maxSlots)
+local function _validateSlotRangeCustom(slot: number, maxSlots: number): (boolean, string?)
+	if type(slot) ~= "number" then
+		return false, Enums.ErrorCode.INVALID_SLOT
+	end
+	if slot < 1 or slot > maxSlots or slot ~= math.floor(slot) then
+		return false, Enums.ErrorCode.INVALID_SLOT
+	end
+	return true, nil
+end
+
+--- 범용 컨테이너 간 아이템 이동
+--- sourceContainer, targetContainer: { slots = { [slot] = {itemId, count} } }
+--- maxSlots: 슬롯 최대 수
+--- 이벤트 발행은 호출자 책임
+function InventoryService.MoveInternal(
+	sourceContainer: any,
+	sourceSlot: number,
+	sourceMaxSlots: number,
+	targetContainer: any,
+	targetSlot: number,
+	targetMaxSlots: number,
+	count: number?
+): (boolean, string?, any?)
+	
+	-- 소스/타겟 검증
+	if not sourceContainer or not sourceContainer.slots then
+		return false, Enums.ErrorCode.NOT_FOUND, nil
+	end
+	if not targetContainer or not targetContainer.slots then
+		return false, Enums.ErrorCode.NOT_FOUND, nil
+	end
+	
+	-- 슬롯 범위 검증
+	local ok, err = _validateSlotRangeCustom(sourceSlot, sourceMaxSlots)
+	if not ok then return false, err, nil end
+	
+	ok, err = _validateSlotRangeCustom(targetSlot, targetMaxSlots)
+	if not ok then return false, err, nil end
+	
+	-- 같은 컨테이너 + 같은 슬롯이면 무시
+	if sourceContainer == targetContainer and sourceSlot == targetSlot then
+		return true, nil, nil
+	end
+	
+	-- 소스에 아이템 있는지
+	ok, err = _validateHasItem(sourceContainer, sourceSlot)
+	if not ok then return false, err, nil end
+	
+	-- 수량 검증
+	ok, err = _validateCount(count)
+	if not ok then return false, err, nil end
+	
+	local sourceData = sourceContainer.slots[sourceSlot]
+	local moveCount = count or sourceData.count  -- nil이면 전체
+	
+	-- 이동 수량 검증
+	ok, err = _validateCountAvailable(sourceContainer, sourceSlot, moveCount)
+	if not ok then return false, err, nil end
+	
+	local targetData = targetContainer.slots[targetSlot]
+	
+	local sourceChanges = {}
+	local targetChanges = {}
+	
+	if targetData == nil then
+		-- 타겟 슬롯이 비어있으면: 단순 이동
+		_increaseSlot(targetContainer, targetSlot, sourceData.itemId, moveCount)
+		_decreaseSlot(sourceContainer, sourceSlot, moveCount)
+		
+		table.insert(sourceChanges, _makeChange(sourceContainer, sourceSlot))
+		table.insert(targetChanges, _makeChange(targetContainer, targetSlot))
+		
+	elseif targetData.itemId == sourceData.itemId then
+		-- 같은 아이템이면: 합치기
+		local newCount = targetData.count + moveCount
+		if newCount > Balance.MAX_STACK then
+			return false, Enums.ErrorCode.STACK_OVERFLOW, nil
+		end
+		
+		_increaseSlot(targetContainer, targetSlot, sourceData.itemId, moveCount)
+		_decreaseSlot(sourceContainer, sourceSlot, moveCount)
+		
+		table.insert(sourceChanges, _makeChange(sourceContainer, sourceSlot))
+		table.insert(targetChanges, _makeChange(targetContainer, targetSlot))
+		
+	else
+		-- 다른 아이템이면: 스왑 (전체 이동일 때만, 같은 컨테이너 내에서만)
+		if count ~= nil then
+			return false, Enums.ErrorCode.ITEM_MISMATCH, nil
+		end
+		
+		if sourceContainer ~= targetContainer then
+			-- 다른 컨테이너 간 스왑은 복잡하므로 금지
+			return false, Enums.ErrorCode.ITEM_MISMATCH, nil
+		end
+		
+		-- 스왑
+		sourceContainer.slots[sourceSlot] = targetData
+		sourceContainer.slots[targetSlot] = sourceData
+		
+		table.insert(sourceChanges, _makeChange(sourceContainer, sourceSlot))
+		table.insert(targetChanges, _makeChange(sourceContainer, targetSlot))
+	end
+	
+	return true, nil, {
+		sourceChanges = sourceChanges,
+		targetChanges = targetChanges,
+		movedItem = { itemId = sourceData.itemId, count = moveCount },
+	}
+end
+
+--========================================
 -- Public API: Utility
 --========================================
 

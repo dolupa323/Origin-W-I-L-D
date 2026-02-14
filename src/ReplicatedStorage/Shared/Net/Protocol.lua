@@ -36,6 +36,11 @@ Protocol.Commands = {
 	
 	-- WorldDrop 명령어
 	["WorldDrop.Loot.Request"] = true,
+	
+	-- Storage 명령어
+	["Storage.Open.Request"] = true,
+	["Storage.Close.Request"] = true,
+	["Storage.Move.Request"] = true,
 }
 
 -- 에러 코드는 Enums.ErrorCode 사용

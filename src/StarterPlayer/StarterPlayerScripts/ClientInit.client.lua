@@ -32,6 +32,10 @@ if success then
 	-- TimeController 초기화 (이벤트 소비자)
 	local TimeController = require(Controllers.TimeController)
 	TimeController.Init()
+	
+	-- StorageController 초기화 (이벤트 소비자)
+	local StorageController = require(Controllers.StorageController)
+	StorageController.Init()
 end
 
 print("[ClientInit] Client initialized")
