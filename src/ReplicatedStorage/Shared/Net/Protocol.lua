@@ -22,6 +22,17 @@ Protocol.Commands = {
 	["Time.Warp"] = true,           -- 디버그용
 	["Time.WarpToPhase"] = true,    -- 디버그용
 	["Time.Debug"] = true,          -- 디버그용
+	
+	-- Save 명령어
+	["Save.Now"] = true,            -- 디버그/어드민용
+	["Save.Status"] = true,
+	
+	-- Inventory 명령어
+	["Inventory.Move.Request"] = true,
+	["Inventory.Split.Request"] = true,
+	["Inventory.Drop.Request"] = true,
+	["Inventory.Get.Request"] = true,      -- 전체 인벤 조회
+	["Inventory.GiveItem"] = true,         -- 디버그용
 }
 
 -- 에러 코드는 Enums.ErrorCode 사용
