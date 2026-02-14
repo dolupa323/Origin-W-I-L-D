@@ -44,6 +44,14 @@ Balance.CREATURE_COOLDOWN = 600    -- 크리처 리스폰 쿨다운 (초)
 Balance.FACILITY_QUEUE_MAX = 10    -- 시설 대기열 최대 크기
 Balance.FACILITY_ACTIVE_CAP = 15   -- 동시 활성 시설 최대 수
 
+--========================================
+-- 건축 (Build)
+--========================================
+Balance.BUILD_STRUCTURE_CAP = 500    -- 서버 전체 구조물 최대 수
+Balance.BUILD_RANGE = 20             -- 플레이어 건축 가능 거리 (스터드)
+Balance.BUILD_MIN_GROUND_DIST = 0.5  -- 지면 최소 거리 (스터드)
+Balance.BUILD_COLLISION_RADIUS = 2   -- 기본 충돌 체크 반경 (스터드)
+
 -- 테이블 동결 (런타임 수정 방지)
 table.freeze(Balance)
 

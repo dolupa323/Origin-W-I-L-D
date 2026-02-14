@@ -43,6 +43,11 @@ Enums.ErrorCode = {
 	SLOT_NOT_EMPTY = "SLOT_NOT_EMPTY",
 	ITEM_MISMATCH = "ITEM_MISMATCH",
 	
+	-- 건설 관련
+	COLLISION = "COLLISION",               -- 배치 위치 충돌
+	INVALID_POSITION = "INVALID_POSITION", -- 유효하지 않은 위치
+	STRUCTURE_CAP = "STRUCTURE_CAP",       -- 구조물 최대 개수 초과
+	
 	-- 일반
 	NOT_FOUND = "NOT_FOUND",
 	INTERNAL_ERROR = "INTERNAL_ERROR",
@@ -78,6 +83,19 @@ Enums.Rarity = {
 	RARE = "RARE",
 	EPIC = "EPIC",
 	LEGENDARY = "LEGENDARY",
+}
+
+--========================================
+-- 시설 기능 타입
+--========================================
+Enums.FacilityType = {
+	COOKING = "COOKING",       -- 요리 (캠프파이어)
+	STORAGE = "STORAGE",       -- 저장 (보관함)
+	CRAFTING = "CRAFTING",     -- 제작 (작업대)
+	RESPAWN = "RESPAWN",       -- 리스폰 (침낭)
+	SMELTING = "SMELTING",     -- 제련 (용광로)
+	FARMING = "FARMING",       -- 농사 (화분)
+	DEFENSE = "DEFENSE",       -- 방어 (벽, 문)
 }
 
 -- 테이블 동결

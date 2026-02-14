@@ -41,6 +41,11 @@ Protocol.Commands = {
 	["Storage.Open.Request"] = true,
 	["Storage.Close.Request"] = true,
 	["Storage.Move.Request"] = true,
+	
+	-- Build 명령어
+	["Build.Place.Request"] = true,     -- 시설물 배치 요청
+	["Build.Remove.Request"] = true,    -- 시설물 해체 요청
+	["Build.GetAll.Request"] = true,    -- 전체 시설물 조회
 }
 
 -- 에러 코드는 Enums.ErrorCode 사용
