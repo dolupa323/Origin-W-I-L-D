@@ -11,6 +11,7 @@ local ItemData = {
 		rarity = "COMMON",
 		maxStack = 99,
 		description = "가장 기본적인 자원. 도구와 건물에 사용된다.",
+		dropDespawn = "GATHER",
 	},
 	{
 		id = "WOOD",
@@ -19,6 +20,7 @@ local ItemData = {
 		rarity = "COMMON",
 		maxStack = 99,
 		description = "기본 건축 재료.",
+		dropDespawn = "GATHER",
 	},
 	{
 		id = "FIBER",
@@ -26,8 +28,7 @@ local ItemData = {
 		type = "RESOURCE",
 		rarity = "COMMON",
 		maxStack = 99,
-		description = "풀에서 채집한 섬유. 밧줄과 천을 만들 수 있다.",
-	},
+		description = "풀에서 채집한 섬유. 밧줄과 천을 만들 수 있다.",		dropDespawn = "GATHER",	},
 	{
 		id = "FLINT",
 		name = "부싯돌",
@@ -35,6 +36,7 @@ local ItemData = {
 		rarity = "COMMON",
 		maxStack = 99,
 		description = "날카로운 돌. 초기 도구 제작에 필수.",
+		dropDespawn = "GATHER",
 	},
 	
 	-- 기본 도구

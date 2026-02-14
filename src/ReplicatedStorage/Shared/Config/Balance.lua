@@ -25,6 +25,7 @@ Balance.DROP_MERGE_RADIUS = 5      -- 드롭 병합 반경 (스터드)
 Balance.DROP_INACTIVE_DIST = 150   -- 비활성화 거리 (스터드)
 Balance.DROP_DESPAWN_DEFAULT = 300 -- 기본 디스폰 시간 (초)
 Balance.DROP_DESPAWN_GATHER = 600  -- 채집 드롭 디스폰 시간 (초)
+Balance.DROP_LOOT_RANGE = 10       -- 루팅 최대 거리 (스터드)
 
 --========================================
 -- 야생동물 / 크리처

@@ -33,6 +33,9 @@ Protocol.Commands = {
 	["Inventory.Drop.Request"] = true,
 	["Inventory.Get.Request"] = true,      -- 전체 인벤 조회
 	["Inventory.GiveItem"] = true,         -- 디버그용
+	
+	-- WorldDrop 명령어
+	["WorldDrop.Loot.Request"] = true,
 }
 
 -- 에러 코드는 Enums.ErrorCode 사용

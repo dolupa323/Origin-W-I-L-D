@@ -485,6 +485,36 @@ function InventoryService.getEmptySlotCount(userId: number): number
 	return count
 end
 
+--- 전량 수용 가능 여부 검증 (순수 함수, 상태 변경 없음)
+--- Loot 원자성 확보용
+function InventoryService.canAdd(userId: number, itemId: string, count: number): boolean
+	local inv = playerInventories[userId]
+	if not inv then return false end
+	
+	local remaining = count
+	
+	-- 1. 같은 아이템 스택 여유분 계산
+	for slot = 1, Balance.INV_SLOTS do
+		if remaining <= 0 then break end
+		
+		local slotData = inv.slots[slot]
+		if slotData and slotData.itemId == itemId and slotData.count < Balance.MAX_STACK then
+			remaining = remaining - (Balance.MAX_STACK - slotData.count)
+		end
+	end
+	
+	-- 2. 빈 슬롯 개수 계산
+	for slot = 1, Balance.INV_SLOTS do
+		if remaining <= 0 then break end
+		
+		if inv.slots[slot] == nil then
+			remaining = remaining - Balance.MAX_STACK
+		end
+	end
+	
+	return remaining <= 0
+end
+
 --- 전체 인벤토리 데이터 반환 (클라이언트 동기화용)
 function InventoryService.getFullInventory(userId: number): {{slot: number, itemId: string?, count: number?}}
 	local inv = playerInventories[userId]
