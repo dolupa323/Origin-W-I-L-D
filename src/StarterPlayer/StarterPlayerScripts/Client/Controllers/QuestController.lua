@@ -113,6 +113,11 @@ function QuestController.onUpdated(callback: (any) -> ())
 	table.insert(listeners.updated, callback)
 end
 
+--- 퀘스트 업데이트 이벤트 리스너 등록 (alias)
+function QuestController.onQuestUpdated(callback: (any) -> ())
+	table.insert(listeners.updated, callback)
+end
+
 --- 퀘스트 완료 이벤트 리스너 등록
 function QuestController.onCompleted(callback: (any) -> ())
 	table.insert(listeners.completed, callback)

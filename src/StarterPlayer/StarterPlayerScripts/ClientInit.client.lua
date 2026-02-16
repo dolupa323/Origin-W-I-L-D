@@ -8,11 +8,16 @@ local Client = StarterPlayerScripts:WaitForChild("Client")
 local Controllers = Client:WaitForChild("Controllers")
 
 local NetClient = require(Client.NetClient)
+local InputManager = require(Client.InputManager)
+local UIManager = require(Client.UIManager)
 
 -- NetClient 초기화
 local success = NetClient.Init()
 
 if success then
+	-- InputManager 초기화 (키 바인딩)
+	InputManager.Init()
+	
 	-- WorldDropController 초기화 (이벤트 소비자)
 	local WorldDropController = require(Controllers.WorldDropController)
 	WorldDropController.Init()
@@ -44,6 +49,36 @@ if success then
 	-- QuestController 초기화 (Phase 8)
 	local QuestController = require(Controllers.QuestController)
 	QuestController.Init()
+	
+	-- ShopController 초기화 (Phase 9)
+	local ShopController = require(Controllers.ShopController)
+	ShopController.Init()
+	
+	-- CombatController 초기화 (공격 시스템)
+	local CombatController = require(Controllers.CombatController)
+	CombatController.Init()
+	
+	-- InteractController 초기화 (채집/상호작용)
+	local InteractController = require(Controllers.InteractController)
+	InteractController.Init()
+	
+	-- UIManager 초기화 (UI 생성 - 컨트롤러들 초기화 후)
+	UIManager.Init()
+	
+	-- 키 바인딩: B = 인벤토리, J = 퀸스트 (Tab/I/Q는 로블록스 기본 기능과 충돌)
+	InputManager.bindKey(Enum.KeyCode.B, "ToggleInventory", function()
+		UIManager.toggleInventory()
+	end)
+	
+	InputManager.bindKey(Enum.KeyCode.J, "ToggleQuest", function()
+		UIManager.toggleQuest()
+	end)
+	
+	InputManager.bindKey(Enum.KeyCode.Escape, "CloseUI", function()
+		UIManager.closeInventory()
+		UIManager.closeQuest()
+		UIManager.closeShop()
+	end)
 end
 
-print("[ClientInit] Client initialized (Phase 8)")
+print("[ClientInit] Client initialized (Phase 9 + UI)")

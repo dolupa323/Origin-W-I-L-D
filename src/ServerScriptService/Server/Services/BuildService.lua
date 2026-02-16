@@ -27,6 +27,8 @@ local InventoryService = nil
 local SaveService = nil
 local FacilityService = nil  -- SetFacilityService로 주입 (Phase 6 버그픽스)
 local BaseClaimService = nil -- SetBaseClaimService로 주입 (Phase 7)
+local TechService = nil      -- Phase 6 연동
+local PlayerStatService = nil -- Phase 6 연동
 
 --========================================
 -- Private State
@@ -481,14 +483,6 @@ end
 --========================================
 -- Initialization
 --========================================
-
-local NetController = nil
-local DataService = nil
-local InventoryService = nil
-local SaveService = nil
-local FacilityService = nil  -- SetFacilityService로 주입 (Phase 6 버그픽스)
-local TechService = nil      -- Phase 6 연동
-local PlayerStatService = nil -- Phase 6 연동
 
 function BuildService.Init(netController: any, dataService: any, inventoryService: any, saveService: any, techService: any, playerStatService: any)
 	if initialized then

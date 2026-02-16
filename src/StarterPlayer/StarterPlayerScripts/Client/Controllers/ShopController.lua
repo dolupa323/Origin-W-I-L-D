@@ -23,6 +23,9 @@ local listeners = {
 	shopUpdated = {},
 }
 
+-- Forward declaration
+local _fireListeners
+
 --========================================
 -- Public API: Cache Access
 --========================================
@@ -132,7 +135,7 @@ end
 -- Internal: Event Firing
 --========================================
 
-local function _fireListeners(eventName: string, data: any)
+_fireListeners = function(eventName: string, data: any)
 	local eventListeners = listeners[eventName]
 	if not eventListeners then return end
 	

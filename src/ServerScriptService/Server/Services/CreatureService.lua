@@ -25,7 +25,7 @@ local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 
 -- AI Constants
-local SPAWN_INTERVAL = 5 -- 5초마다 스폰 시도
+local SPAWN_INTERVAL = 30 -- 30초마다 스폰 시도 (테스트용 증가)
 local AI_UPDATE_INTERVAL = 0.5 -- 0.5초마다 AI 로직 수행 (최적화)
 local MIN_SPAWN_DIST = 40
 local MAX_SPAWN_DIST = 80
@@ -305,11 +305,11 @@ function CreatureService._spawnLoop()
 		local char = player.Character
 		if char and char:FindFirstChild("HumanoidRootPart") then
 			-- 확률적으로 스폰
-			if math.random() > 0.7 then -- 30% 확률
+			if math.random() > 0.9 then -- 10% 확률 (테스트용 감소)
 				local pos = CreatureService._findSpawnPosition(char.HumanoidRootPart)
 				if pos then
-					-- 랜덤 크리처 선택
-					local pool = {"RAPTOR", "TRICERATOPS", "DODO"}
+					-- 랜덤 크리처 선택 (육식공룡 비율 낮춤)
+					local pool = {"TRICERATOPS", "TRICERATOPS", "DODO", "DODO", "DODO", "RAPTOR"}
 					local cid = pool[math.random(1, #pool)]
 					CreatureService.spawn(cid, pos)
 					

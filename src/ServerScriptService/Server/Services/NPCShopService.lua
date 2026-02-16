@@ -464,29 +464,25 @@ end
 -- Initialization
 --========================================
 
-function NPCShopService.Init(deps: any)
+function NPCShopService.Init(netController: any, dataService: any, inventoryService: any, timeService: any)
 	if initialized then
 		warn("[NPCShopService] Already initialized!")
 		return
 	end
 	
 	-- 의존성 주입
-	NetController = deps.NetController
-	InventoryService = deps.InventoryService
-	SaveService = deps.SaveService
-	DataService = deps.DataService
+	NetController = netController
+	DataService = dataService
+	InventoryService = inventoryService
+	-- timeService는 필요시 사용
+	
+	-- SaveService 로드
+	local ServerScriptService = game:GetService("ServerScriptService")
+	local Services = ServerScriptService:WaitForChild("Server"):WaitForChild("Services")
+	SaveService = require(Services.SaveService)
 	
 	-- 상점 데이터 로드
 	_loadShopData()
-	
-	-- 프로토콜 핸들러 등록
-	if NetController and NetController.RegisterHandler then
-		NetController.RegisterHandler("Shop.List.Request", _onShopListRequest)
-		NetController.RegisterHandler("Shop.GetInfo.Request", _onShopGetInfoRequest)
-		NetController.RegisterHandler("Shop.Buy.Request", _onShopBuyRequest)
-		NetController.RegisterHandler("Shop.Sell.Request", _onShopSellRequest)
-		NetController.RegisterHandler("Shop.GetGold.Request", _onShopGetGoldRequest)
-	end
 	
 	-- 플레이어 이벤트
 	Players.PlayerAdded:Connect(_onPlayerAdded)
@@ -499,6 +495,17 @@ function NPCShopService.Init(deps: any)
 	
 	initialized = true
 	print("[NPCShopService] Initialized")
+end
+
+--- 핸들러 반환
+function NPCShopService.GetHandlers()
+	return {
+		["Shop.List.Request"] = _onShopListRequest,
+		["Shop.GetInfo.Request"] = _onShopGetInfoRequest,
+		["Shop.Buy.Request"] = _onShopBuyRequest,
+		["Shop.Sell.Request"] = _onShopSellRequest,
+		["Shop.GetGold.Request"] = _onShopGetGoldRequest,
+	}
 end
 
 return NPCShopService

@@ -15,6 +15,9 @@ local initialized = false
 -- 로컬 인벤토리 캐시 [slot] = { itemId, count } or nil
 local inventoryCache = {}
 
+-- 변경 콜백 리스너
+local changeListeners = {}
+
 --========================================
 -- Public API: Cache Access
 --========================================
@@ -23,13 +26,31 @@ function InventoryController.getInventoryCache()
 	return inventoryCache
 end
 
+function InventoryController.getItems()
+	return inventoryCache
+end
+
 function InventoryController.getSlot(slot: number)
 	return inventoryCache[slot]
 end
 
 --========================================
+-- Public API: Event Listeners
+--========================================
+
+function InventoryController.onChanged(callback: () -> ())
+	table.insert(changeListeners, callback)
+end
+
+--========================================
 -- Event Handlers
 --========================================
+
+local function fireChangeListeners()
+	for _, callback in ipairs(changeListeners) do
+		pcall(callback)
+	end
+end
 
 local function onInventoryChanged(data)
 	if not data or not data.changes then return end
@@ -46,8 +67,8 @@ local function onInventoryChanged(data)
 		end
 	end
 	
-	-- 디버그 로그 (필요시 활성화)
-	-- print(string.format("[InventoryController] Changed: %d slots updated", #data.changes))
+	-- 콜백 호출
+	fireChangeListeners()
 end
 
 --========================================

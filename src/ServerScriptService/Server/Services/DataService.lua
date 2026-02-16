@@ -185,4 +185,9 @@ function DataService.Init()
 	print("[DataService] Initialized - All data validated")
 end
 
+--- 핸들러 반환 (DataService는 네트워크 핸들러 없음)
+function DataService.GetHandlers()
+	return {}
+end
+
 return DataService

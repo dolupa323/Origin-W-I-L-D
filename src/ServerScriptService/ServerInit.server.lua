@@ -306,4 +306,13 @@ TechService.SetUnlockCallback(function(userId, techId)
 	QuestService.onTechUnlock(userId, techId)
 end)
 
-print("[ServerInit] Server initialized (Phase 8)") -- 최종 완료 로그
+-- NPCShopService 초기화 (Phase 9)
+local NPCShopService = require(Services.NPCShopService)
+NPCShopService.Init(NetController, DataService, InventoryService, TimeService)
+
+-- NPCShopService 핸들러 등록
+for command, handler in pairs(NPCShopService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
+end
+
+print("[ServerInit] Server initialized (Phase 9)") -- 최종 완료 로그
