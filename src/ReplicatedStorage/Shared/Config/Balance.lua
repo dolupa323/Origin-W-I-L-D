@@ -88,6 +88,25 @@ Balance.XP_HARVEST_RESOURCE = 2        -- 자원 채집
 -- 플레이어 스탯 보너스 (Phase 6)
 --========================================
 Balance.STAT_BONUS_PER_LEVEL = 0.02    -- 레벨당 스탯 보너스 (2%)
+
+--========================================
+-- 스태미나 & 이동 시스템 (Phase 10)
+--========================================
+Balance.STAMINA_MAX = 100              -- 최대 스태미나
+Balance.STAMINA_REGEN = 8              -- 초당 스태미나 회복량
+Balance.STAMINA_REGEN_DELAY = 1.5      -- 스태미나 사용 후 회복 시작 딜레이 (초)
+
+-- 스프린트 (빠르게 달리기)
+Balance.SPRINT_SPEED_MULT = 1.6        -- 스프린트 속도 배율
+Balance.SPRINT_STAMINA_COST = 12       -- 초당 스태미나 소모
+Balance.SPRINT_MIN_STAMINA = 10        -- 스프린트 시작 최소 스태미나
+
+-- 구르기 (회피)
+Balance.DODGE_STAMINA_COST = 25        -- 구르기 1회 스태미나 소모
+Balance.DODGE_COOLDOWN = 0.8           -- 구르기 쿨다운 (초)
+Balance.DODGE_DISTANCE = 12            -- 구르기 이동 거리 (스터드)
+Balance.DODGE_DURATION = 0.4           -- 구르기 소요 시간 (초)
+Balance.DODGE_IFRAMES = 0.25           -- 무적 프레임 지속 시간 (초)
 --========================================
 -- 수확 시스템 (Phase 7)
 --========================================

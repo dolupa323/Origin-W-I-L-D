@@ -141,12 +141,18 @@ end
 
 --- 자원 채집
 local function harvestResource(target: Instance)
-	local nodeId = target:GetAttribute("NodeId") or target.Name
+	-- NodeUID 속성 우선 사용 (NodeId는 fallback)
+	local nodeUID = target:GetAttribute("NodeUID")
 	
-	print("[InteractController] Harvesting:", nodeId)
+	if not nodeUID then
+		warn("[InteractController] No NodeUID attribute on resource node:", target.Name)
+		return
+	end
+	
+	print("[InteractController] Harvesting:", nodeUID)
 	
 	NetClient.Request("Harvest.Hit.Request", {
-		nodeId = nodeId,
+		nodeUID = nodeUID,
 	}, function(response)
 		if response.success then
 			print("[InteractController] Harvest success!")
@@ -162,7 +168,7 @@ local function pickupDrop(target: Instance)
 	
 	print("[InteractController] Picking up:", dropId)
 	
-	NetClient.Request("WorldDrop.Pickup.Request", {
+	NetClient.Request("WorldDrop.Loot.Request", {
 		dropId = dropId,
 	}, function(response)
 		if response.success then

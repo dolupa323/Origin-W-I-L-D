@@ -62,8 +62,17 @@ if success then
 	local InteractController = require(Controllers.InteractController)
 	InteractController.Init()
 	
+	-- MovementController 초기화 (스프린트/구르기)
+	local MovementController = require(Controllers.MovementController)
+	MovementController.Init()
+	
 	-- UIManager 초기화 (UI 생성 - 컨트롤러들 초기화 후)
 	UIManager.Init()
+	
+	-- MovementController 스태미나 → UIManager 연동
+	MovementController.onStaminaChanged(function(current, max)
+		UIManager.updateStamina(current, max)
+	end)
 	
 	-- 키 바인딩: B = 인벤토리, J = 퀸스트 (Tab/I/Q는 로블록스 기본 기능과 충돌)
 	InputManager.bindKey(Enum.KeyCode.B, "ToggleInventory", function()

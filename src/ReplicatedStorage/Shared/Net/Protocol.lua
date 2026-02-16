@@ -111,6 +111,14 @@ Protocol.Commands = {
 	["Shop.Buy.Request"] = true,               -- 아이템 구매
 	["Shop.Sell.Request"] = true,              -- 아이템 판매
 	["Shop.GetGold.Request"] = true,           -- 보유 골드 조회
+	
+	-- Movement 명령어 (Phase 10)
+	["Movement.StartSprint"] = true,           -- 스프린트 시작
+	["Movement.StopSprint"] = true,            -- 스프린트 종료
+	["Movement.Dodge"] = true,                 -- 구르기 요청
+	
+	-- Stamina 명령어 (Phase 10)
+	["Stamina.GetState"] = true,               -- 스태미나 상태 조회
 }
 
 -- 에러 코드는 Enums.ErrorCode 사용

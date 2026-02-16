@@ -315,6 +315,46 @@ end
 -- Initialization
 --========================================
 
+--- workspace.ResourceNodes 스캔하여 노드 등록
+local function scanAndRegisterNodes()
+	local resourceNodesFolder = workspace:FindFirstChild("ResourceNodes")
+	if not resourceNodesFolder then
+		warn("[HarvestService] ResourceNodes folder not found in workspace")
+		return
+	end
+	
+	local registered = 0
+	for _, nodeModel in ipairs(resourceNodesFolder:GetChildren()) do
+		if nodeModel:IsA("Model") or nodeModel:IsA("BasePart") then
+			-- NodeId 속성 확인 (필수)
+			local nodeId = nodeModel:GetAttribute("NodeId") or nodeModel.Name
+			
+			-- 위치 결정
+			local position
+			if nodeModel:IsA("Model") then
+				local primaryPart = nodeModel.PrimaryPart or nodeModel:FindFirstChild("HumanoidRootPart") or nodeModel:FindFirstChildWhichIsA("BasePart")
+				if primaryPart then
+					position = primaryPart.Position
+				end
+			else
+				position = nodeModel.Position
+			end
+			
+			if position then
+				-- 노드 등록
+				local nodeUID = HarvestService.registerNode(nodeId, position)
+				
+				-- 모델에 NodeUID 속성 설정 (클라이언트가 사용)
+				nodeModel:SetAttribute("NodeUID", nodeUID)
+				
+				registered = registered + 1
+			end
+		end
+	end
+	
+	print(string.format("[HarvestService] Registered %d resource nodes from workspace", registered))
+end
+
 function HarvestService.Init(
 	netController: any,
 	dataService: any,
@@ -331,6 +371,12 @@ function HarvestService.Init(
 	PlayerStatService = playerStatService
 	DurabilityService = durabilityService
 	WorldDropService = worldDropService
+	
+	-- workspace.ResourceNodes에서 노드 자동 등록
+	task.spawn(function()
+		task.wait(1) -- 맵 로드 대기
+		scanAndRegisterNodes()
+	end)
 	
 	initialized = true
 	print("[HarvestService] Initialized")

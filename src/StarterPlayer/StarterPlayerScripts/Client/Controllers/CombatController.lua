@@ -25,11 +25,11 @@ local ATTACK_COOLDOWN = 0.5  -- 0.5초
 --========================================
 
 --- 공격 대상 찾기 (마우스 위치 기준)
-local function findTarget(): (Instance?, Vector3?)
+local function findTarget(): (Instance?, Vector3?, string?)
 	local target = InputManager.getMouseTarget()
 	
 	if not target then
-		return nil, nil
+		return nil, nil, nil
 	end
 	
 	-- Creatures 폴더 하위인지 확인
@@ -39,13 +39,14 @@ local function findTarget(): (Instance?, Vector3?)
 		local model = target:FindFirstAncestorOfClass("Model")
 		if model then
 			local hrp = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
-			if hrp then
-				return model, hrp.Position
+			local instanceId = model:GetAttribute("InstanceId")
+			if hrp and instanceId then
+				return model, hrp.Position, instanceId
 			end
 		end
 	end
 	
-	return nil, nil
+	return nil, nil, nil
 end
 
 --- 플레이어와 대상 간 거리 확인
@@ -76,9 +77,9 @@ function CombatController.attack()
 		return
 	end
 	
-	local targetModel, targetPos = findTarget()
+	local targetModel, targetPos, instanceId = findTarget()
 	
-	if targetModel and targetPos then
+	if targetModel and targetPos and instanceId then
 		local distance = getDistanceToTarget(targetPos)
 		
 		-- 공격 범위 체크 (10 스터드)
@@ -87,12 +88,9 @@ function CombatController.attack()
 			return
 		end
 		
-		-- 크리처 ID 추출 (모델 이름 또는 속성)
-		local creatureId = targetModel:GetAttribute("CreatureId") or targetModel.Name
-		
-		-- 서버에 공격 요청
+		-- 서버에 공격 요청 (InstanceId 전송)
 		NetClient.Request("Combat.Hit.Request", {
-			creatureId = creatureId,
+			targetInstanceId = instanceId,
 			targetPosition = { x = targetPos.X, y = targetPos.Y, z = targetPos.Z },
 		}, function(response)
 			if response.success then

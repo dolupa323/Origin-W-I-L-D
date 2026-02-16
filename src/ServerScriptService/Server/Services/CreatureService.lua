@@ -33,6 +33,10 @@ local WANDER_RADIUS = 15
 local DESPAWN_DIST = 150
 local CREATURE_ATTACK_COOLDOWN = 2 -- 크리처 공격 쿨다운 (초)
 
+-- 어그로 시스템 상수
+local AGGRO_TIMEOUT = 3 -- 추격 시간 제한 (초)
+local MAX_CHASE_DISTANCE = 50 -- 어그로 해제 절대 거리 (studs)
+
 local creatureFolder = workspace:FindFirstChild("Creatures") or Instance.new("Folder", workspace)
 creatureFolder.Name = "Creatures"
 
@@ -199,6 +203,7 @@ function CreatureService.applyDamage(instanceId: string, damage: number, attacke
 	if creature.data.behavior ~= "PASSIVE" then
 		creature.state = "CHASE"
 		creature.lastStateChange = os.time()
+		creature.chaseStartTime = os.time() -- 어그로 시간 추적 시작
 		-- attacker를 target으로 설정해야 하지만, 현재 AI 루프는 "가장 가까운 플레이어"를 쫓음.
 		-- 일단은 상태만 변경해도 가까이 있는 attacker를 쫓게 됨.
 	else
@@ -304,13 +309,26 @@ function CreatureService._spawnLoop()
 	for _, player in ipairs(Players:GetPlayers()) do
 		local char = player.Character
 		if char and char:FindFirstChild("HumanoidRootPart") then
-			-- 확률적으로 스폰
-			if math.random() > 0.9 then -- 10% 확률 (테스트용 감소)
+			-- 초식동물 스폰 (높은 확률: 40%)
+			if math.random() <= 0.4 then
 				local pos = CreatureService._findSpawnPosition(char.HumanoidRootPart)
 				if pos then
-					-- 랜덤 크리처 선택 (육식공룡 비율 낮춤)
-					local pool = {"TRICERATOPS", "TRICERATOPS", "DODO", "DODO", "DODO", "RAPTOR"}
-					local cid = pool[math.random(1, #pool)]
+					-- 초식동물/비공격적 크리처 풀 (RAPTOR 제외)
+					local herbivorePool = {"TRICERATOPS", "TRICERATOPS", "DODO", "DODO", "DODO", "DODO"}
+					local cid = herbivorePool[math.random(1, #herbivorePool)]
+					CreatureService.spawn(cid, pos)
+					
+					if creatureCount >= CREATURE_CAP then break end
+				end
+			end
+			
+			-- 육식공룡 스폰 (낮은 확률: 5%)
+			if math.random() <= 0.05 then
+				local pos = CreatureService._findSpawnPosition(char.HumanoidRootPart)
+				if pos then
+					-- 육식공룡 풀
+					local carnivorePool = {"RAPTOR"}
+					local cid = carnivorePool[math.random(1, #carnivorePool)]
 					CreatureService.spawn(cid, pos)
 					
 					if creatureCount >= CREATURE_CAP then break end
@@ -376,12 +394,23 @@ function CreatureService._updateAILoop()
 		end
 		
 		local newState = creature.state
+		local chaseDuration = (creature.chaseStartTime and (now - creature.chaseStartTime)) or 0
 		
 		if behavior == "AGGRESSIVE" then
-			if minDist <= detectRange then
+			if creature.state == "CHASE" then
+				-- 어그로 해제 조건: 시간 또는 거리
+				if chaseDuration >= AGGRO_TIMEOUT or minDist > MAX_CHASE_DISTANCE then
+					newState = "WANDER"
+					creature.chaseStartTime = nil
+					print(string.format("[CreatureService] %s lost aggro (time: %.1fs, dist: %.1f)", 
+						creature.creatureId, chaseDuration, minDist))
+				end
+			elseif minDist <= detectRange then
+				-- 추격 시작
 				newState = "CHASE"
-			elseif creature.state == "CHASE" and minDist > detectRange * 1.5 then
-				newState = "WANDER" -- 추격 포기
+				if not creature.chaseStartTime then
+					creature.chaseStartTime = now
+				end
 			elseif creature.state == "IDLE" and (now - creature.lastStateChange > 3) then
 				newState = "WANDER"
 			elseif creature.state == "WANDER" and (now - creature.lastStateChange > 5) then
@@ -390,9 +419,10 @@ function CreatureService._updateAILoop()
 		else -- NEUTRAL, PASSIVE
 			-- NEUTRAL은 피격 시 CHASE 상태가 됨 (applyDamage에서 설정)
 			if creature.state == "CHASE" then
-				-- 반격 모드: 거리가 멀어지면 추격 포기
-				if minDist > detectRange * 2 then
+				-- 반격 모드: 시간 또는 거리로 추격 포기
+				if chaseDuration >= AGGRO_TIMEOUT or minDist > MAX_CHASE_DISTANCE then
 					newState = "WANDER"
+					creature.chaseStartTime = nil
 				end
 			elseif creature.state == "FLEE" then
 				-- FLEE 상태는 applyDamage에서 설정됨 (PASSIVE가 피격 시)

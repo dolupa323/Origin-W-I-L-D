@@ -358,37 +358,35 @@ end
 local function _onShopListRequest(player: Player, _payload: any)
 	local list = NPCShopService.getShopList()
 	
-	NetController.FireClient(player, "Shop.List.Response", {
-		ok = true,
+	return {
+		success = true,
 		shops = list,
-	})
+	}
 end
 
 local function _onShopGetInfoRequest(player: Player, payload: any)
 	local shopId = payload and payload.shopId
 	
 	if not shopId then
-		NetController.FireClient(player, "Shop.GetInfo.Response", {
-			ok = false,
-			error = Enums.ErrorCode.INVALID_REQUEST,
-		})
-		return
+		return {
+			success = false,
+			errorCode = Enums.ErrorCode.INVALID_REQUEST,
+		}
 	end
 	
 	local shopInfo, err = NPCShopService.getShopInfo(shopId)
 	
 	if not shopInfo then
-		NetController.FireClient(player, "Shop.GetInfo.Response", {
-			ok = false,
-			error = err,
-		})
-		return
+		return {
+			success = false,
+			errorCode = err,
+		}
 	end
 	
-	NetController.FireClient(player, "Shop.GetInfo.Response", {
-		ok = true,
+	return {
+		success = true,
 		shop = shopInfo,
-	})
+	}
 end
 
 local function _onShopBuyRequest(player: Player, payload: any)
@@ -398,19 +396,22 @@ local function _onShopBuyRequest(player: Player, payload: any)
 	local count = payload and payload.count
 	
 	if not shopId or not itemId then
-		NetController.FireClient(player, "Shop.Buy.Response", {
-			ok = false,
-			error = Enums.ErrorCode.INVALID_REQUEST,
-		})
-		return
+		return {
+			success = false,
+			errorCode = Enums.ErrorCode.INVALID_REQUEST,
+		}
 	end
 	
 	local ok, err = NPCShopService.buy(userId, shopId, itemId, count)
 	
-	NetController.FireClient(player, "Shop.Buy.Response", {
-		ok = ok,
-		error = err,
-	})
+	if not ok then
+		return {
+			success = false,
+			errorCode = err,
+		}
+	end
+	
+	return { success = true }
 end
 
 local function _onShopSellRequest(player: Player, payload: any)
@@ -420,29 +421,32 @@ local function _onShopSellRequest(player: Player, payload: any)
 	local count = payload and payload.count
 	
 	if not shopId or not slot then
-		NetController.FireClient(player, "Shop.Sell.Response", {
-			ok = false,
-			error = Enums.ErrorCode.INVALID_REQUEST,
-		})
-		return
+		return {
+			success = false,
+			errorCode = Enums.ErrorCode.INVALID_REQUEST,
+		}
 	end
 	
 	local ok, err = NPCShopService.sell(userId, shopId, slot, count)
 	
-	NetController.FireClient(player, "Shop.Sell.Response", {
-		ok = ok,
-		error = err,
-	})
+	if not ok then
+		return {
+			success = false,
+			errorCode = err,
+		}
+	end
+	
+	return { success = true }
 end
 
 local function _onShopGetGoldRequest(player: Player, _payload: any)
 	local userId = player.UserId
 	local gold = NPCShopService.getGold(userId)
 	
-	NetController.FireClient(player, "Shop.GetGold.Response", {
-		ok = true,
+	return {
+		success = true,
 		gold = gold,
-	})
+	}
 end
 
 --========================================

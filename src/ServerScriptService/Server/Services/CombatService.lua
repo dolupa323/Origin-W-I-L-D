@@ -16,6 +16,7 @@ local InventoryService
 local DurabilityService
 local DataService
 local DebuffService
+local StaminaService
 
 -- Constants
 local DEFAULT_ATTACK_RANGE = 5 -- 맨손 사거리
@@ -23,6 +24,22 @@ local PVP_ENABLED = false       -- PvP 비활성화
 
 -- Quest callback (Phase 8)
 local questCallback = nil
+
+--========================================
+-- StaminaService Integration (Phase 10)
+--========================================
+
+function CombatService.SetStaminaService(_StaminaService)
+	StaminaService = _StaminaService
+end
+
+--- 플레이어가 무적 상태인지 확인 (구르기 중)
+function CombatService.isPlayerInvulnerable(userId: number): boolean
+	if StaminaService then
+		return StaminaService.isInvulnerable(userId)
+	end
+	return false
+end
 
 --========================================
 -- Public API

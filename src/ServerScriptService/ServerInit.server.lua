@@ -315,4 +315,16 @@ for command, handler in pairs(NPCShopService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)
 end
 
-print("[ServerInit] Server initialized (Phase 9)") -- 최종 완료 로그
+-- StaminaService 초기화 (Phase 10: 스프린트/구르기)
+local StaminaService = require(Services.StaminaService)
+StaminaService.Init(NetController)
+
+-- StaminaService 핸들러 등록
+for command, handler in pairs(StaminaService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
+end
+
+-- CombatService에 StaminaService 연동 (무적 프레임 체크용)
+CombatService.SetStaminaService(StaminaService)
+
+print("[ServerInit] Server initialized (Phase 10)") -- 최종 완료 로그
