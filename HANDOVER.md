@@ -1,7 +1,7 @@
 # DinoTribeSurvival (Origin-WILD) 프로젝트 인수인계 문서
 
-> **작성일**: 2026-02-14  
-> **현재 진행 상태**: Phase 5 진행중 (테이밍 & 팰 시스템), Phase 5-5 대기  
+> **작성일**: 2026-02-16  
+> **현재 진행 상태**: Phase 9 완료 (NPC 상점 시스템)  
 > **게임 개요**: 로블록스 기반 공룡+생존 서바이벌 게임
 
 ---
@@ -511,7 +511,7 @@ NetClient.onEvent(eventName, callback)           -- 이벤트 리스너 등록
 | `TimeController.lua`      | `Time.*` 이벤트 수신, 시간 UI            |
 | `InteractController.lua`  | 상호작용 처리 (스텁)                     |
 | `BuildController.lua`     | `Build.*` 이벤트 수신, 구조물 캐시       |
-| `CraftController.lua`     | `Craft.*` 이벤트 수신, 제작 UI          |
+| `CraftController.lua`     | `Craft.*` 이벤트 수신, 제작 UI           |
 
 ---
 
@@ -642,11 +642,176 @@ drops[dropId] = {
     - [x] **5-2**: CaptureService (포획 판정, HP 비율 포획률 공식, 포획구 소모)
     - [x] **5-3**: PalboxService (보관함 CRUD, SaveService 연동, 닉네임/해방)
     - [x] **5-4**: PartyService (파티 편성/해제, 소환/회수, 팰 AI FOLLOW/COMBAT/IDLE)
-    - [ ] **5-5**: 작업 배치 (FacilityService 확장, 팰 workPower 연동)
+    - [x] **5-5**: 작업 배치 (FacilityService 확장, 팰 workPower 연동)
+  - [x] **Phase 6**: 기술 트리 & 플레이어 성장
+    - [x] **6-1**: TechUnlockData (기술 트리 데이터 정의)
+    - [x] **6-2**: PlayerStatService (XP, 레벨, 기술 포인트)
+    - [x] **6-3**: TechService (기술 해금, 선행 기술, 레시피/시설 잠금)
+  - [x] **Phase 7**: 베이스 자동화
+    - [x] **7-1**: HarvestService (자원 수확 기반)
+    - [x] **7-2**: BaseClaimService (베이스 영역 관리)
+    - [x] **7-3**: AutoHarvestService (팸 자동 수확)
+    - [x] **7-4**: AutoDepositService (자동 저장)
+  - [x] **Phase 8**: 퀘스트 시스템
+    - [x] **8-1**: QuestData (15개 퀘스트 정의)
+    - [x] **8-2**: QuestService (상태 관리, 진행 추적, 보상 지급)
+    - [x] **8-3**: 진행 추적 연동 (Harvest/Kill/Craft/Build/Capture/LevelUp/TechUnlock)
+    - [x] **8-4**: QuestController (클라이언트 이벤트 수신)
+  - [x] **Phase 9**: NPC 상점 시스템
+    - [x] **9-1**: NPCShopData (5개 상점 정의)
+    - [x] **9-2**: NPCShopService (골드 관리, 구매/판매 로직)
+    - [x] **9-3**: ShopController (클라이언트 상점 캐시)
+    - [x] **9-4**: Enums/Balance/Protocol 확장
 
 ---
 
-## 10. 완료: BuildService (Phase 2-1)
+## 10. 완료: Phase 5-5 팰 작업 배치 시스템
+
+### 10.1 구현 완료
+
+- `FacilityService.lua`에 팰 배치/해제 API 추가
+- 팰 workPower에 따른 작업 속도 보정
+- Protocol.lua에 팰 배치 명령어 추가
+
+### 10.2 API
+
+```lua
+-- FacilityService 확장 (Phase 5-5)
+FacilityService.SetPalboxService(PalboxService) -- 의존성 주입
+FacilityService.assignPal(userId, structureId, palUID) -- 팰 배치
+FacilityService.unassignPal(userId, structureId) -- 팰 해제
+FacilityService.getAssignedPal(structureId) -- 배치된 팰 조회
+```
+
+### 10.3 작업 속도 보정 공식
+
+```lua
+-- workPower에 따른 creatureBonus 계산
+creatureBonus = (pal.workPower - 1) * 0.5
+-- 예: workPower=2 → creatureBonus=0.5 → 50% 속도 증가
+-- 예: workPower=3 → creatureBonus=1.0 → 100% 속도 증가
+
+-- RecipeService.calculateEfficiency에 creatureBonus 적용
+efficiency = facilitySpeed × (1 + creatureBonus + ...)
+realCraftTime = baseCraftTime / efficiency
+```
+
+### 10.4 검증 항목
+
+| 검증            | ErrorCode            | 조건                                    |
+| --------------- | -------------------- | --------------------------------------- |
+| 팰 존재         | NOT_FOUND            | 팰이 없거나 시설이 없음                 |
+| 팰 상태         | PAL_IN_PARTY         | 소환 중인 팰 배치 시도                  |
+| 중복 배치       | PAL_ALREADY_ASSIGNED | 이미 배치된 팰 또는 시설                |
+| workType 불일치 | BAD_REQUEST          | 팰 workTypes와 시설 functionType 불일치 |
+| 권한            | NO_PERMISSION        | 팰 소유자 아님                          |
+
+### 10.5 Protocol 명령어
+
+```lua
+["Facility.AssignPal.Request"] = true   -- 팰 작업 배치
+["Facility.UnassignPal.Request"] = true -- 팰 작업 해제
+```
+
+---
+
+## 11. 완료: Phase 6 기술 트리 & 플레이어 성장
+
+### 11.1 구현 완료
+
+- `TechUnlockData.lua` 기술 트리 데이터 정의 (13개 노드)
+- `PlayerStatService.lua` XP/레벨/기술 포인트 관리
+- `TechService.lua` 기술 해금 및 잠금 검증
+- Balance.lua/Enums.lua 확장
+
+### 11.2 Balance 상수 (Phase 6)
+
+```lua
+Balance.PLAYER_MAX_LEVEL = 50          -- 최대 레벨
+Balance.BASE_XP_PER_LEVEL = 100        -- 레벨 1→2 필요 XP
+Balance.XP_SCALING = 1.2               -- 레벨당 필요 XP 증가율
+Balance.TECH_POINTS_PER_LEVEL = 2      -- 레벨업당 기술 포인트
+Balance.STAT_BONUS_PER_LEVEL = 0.02    -- 레벨당 스탯 보너스
+
+-- XP 획득량
+Balance.XP_CREATURE_KILL = 25
+Balance.XP_CRAFT_ITEM = 5
+Balance.XP_CAPTURE_PAL = 50
+Balance.XP_HARVEST_RESOURCE = 2
+```
+
+### 11.3 PlayerStatService API
+
+```lua
+PlayerStatService.Init(NetController, SaveService, DataService)
+PlayerStatService.getLevel(userId) → level
+PlayerStatService.getXP(userId) → currentLevelXP, requiredXP
+PlayerStatService.addXP(userId, amount, source) → leveledUp, newLevel
+PlayerStatService.getTechPoints(userId) → available
+PlayerStatService.spendTechPoints(userId, amount) → success
+PlayerStatService.getStats(userId) → { level, currentXP, requiredXP, ... }
+```
+
+### 11.4 TechService API
+
+```lua
+TechService.Init(NetController, DataService, PlayerStatService, SaveService)
+TechService.unlock(userId, techId) → success, errorCode
+TechService.isUnlocked(userId, techId) → boolean
+TechService.getUnlockedTech(userId) → { techId → true }
+TechService.getAvailableTech(userId) → { techId → techData }
+TechService.isRecipeUnlocked(userId, recipeId) → boolean
+TechService.isFacilityUnlocked(userId, facilityId) → boolean
+TechService.getTechTree() → 전체 기술 트리 데이터
+```
+
+### 11.5 기술 트리 구조 (TechUnlockData)
+
+| Tier | ID                 | 이름          | 포인트 | 선행 기술                 | 해금                |
+| ---- | ------------------ | ------------- | ------ | ------------------------- | ------------------- |
+| 0    | TECH_BASICS        | 기초 지식     | 0      | -                         | (기본)              |
+| 1    | TECH_STONE_TOOLS   | 석기 도구     | 1      | TECH_BASICS               | 곡괭이, 도끼 레시피 |
+| 1    | TECH_FIBER_CRAFT   | 섬유 가공     | 1      | TECH_BASICS               | -                   |
+| 1    | TECH_CAMPFIRE      | 캠프파이어    | 1      | TECH_BASICS               | CAMPFIRE 시설       |
+| 2    | TECH_WORKBENCH     | 작업대        | 2      | TECH_STONE_TOOLS          | WORKBENCH 시설      |
+| 2    | TECH_CAPTURE_BASIC | 기본 포획술   | 2      | TECH_FIBER_CRAFT          | 기본 포획구         |
+| 2    | TECH_STORAGE       | 보관함 제작   | 2      | TECH_STONE_TOOLS          | STORAGE 시설        |
+| 3    | TECH_CAPTURE_MEGA  | 고급 포획술   | 3      | TECH_CAPTURE_BASIC        | 고급 포획구         |
+| 3    | TECH_SMELTING      | 제련 기술     | 3      | TECH_WORKBENCH + CAMPFIRE | FURNACE             |
+| 3    | TECH_METAL_TOOLS   | 금속 도구     | 3      | TECH_SMELTING             | 금속 도구 레시피    |
+| 4    | TECH_CAPTURE_ULTRA | 최고급 포획술 | 4      | TECH_CAPTURE_MEGA         | 울트라 포획구       |
+| 4    | TECH_PAL_RIDING    | 팰 탑승       | 5      | TECH_CAPTURE_MEGA         | PAL_RIDING 기능     |
+| 4    | TECH_PAL_BREEDING  | 팰 교배       | 5      | TECH_CAPTURE_ULTRA        | BREEDING_PEN        |
+
+### 11.6 Protocol 명령어
+
+```lua
+["Player.Stats.Request"] = true        -- 레벨/XP/포인트 조회
+["Tech.Unlock.Request"] = true         -- 기술 해금 요청
+["Tech.List.Request"] = true           -- 해금된 기술 목록
+["Tech.Tree.Request"] = true           -- 전체 트리 조회
+```
+
+### 11.7 이벤트
+
+```lua
+"Player.Stats.Changed"  -- 레벨업 시 발행
+"Tech.Unlocked"         -- 기술 해금 시 발행
+```
+
+### 11.8 ErrorCode 추가
+
+```lua
+TECH_ALREADY_UNLOCKED      -- 이미 해금됨
+TECH_NOT_FOUND             -- 기술 없음
+INSUFFICIENT_TECH_POINTS   -- 기술 포인트 부족
+PREREQUISITES_NOT_MET      -- 선행 기술 미해금
+RECIPE_LOCKED              -- 레시피 미해금
+```
+
+---
+
+## 12. 완료: BuildService (Phase 2-1)
 
 ### 10.1 구현 완료
 
@@ -708,15 +873,15 @@ worldState.structures = {
 
 ---
 
-## 11. 코딩 컨벤션
+## 13. 코딩 컨벤션
 
-### 11.1 파일명
+### 13.1 파일명
 
 - 서버 스크립트: `*.server.lua`
 - 클라이언트 스크립트: `*.client.lua`
 - 모듈: `*.lua`
 
-### 11.2 서비스 패턴
+### 13.2 서비스 패턴
 
 ```lua
 local MyService = {}
@@ -752,7 +917,7 @@ end
 return MyService
 ```
 
-### 11.3 핸들러 반환값
+### 13.3 핸들러 반환값
 
 ```lua
 -- 성공
@@ -762,7 +927,7 @@ return { success = true, data = { ... } }
 return { success = false, errorCode = Enums.ErrorCode.XXX }
 ```
 
-### 11.4 이벤트 발행
+### 13.4 이벤트 발행
 
 ```lua
 NetController.FireClient(player, "EventName", { ... })
@@ -771,26 +936,26 @@ NetController.FireAllClients("EventName", { ... })
 
 ---
 
-## 12. 트러블슈팅 히스토리
+## 14. 트러블슈팅 히스토리
 
-### 12.1 Remote event queue exhausted
+### 14.1 Remote event queue exhausted
 
 **원인**: 서버에서 이벤트를 보내지만 클라이언트에서 수신하는 리스너 없음  
 **해결**: 각 서비스에 대응하는 클라이언트 컨트롤러 생성 (InventoryController 등)
 
-### 12.2 Inventory.Drop이 월드 드롭 생성 안 함
+### 14.2 Inventory.Drop이 월드 드롭 생성 안 함
 
 **원인**: InventoryService.drop()은 슬롯만 비움, WorldDrop 생성 로직 없음  
 **해결**: ServerInit에서 `Inventory.Drop.Request` 핸들러 오버라이드, WorldDropService.spawnDrop() 호출
 
-### 12.3 move/split 검증 순서 버그
+### 14.3 move/split 검증 순서 버그
 
 **원인**: 슬롯 범위 검증 전에 같은 슬롯 체크 → 잘못된 에러  
 **해결**: `_validateSlotRange()` 먼저 호출 후 `fromSlot == toSlot` 체크
 
 ---
 
-## 13. 참고 명령어
+## 15. 참고 명령어
 
 ### Rojo 실행
 
@@ -807,11 +972,274 @@ Get-ChildItem -Recurse src | Select-Object FullName
 
 ---
 
-## 14. 연락처 / 추가 참고
+## 16. 연락처 / 추가 참고
 
 - **게임명**: DinoTribeSurvival (디노트라이브서바이벌)
 - **프로젝트폴더**: Origin-WILD
 - **언어**: 한국어 UI + 한국어 주석
+
+---
+
+## 17. 완료: Phase 7 베이스 자동화
+
+### 17.1 구현 완료
+
+- `HarvestService.lua` - 자원 노드 수확 시스템
+- `BaseClaimService.lua` - 베이스 영역 관리
+- `AutoHarvestService.lua` - 팰 자동 수확
+- `AutoDepositService.lua` - 시설 Output → Storage 자동 이동
+- `ResourceNodeData.lua` - 자원 노드 데이터 (나무, 돌, 풀, 광석)
+
+### 17.2 주요 API
+
+```lua
+-- HarvestService
+HarvestService.registerNode(nodeId, position) → nodeUID
+HarvestService.hit(player, nodeUID) → success, errorCode, drops
+HarvestService.getAllNodes() → nodes[]
+
+-- BaseClaimService
+BaseClaimService.create(userId, position) → success, errorCode, baseId
+BaseClaimService.getBase(userId) → BaseClaim?
+BaseClaimService.isInBase(userId, position) → boolean
+BaseClaimService.expand(userId) → success, errorCode
+
+-- AutoHarvestService (자동 틱 처리)
+AutoHarvestService.forceGather(structureId) → drops[]
+
+-- AutoDepositService (자동 틱 처리)
+AutoDepositService.depositFromFacility(structureId) → success, count
+```
+
+### 17.3 Balance 상수 (Phase 7)
+
+```lua
+-- 수확 시스템
+Balance.HARVEST_COOLDOWN = 0.5         -- 연속 타격 쿨다운 (초)
+Balance.HARVEST_RANGE = 5              -- 수확 가능 거리 (스터드)
+Balance.HARVEST_XP_PER_HIT = 2         -- 타격당 XP
+
+-- 베이스 시스템
+Balance.BASE_DEFAULT_RADIUS = 30       -- 기본 베이스 반경
+Balance.BASE_MAX_RADIUS = 100          -- 최대 베이스 반경
+Balance.BASE_RADIUS_PER_LEVEL = 10     -- 레벨당 추가 반경
+Balance.BASE_MAX_PER_PLAYER = 1        -- 플레이어당 최대 베이스 수
+
+-- 자동화 시스템
+Balance.AUTO_HARVEST_INTERVAL = 10     -- 팰 자동 수확 간격 (초)
+Balance.AUTO_DEPOSIT_INTERVAL = 5      -- 자동 저장 간격 (초)
+Balance.AUTO_DEPOSIT_RANGE = 20        -- Storage 검색 범위 (스터드)
+```
+
+### 17.4 Protocol 명령어 (Phase 7)
+
+```lua
+["Harvest.Hit.Request"] = true            -- 자원 수확 타격
+["Harvest.GetNodes.Request"] = true       -- 활성 노드 목록 조회
+["Base.Get.Request"] = true               -- 베이스 정보 조회
+["Base.Expand.Request"] = true            -- 베이스 확장
+```
+
+### 17.5 새 시설: 채집 기지
+
+```lua
+{
+  id = "GATHERING_POST",
+  name = "채집 기지",
+  description = "팰이 주변 자원을 자동으로 수집합니다.",
+  functionType = "GATHERING",
+  gatherRadius = 30,
+  gatherInterval = 10,
+  hasOutputSlot = true,
+  outputSlots = 20,
+}
+```
+
+### 17.6 자동화 작동 흐름
+
+1. 플레이어가 첫 건물 설치 → BaseClaimService가 베이스 자동 생성
+2. 채집 기지 건설 + GATHERING workType 팰 배치
+3. AutoHarvestService가 매 10초마다 베이스 내 자원 자동 수확
+4. 수확된 아이템이 채집 기지 Output에 저장
+5. AutoDepositService가 매 5초마다 Output → 근처 Storage 자동 이동
+
+---
+
+## 18. 완료: Phase 8 퀘스트 시스템
+
+### 18.1 구현 완료
+
+- `QuestData.lua` - 15개 퀘스트 정의 (튜토리얼 5 + 메인 5 + 사이드 3 + 일일 2)
+- `QuestService.lua` - 퀘스트 상태 관리, 진행 추적, 보상 지급
+- `QuestController.lua` - 클라이언트 이벤트 수신
+- 진행 추적 콜백 연동 (7개 서비스)
+
+### 18.2 주요 API
+
+```lua
+-- QuestService (서버)
+QuestService.Init(NetController, DataService, SaveService, InventoryService, PlayerStatService, PalboxService)
+QuestService.getPlayerQuests(userId)           -- 플레이어 퀘스트 상태
+QuestService.acceptQuest(player, questId)      -- 퀘스트 수락
+QuestService.claimReward(player, questId)      -- 보상 수령
+QuestService.abandonQuest(player, questId)     -- 퀘스트 포기
+
+-- 진행 추적 (다른 서비스에서 호출)
+QuestService.onHarvest(userId, nodeType, count)
+QuestService.onKill(userId, creatureType, count)
+QuestService.onCraft(userId, recipeId, count)
+QuestService.onBuild(userId, facilityId)
+QuestService.onCapture(userId, palType)
+QuestService.onLevelUp(userId, newLevel)
+QuestService.onTechUnlock(userId, techId)
+
+-- QuestController (클라이언트)
+QuestController.Init()
+QuestController.getQuestCache()
+QuestController.getActiveQuests()
+QuestController.requestList(callback)
+QuestController.requestAccept(questId, callback)
+QuestController.requestClaim(questId, callback)
+QuestController.requestAbandon(questId, callback)
+QuestController.onUpdated(callback)
+QuestController.onCompleted(callback)
+```
+
+### 18.3 Balance 상수 (Phase 8)
+
+```lua
+Balance.QUEST_MAX_ACTIVE = 10          -- 동시 진행 가능 퀘스트 수
+Balance.QUEST_DAILY_RESET_HOUR = 0     -- 일일 퀘스트 리셋 시간 (UTC)
+Balance.QUEST_ABANDON_COOLDOWN = 60    -- 퀘스트 포기 후 재수락 쿨다운 (초)
+```
+
+### 18.4 Protocol 명령어 (Phase 8)
+
+```lua
+["Quest.List.Request"] = true             -- 퀘스트 목록 요청
+["Quest.Accept.Request"] = true           -- 퀘스트 수락
+["Quest.Claim.Request"] = true            -- 보상 수령
+["Quest.Abandon.Request"] = true          -- 퀘스트 포기
+```
+
+### 18.5 새 Enums (Phase 8)
+
+```lua
+-- 퀘스트 카테고리
+Enums.QuestCategory = { TUTORIAL, MAIN, SIDE, DAILY, ACHIEVEMENT }
+
+-- 퀘스트 목표 타입
+Enums.QuestObjectiveType = { HARVEST, KILL, CRAFT, BUILD, COLLECT, CAPTURE, TALK, REACH_LEVEL, UNLOCK_TECH }
+
+-- 퀘스트 상태
+Enums.QuestStatus = { LOCKED, AVAILABLE, ACTIVE, COMPLETED, CLAIMED }
+
+-- 에러 코드
+QUEST_NOT_FOUND, QUEST_PREREQ_NOT_MET, QUEST_LEVEL_NOT_MET, QUEST_ALREADY_ACTIVE,
+QUEST_NOT_COMPLETED, QUEST_ALREADY_CLAIMED, QUEST_MAX_ACTIVE, QUEST_NOT_REPEATABLE
+```
+
+### 18.6 퀘스트 데이터 요약
+
+| 카테고리 | 개수 | 예시                                                         |
+| -------- | ---- | ------------------------------------------------------------ |
+| TUTORIAL | 5    | 첫 수확, 첫 제작, 첫 건설, 첫 사냥, 첫 포획                  |
+| MAIN     | 5    | 거점 구축, 동료 모으기, 기술 연구, 레벨 10 달성, 자동화 시작 |
+| SIDE     | 3    | 수집가, 사냥꾼, 장인                                         |
+| DAILY    | 2    | 일일 수확, 일일 사냥                                         |
+
+### 18.7 콜백 연동 서비스
+
+| 서비스            | 콜백 함수          | 트리거         |
+| ----------------- | ------------------ | -------------- |
+| HarvestService    | SetQuestCallback   | 자원 수확 시   |
+| CombatService     | SetQuestCallback   | 크리처 처치 시 |
+| CraftingService   | SetQuestCallback   | 제작 완료 시   |
+| BuildService      | SetQuestCallback   | 건설 완료 시   |
+| CaptureService    | SetQuestCallback   | 포획 성공 시   |
+| PlayerStatService | SetLevelUpCallback | 레벨업 시      |
+| TechService       | SetUnlockCallback  | 기술 해금 시   |
+
+---
+
+## 19. 완료: Phase 9 NPC 상점 시스템
+
+### 19.1 구현 파일
+
+| 파일               | 역할                           |
+| ------------------ | ------------------------------ |
+| NPCShopData.lua    | 5개 상점 데이터 정의           |
+| NPCShopService.lua | 서버 골드 관리, 구매/판매 처리 |
+| ShopController.lua | 클라이언트 상점 캐시           |
+
+### 19.2 상점 목록
+
+| ID            | 이름      | NPC명         | 설명                    |
+| ------------- | --------- | ------------- | ----------------------- |
+| GENERAL_STORE | 잡화점    | 상인 톰       | 기본 소재 (Wood, Stone) |
+| TOOL_SHOP     | 도구점    | 대장장이 한스 | 도구와 무기             |
+| PAL_SHOP      | 팔 상점   | 조련사 미아   | 포획 도구 (Pal Sphere)  |
+| FOOD_SHOP     | 식료품점  | 요리사 루시   | 음식과 물약             |
+| BUILDING_SHOP | 건축 상점 | 건축가 로이   | 건축 자재               |
+
+### 19.3 Balance 상수 (Phase 9)
+
+```lua
+Balance.SHOP_INTERACT_RANGE = 10     -- NPC 상호작용 거리
+Balance.SHOP_DEFAULT_SELL_MULT = 0.5 -- 기본 판매 배율
+Balance.SHOP_RESTOCK_TIME = 300      -- 재고 리필 시간
+Balance.STARTING_GOLD = 100          -- 신규 플레이어 기본 골드
+Balance.GOLD_CAP = 999999            -- 최대 보유 골드
+Balance.GOLD_EARN_MULTIPLIER = 1.0   -- 골드 획득 배율
+```
+
+### 19.4 Protocol 명령어 (Phase 9)
+
+```lua
+["Shop.List.Request"]     -- 상점 목록 요청
+["Shop.GetInfo.Request"]  -- 상점 상세 조회
+["Shop.Buy.Request"]      -- 아이템 구매
+["Shop.Sell.Request"]     -- 아이템 판매
+["Shop.GetGold.Request"]  -- 골드 조회
+```
+
+### 19.5 에러 코드 (Phase 9)
+
+| 코드              | 설명                    |
+| ----------------- | ----------------------- |
+| SHOP_NOT_FOUND    | 상점 없음               |
+| INSUFFICIENT_GOLD | 골드 부족               |
+| SHOP_OUT_OF_STOCK | 재고 부족               |
+| ITEM_NOT_IN_SHOP  | 상점에 해당 아이템 없음 |
+| ITEM_NOT_SELLABLE | 판매 불가 아이템        |
+| SHOP_TOO_FAR      | 상점 거리 초과          |
+| GOLD_CAP_REACHED  | 골드 한도 도달          |
+
+### 19.6 API 요약
+
+#### NPCShopService (Server)
+
+```lua
+NPCShopService.getGold(userId)                    -- 보유 골드 조회
+NPCShopService.addGold(userId, amount)            -- 골드 추가
+NPCShopService.removeGold(userId, amount)         -- 골드 차감
+NPCShopService.getShopList()                      -- 전체 상점 목록
+NPCShopService.getShopInfo(shopId)                -- 상점 상세
+NPCShopService.buy(userId, shopId, itemId, count) -- 구매
+NPCShopService.sell(userId, shopId, slot, count)  -- 판매
+```
+
+#### ShopController (Client)
+
+```lua
+ShopController.getGold()                                -- 캐시된 골드
+ShopController.requestGold(callback)                    -- 서버 곢8드 요청
+ShopController.requestShopList(callback)                -- 상점 목록 요청
+ShopController.requestShopInfo(shopId, callback)        -- 상점 상세 요청
+ShopController.requestBuy(shopId, itemId, count, cb)    -- 구매 요청
+ShopController.requestSell(shopId, slot, count, cb)     -- 판매 요청
+ShopController.onGoldChanged(callback)                  -- 곢8드 변경 리스너
+```
 
 ---
 

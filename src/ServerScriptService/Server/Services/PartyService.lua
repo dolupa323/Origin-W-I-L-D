@@ -208,7 +208,7 @@ function PartyService.summon(userId: number, partySlot: number): (boolean, strin
 	
 	-- 모델 생성 (플레이어 근처)
 	local spawnPos = hrp.Position + hrp.CFrame.LookVector * PAL_FOLLOW_DIST
-	local model, rootPart, humanoid = PartyService._createPalModel(pal, spawnPos)
+	local model, rootPart, humanoid = PartyService._createPalModel(pal, spawnPos, userId)
 	
 	if not model then
 		return false, Enums.ErrorCode.INTERNAL_ERROR
@@ -277,7 +277,7 @@ function PartyService._recallPal(userId: number)
 end
 
 --- 팰 모델 생성
-function PartyService._createPalModel(palData, position: Vector3)
+function PartyService._createPalModel(palData, position: Vector3, ownerUserId: number)
 	local creatureFolder = workspace:FindFirstChild("Creatures") or Instance.new("Folder", workspace)
 	creatureFolder.Name = "Creatures"
 	
@@ -321,7 +321,7 @@ function PartyService._createPalModel(palData, position: Vector3)
 	
 	-- 팰임을 표시하는 속성
 	rootPart:SetAttribute("IsPal", true)
-	rootPart:SetAttribute("OwnerUserId", 0) -- 나중에 설정
+	rootPart:SetAttribute("OwnerUserId", ownerUserId)
 	
 	model.Parent = creatureFolder
 	
@@ -336,8 +336,17 @@ function PartyService._updateSummonedPalAI()
 	local now = os.time()
 	
 	for userId, summon in pairs(activeSummons) do
-		if not summon.model or not summon.model.Parent then
-			-- 모델 사라짐 → 정리
+		if not summon.model or not summon.model.Parent or (summon.humanoid and summon.humanoid.Health <= 0) then
+			-- 모델 사라짐 또는 사망 → 정리
+			local palUID = summon.palUID
+			if palUID then
+				PalboxService.updatePalState(userId, palUID, Enums.PalState.IN_PARTY)
+			end
+			
+			if summon.model and summon.humanoid and summon.humanoid.Health <= 0 then
+				task.delay(1, function() if summon.model then summon.model:Destroy() end end)
+			end
+			
 			activeSummons[userId] = nil
 			local party = playerParties[userId]
 			if party then party.summonedSlot = nil end
@@ -391,14 +400,15 @@ function PartyService._updateSummonedPalAI()
 				if not summon.lastAttackTime or (now - summon.lastAttackTime >= PAL_ATTACK_COOLDOWN) then
 					summon.lastAttackTime = now
 					
-					local targetChar = closestEnemy.Parent
-					if targetChar then
-						local targetHum = targetChar:FindFirstChild("Humanoid")
-						if targetHum and targetHum.Health > 0 then
+					local targetModel = closestEnemy.Parent
+					if targetModel then
+						local targetId = targetModel:GetAttribute("InstanceId")
+						if targetId and CreatureService.applyDamage then
 							local damage = summon.palData.stats.attack or 10
-							targetHum:TakeDamage(damage)
-							print(string.format("[PartyService] Pal %s attacked for %d dmg", 
-								summon.palData.nickname, damage))
+							local killed = CreatureService.applyDamage(targetId, damage, player)
+							
+							print(string.format("[PartyService] Pal %s attacked %s for %d dmg (Killed: %s)", 
+								summon.palData.nickname, targetModel.Name, damage, tostring(killed)))
 						end
 					end
 				end

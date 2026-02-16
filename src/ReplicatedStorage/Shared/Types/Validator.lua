@@ -284,8 +284,11 @@ end
 --- @param what string 테이블 이름
 function Validator.validateDropTableRefs(dropTables: {[string]: any}, items: {[string]: any}, what: string)
 	for tableId, dropTable in pairs(dropTables) do
-		if dropTable.drops then
-			for i, drop in ipairs(dropTable.drops) do
+		-- dropTable이 직접 배열이거나 { drops = {...} } 구조일 수 있음
+		local drops = dropTable.drops or dropTable
+		
+		if type(drops) == "table" then
+			for i, drop in ipairs(drops) do
 				if drop.itemId then
 					Validator.assert(items[drop.itemId] ~= nil, Enums.ErrorCode.BAD_REQUEST,
 						string.format("%s[%s].drops[%d]: itemId '%s' not found in ItemData", 

@@ -17,10 +17,14 @@ local DataService
 local CreatureService
 local InventoryService
 local PalboxService
+local PlayerStatService  -- Phase 6: 포획 성공 시 XP 지급
 
 -- Data
 local PalData
 local CaptureItemData
+
+-- Quest callback (Phase 8)
+local questCallback = nil
 
 --========================================
 -- Internal Helpers
@@ -43,12 +47,13 @@ end
 -- Public API
 --========================================
 
-function CaptureService.Init(_NetController, _DataService, _CreatureService, _InventoryService, _PalboxService)
+function CaptureService.Init(_NetController, _DataService, _CreatureService, _InventoryService, _PalboxService, _PlayerStatService)
 	NetController = _NetController
 	DataService = _DataService
 	CreatureService = _CreatureService
 	InventoryService = _InventoryService
 	PalboxService = _PalboxService
+	PlayerStatService = _PlayerStatService
 	
 	-- 데이터 로드
 	PalData = require(ReplicatedStorage.Data.PalData)
@@ -142,7 +147,15 @@ function CaptureService.attemptCapture(player: Player, targetId: string, capture
 	end
 	
 	-- 7. 포획 성공!
-	-- 7a. 팰 데이터 생성
+	-- 7a. 경험치 보상 (Phase 6)
+	if PlayerStatService then
+		PlayerStatService.addXP(userId, Balance.XP_CAPTURE_PAL or 50, Enums.XPSource.CAPTURE_PAL)
+	end
+		-- 7a-2. 퀘스트 콜백 (Phase 8)
+	if questCallback then
+		questCallback(userId, creature.creatureId)
+	end
+		-- 7b. 팰 데이터 생성
 	local palUID = HttpService:GenerateGUID(false)
 	local newPal = {
 		uid = palUID,
@@ -176,7 +189,9 @@ function CaptureService.attemptCapture(player: Player, targetId: string, capture
 	
 	-- 7c. 크리처 제거 (월드에서 사라짐)
 	-- 사망 로직과 유사하지만 드롭 없음
-	CaptureService._removeCreatureOnCapture(targetId, creature)
+	if CreatureService and CreatureService.removeCreature then
+		CreatureService.removeCreature(targetId)
+	end
 	
 	-- 7d. 클라이언트에 성공 알림
 	if NetController then
@@ -191,28 +206,6 @@ function CaptureService.attemptCapture(player: Player, targetId: string, capture
 	end
 	
 	return true, nil, { palUID = palUID, palData = newPal }
-end
-
---- 포획 시 크리처 제거 (드롭 없음, 포획 연출)
-function CaptureService._removeCreatureOnCapture(instanceId: string, creature)
-	-- 시각 연출: 수축 → 소멸
-	if creature.rootPart then
-		creature.rootPart.Anchored = true
-		creature.rootPart.CanCollide = false
-		creature.rootPart.Transparency = 0.7
-	end
-	if creature.gui then
-		creature.gui:Destroy()
-	end
-	
-	-- CreatureService에서 제거 요청
-	-- activeCreatures에서 직접 제거 (CreatureService 내부 노출 최소화)
-	-- 여기서는 모델만 제거하고, CreatureService는 AI 루프에서 자동 정리됨
-	task.delay(1, function()
-		if creature.model then
-			creature.model:Destroy()
-		end
-	end)
 end
 
 --========================================
@@ -240,6 +233,11 @@ function CaptureService.GetHandlers()
 	return {
 		["Capture.Attempt.Request"] = handleCaptureRequest,
 	}
+end
+
+--- 퀘스트 콜백 설정 (Phase 8)
+function CaptureService.SetQuestCallback(callback)
+	questCallback = callback
 end
 
 return CaptureService

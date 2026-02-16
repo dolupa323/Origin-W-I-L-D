@@ -16,6 +16,7 @@ local BuildService
 local Balance
 local RecipeService
 local WorldDropService
+local PalboxService  -- Phase 5-5: 팰 작업 배치
 
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Enums = require(Shared.Enums.Enums)
@@ -58,6 +59,9 @@ local function createFacilityRuntime(structureId: string, facilityId: string, ow
 		lastUpdateAt = os.time(),
 		processProgress = 0,
 		currentRecipeId = nil,
+		-- Phase 5-5: 팰 작업 배치
+		assignedPalUID = nil,     -- 배치된 팰 UID
+		assignedPalOwnerId = nil, -- 팰 소유자 userId
 	}
 end
 
@@ -151,8 +155,17 @@ local function lazyUpdate(runtime)
 	if activeTime > 0 and runtime.currentRecipeId then
 		local recipe = DataService.getRecipe(runtime.currentRecipeId)
 		if recipe then
-			 -- [NEW] RecipeService 사용
-			local context = { facilityId = runtime.facilityId }
+			-- [Phase 5-5] 팰 workPower 보너스 계산
+			local creatureBonus = 0
+			if runtime.assignedPalUID and runtime.assignedPalOwnerId and PalboxService then
+				local pal = PalboxService.getPal(runtime.assignedPalOwnerId, runtime.assignedPalUID)
+				if pal and pal.workPower then
+					-- workPower 2 = 50% 속도 증가 (0.5 보너스)
+					creatureBonus = (pal.workPower - 1) * 0.5
+				end
+			end
+			
+			local context = { facilityId = runtime.facilityId, creatureBonus = creatureBonus }
 			local effectiveCraftTime = RecipeService.calculateCraftTime(runtime.currentRecipeId, context)
             
 			local remainingTime = activeTime
@@ -267,11 +280,18 @@ function FacilityService.getInfo(player: Player, structureId: string)
 	-- 🔥 Lazy Update 실행
 	lazyUpdate(runtime)
 	
-	-- 레시피 정보
+	-- 레시피 정보 (팰 workPower 보너스 포함)
 	local effectiveCraftTime = 0
 	if runtime.currentRecipeId then
-        -- [NEW] RecipeService 사용
-        local context = { facilityId = runtime.facilityId }
+		-- [Phase 5-5] 팰 workPower 보너스 계산
+		local creatureBonus = 0
+		if runtime.assignedPalUID and runtime.assignedPalOwnerId and PalboxService then
+			local pal = PalboxService.getPal(runtime.assignedPalOwnerId, runtime.assignedPalUID)
+			if pal and pal.workPower then
+				creatureBonus = (pal.workPower - 1) * 0.5
+			end
+		end
+		local context = { facilityId = runtime.facilityId, creatureBonus = creatureBonus }
 		effectiveCraftTime = RecipeService.calculateCraftTime(runtime.currentRecipeId, context)
 	end
 	
@@ -286,6 +306,9 @@ function FacilityService.getInfo(player: Player, structureId: string)
 		processProgress = runtime.processProgress,
 		currentRecipeId = runtime.currentRecipeId,
 		effectiveCraftTime = effectiveCraftTime,
+		-- Phase 5-5: 팰 배치 정보
+		assignedPalUID = runtime.assignedPalUID,
+		assignedPalOwnerId = runtime.assignedPalOwnerId,
 	}
 end
 
@@ -434,6 +457,8 @@ function FacilityService.addInput(player: Player, structureId: string, invSlot: 
 end
 
 --- 산출물 수거 (Output 슬롯)
+--- 현재 미지원: Output은 즉시 월드 드롭으로 전환됨
+function FacilityService.collectOutput(player: Player, structureId: string)
 	return false, Enums.ErrorCode.NOT_SUPPORTED, nil
 end
 
@@ -445,6 +470,115 @@ end
 --- 시설 런타임 직접 접근 (내부용)
 function FacilityService.getRuntime(structureId: string)
 	return facilityStates[structureId]
+end
+
+--- 모든 시설 런타임 반환 (자동화 서비스용)
+function FacilityService.getAllRuntimes(): {[string]: any}
+	return facilityStates
+end
+
+--========================================
+-- Phase 5-5: 팰 작업 배치 API
+--========================================
+
+--- 팰을 시설에 배치
+function FacilityService.assignPal(userId: number, structureId: string, palUID: string): (boolean, string?)
+	local runtime = facilityStates[structureId]
+	if not runtime then
+		return false, Enums.ErrorCode.NOT_FOUND
+	end
+	
+	-- 이미 다른 팰이 배치되어 있으면 실패
+	if runtime.assignedPalUID then
+		return false, Enums.ErrorCode.PAL_ALREADY_ASSIGNED
+	end
+	
+	-- PalboxService 없으면 실패
+	if not PalboxService then
+		return false, Enums.ErrorCode.INTERNAL_ERROR
+	end
+	
+	-- 팰 존재 확인
+	local pal = PalboxService.getPal(userId, palUID)
+	if not pal then
+		return false, Enums.ErrorCode.NOT_FOUND
+	end
+	
+	-- 팰 상태 확인: STORED 또는 IN_PARTY만 배치 가능
+	if pal.state == Enums.PalState.SUMMONED then
+		return false, Enums.ErrorCode.PAL_IN_PARTY -- 소환 중 배치 불가
+	end
+	if pal.state == Enums.PalState.WORKING then
+		return false, Enums.ErrorCode.PAL_ALREADY_ASSIGNED -- 이미 다른 시설에 배치됨
+	end
+	
+	-- 시설 functionType과 팰 workTypes 매칭 확인
+	local facilityData = DataService.getFacility(runtime.facilityId)
+	if facilityData and pal.workTypes then
+		local matchFound = false
+		for _, workType in ipairs(pal.workTypes) do
+			-- workType과 facilityData.functionType 매칭
+			-- 예: workType="COOKING", functionType="COOKING"
+			if workType == facilityData.functionType then
+				matchFound = true
+				break
+			end
+		end
+		if not matchFound then
+			return false, Enums.ErrorCode.BAD_REQUEST -- workType 불일치
+		end
+	end
+	
+	-- 배치 실행
+	runtime.assignedPalUID = palUID
+	runtime.assignedPalOwnerId = userId
+	
+	-- PalboxService에 상태 업데이트
+	PalboxService.setAssignedFacility(userId, palUID, structureId)
+	
+	print(string.format("[FacilityService] Pal %s assigned to facility %s by user %d", palUID, structureId, userId))
+	return true, nil
+end
+
+--- 팰을 시설에서 해제
+function FacilityService.unassignPal(userId: number, structureId: string): (boolean, string?)
+	local runtime = facilityStates[structureId]
+	if not runtime then
+		return false, Enums.ErrorCode.NOT_FOUND
+	end
+	
+	-- 배치된 팰이 없으면 실패
+	if not runtime.assignedPalUID then
+		return false, Enums.ErrorCode.NOT_FOUND
+	end
+	
+	-- 권한 확인: 팰 소유자만 해제 가능
+	if runtime.assignedPalOwnerId ~= userId then
+		return false, Enums.ErrorCode.NO_PERMISSION
+	end
+	
+	local palUID = runtime.assignedPalUID
+	
+	-- 해제 실행
+	runtime.assignedPalUID = nil
+	runtime.assignedPalOwnerId = nil
+	
+	-- PalboxService에 상태 업데이트
+	if PalboxService then
+		PalboxService.setAssignedFacility(userId, palUID, nil)
+	end
+	
+	print(string.format("[FacilityService] Pal %s unassigned from facility %s by user %d", palUID, structureId, userId))
+	return true, nil
+end
+
+--- 시설에 배치된 팰 정보 조회
+function FacilityService.getAssignedPal(structureId: string): (string?, number?)
+	local runtime = facilityStates[structureId]
+	if runtime then
+		return runtime.assignedPalUID, runtime.assignedPalOwnerId
+	end
+	return nil, nil
 end
 
 --========================================
@@ -506,11 +640,38 @@ local function handleCollectOutput(player: Player, payload: any)
 	return { success = true, data = data }
 end
 
+local function handleAssignPal(player: Player, payload: any)
+	local structureId = payload.structureId
+	local palUID = payload.palUID
+	if not structureId or not palUID then
+		return { success = false, errorCode = Enums.ErrorCode.BAD_REQUEST }
+	end
+	
+	local success, errorCode = FacilityService.assignPal(player.UserId, structureId, palUID)
+	if not success then
+		return { success = false, errorCode = errorCode }
+	end
+	return { success = true }
+end
+
+local function handleUnassignPal(player: Player, payload: any)
+	local structureId = payload.structureId
+	if not structureId then
+		return { success = false, errorCode = Enums.ErrorCode.BAD_REQUEST }
+	end
+	
+	local success, errorCode = FacilityService.unassignPal(player.UserId, structureId)
+	if not success then
+		return { success = false, errorCode = errorCode }
+	end
+	return { success = true }
+end
+
 --========================================
 -- Initialization
 --========================================
 
-function FacilityService.Init(_NetController, _DataService, _InventoryService, _BuildService, _Balance, _RecipeService)
+function FacilityService.Init(_NetController, _DataService, _InventoryService, _BuildService, _Balance, _RecipeService, _WorldDropService)
 	NetController = _NetController
 	DataService = _DataService
 	InventoryService = _InventoryService
@@ -524,6 +685,12 @@ function FacilityService.Init(_NetController, _DataService, _InventoryService, _
 	print("[FacilityService] Initialized")
 end
 
+--- PalboxService 주입 (Phase 5-5) - ServerInit에서 PalboxService 초기화 후 호출
+function FacilityService.SetPalboxService(_PalboxService)
+	PalboxService = _PalboxService
+	print("[FacilityService] PalboxService injected")
+end
+
 --- 핸들러 맵 반환 (ServerInit에서 NetController에 등록)
 function FacilityService.GetHandlers()
 	return {
@@ -531,6 +698,9 @@ function FacilityService.GetHandlers()
 		["Facility.AddFuel.Request"] = handleAddFuel,
 		["Facility.AddInput.Request"] = handleAddInput,
 		["Facility.CollectOutput.Request"] = handleCollectOutput,
+		-- Phase 5-5: 팰 작업 배치
+		["Facility.AssignPal.Request"] = handleAssignPal,
+		["Facility.UnassignPal.Request"] = handleUnassignPal,
 	}
 end
 

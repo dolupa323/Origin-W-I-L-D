@@ -21,6 +21,9 @@ local DebuffService
 local DEFAULT_ATTACK_RANGE = 5 -- 맨손 사거리
 local PVP_ENABLED = false       -- PvP 비활성화
 
+-- Quest callback (Phase 8)
+local questCallback = nil
+
 --========================================
 -- Public API
 --========================================
@@ -89,6 +92,11 @@ function CombatService.processPlayerAttack(player: Player, targetId: string, too
 		DebuffService.applyDebuff(player.UserId, "BLOOD_SMELL")
 	end
 	
+	-- 5.5 퀘스트 콜백 (Phase 8)
+	if killed and questCallback and creature.data then
+		questCallback(player.UserId, creature.data.id or creature.data.creatureId)
+	end
+	
 	-- 6. 타격 피드백 (Client Event)
 	if NetController then
 		NetController.FireClient(player, "Combat.Hit.Result", {
@@ -124,6 +132,11 @@ function CombatService.GetHandlers()
 	return {
 		["Combat.Hit.Request"] = handleHitRequest
 	}
+end
+
+--- 퀘스트 콜백 설정 (Phase 8)
+function CombatService.SetQuestCallback(callback)
+	questCallback = callback
 end
 
 return CombatService

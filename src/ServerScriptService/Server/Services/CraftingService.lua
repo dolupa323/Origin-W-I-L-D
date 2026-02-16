@@ -22,6 +22,8 @@ local DataService = nil
 local InventoryService = nil
 local BuildService = nil
 local RecipeService = nil
+local TechService = nil        -- Phase 6: 기술 해금 검증
+local PlayerStatService = nil  -- Phase 6: XP 지급
 
 --========================================
 -- State
@@ -29,6 +31,13 @@ local RecipeService = nil
 -- craftQueues[userId] = { [craftId] = { recipeId, structureId, startedAt, completesAt, state } }
 local craftQueues = {}
 local initialized = false
+
+-- Quest callback (Phase 8)
+local questCallback = nil
+
+-- Forward declarations (Init에서 사용)
+local processTick
+local onPlayerRemoving
 
 --========================================
 -- Internal: ID 생성
@@ -161,6 +170,34 @@ local function emitCraftEventToAll(eventName: string, data: any)
 end
 
 --========================================
+-- Public API
+--========================================
+
+function CraftingService.Init(_NetController, _DataService, _InventoryService, _BuildService, _RecipeService, _TechService, _PlayerStatService)
+	if initialized then
+		warn("[CraftingService] Already initialized")
+		return
+	end
+	
+	NetController = _NetController
+	DataService = _DataService
+	InventoryService = _InventoryService
+	BuildService = _BuildService
+	RecipeService = _RecipeService
+	TechService = _TechService
+	PlayerStatService = _PlayerStatService
+	
+	-- Heartbeat 연결 (Lazy tick)
+	RunService.Heartbeat:Connect(processTick)
+	
+	-- 플레이어 퇴장 이벤트
+	Players.PlayerRemoving:Connect(onPlayerRemoving)
+	
+	initialized = true
+	print("[CraftingService] Initialized with Tech & Stat injection")
+end
+
+--========================================
 -- Public API: 제작 시작
 --========================================
 function CraftingService.start(player: Player, recipeId: string, structureId: string?)
@@ -170,6 +207,11 @@ function CraftingService.start(player: Player, recipeId: string, structureId: st
 	local recipe = DataService.getRecipe(recipeId)
 	if not recipe then
 		return false, Enums.ErrorCode.NOT_FOUND, nil
+	end
+
+	-- 1a. 기술 해금 검증 (Phase 6)
+	if TechService and not TechService.isRecipeUnlocked(userId, recipeId) then
+		return false, Enums.ErrorCode.RECIPE_LOCKED, nil
 	end
 	
 	-- 2. 큐 크기 검증
@@ -190,7 +232,9 @@ function CraftingService.start(player: Player, recipeId: string, structureId: st
 	end
 	
 	-- [NEW] 제작 시간 계산 (효율 적용)
-	local context = {}
+	local context = {
+		playerStatBonus = PlayerStatService and PlayerStatService.getStats(userId).craftSpeedBonus or 0
+	}
 	if structureId then
 		local structure = BuildService.get(structureId)
 		if structure then context.facilityId = structure.facilityId end
@@ -216,11 +260,21 @@ function CraftingService.start(player: Player, recipeId: string, structureId: st
 	end
 	
 	-- 7. 즉시 제작
-	if realCraftTime == 0 then
+	if realCraftTime <= 0 then -- Changed from == 0 to <= 0
 		for _, output in ipairs(recipe.outputs) do
 			InventoryService.addItem(userId, output.itemId, output.count)
 		end
 		
+		-- Phase 6: XP 보상
+		if PlayerStatService then
+			PlayerStatService.addXP(userId, (Balance.XP_CRAFT_ITEM or 5) * (recipe.xpMultiplier or 1), Enums.XPSource.CRAFT_ITEM)
+		end
+		
+		-- Phase 8: 퀘스트 콜백
+		if questCallback then
+			questCallback(userId, recipeId)
+		end
+
 		local resultData = {
 			recipeId = recipeId,
 			outputs = recipe.outputs,
@@ -350,6 +404,16 @@ function CraftingService.collect(player: Player, craftId: string)
 		InventoryService.addItem(userId, output.itemId, output.count)
 	end
 	
+	-- 3a. 경험치 보상 (Phase 6)
+	if PlayerStatService then
+		PlayerStatService.addXP(userId, (Balance.XP_CRAFT_ITEM or 5) * (recipe.xpMultiplier or 1), Enums.XPSource.CRAFT_ITEM)
+	end
+	
+	-- 3b. 퀘스트 콜백 (Phase 8)
+	if questCallback then
+		questCallback(userId, entry.recipeId)
+	end
+	
 	-- 큐에서 제거
 	queue[craftId] = nil
 	
@@ -465,7 +529,7 @@ end
 local TICK_INTERVAL = 1.0  -- 1초마다 체크
 local lastTickTime = 0
 
-local function processTick()
+processTick = function()
 	local now = os.time()
 	if now - lastTickTime < TICK_INTERVAL then return end
 	lastTickTime = now
@@ -493,7 +557,7 @@ end
 --========================================
 -- Player 퇴장 시 큐 정리
 --========================================
-local function onPlayerRemoving(player: Player)
+onPlayerRemoving = function(player: Player)
 	-- 진행 중인 제작은 다음 접속 시 복원하지 않음 (비영속)
 	-- 재료는 이미 차감되었으므로, 재접속 시 사라짐 (의도된 설계)
 	craftQueues[player.UserId] = nil
@@ -554,29 +618,9 @@ function CraftingService.GetHandlers()
 	}
 end
 
---========================================
--- Initialization
---========================================
-function CraftingService.Init(netController, dataService, inventoryService, buildService, recipeService)
-	if initialized then
-		warn("[CraftingService] Already initialized")
-		return
-	end
-	
-	NetController = netController
-	DataService = dataService
-	InventoryService = inventoryService
-	BuildService = buildService
-	RecipeService = recipeService
-	
-	-- Heartbeat 연결 (Lazy tick)
-	RunService.Heartbeat:Connect(processTick)
-	
-	-- 플레이어 퇴장 이벤트
-	Players.PlayerRemoving:Connect(onPlayerRemoving)
-	
-	initialized = true
-	print("[CraftingService] Initialized")
+--- 퀘스트 콜백 설정 (Phase 8)
+function CraftingService.SetQuestCallback(callback)
+	questCallback = callback
 end
 
 return CraftingService

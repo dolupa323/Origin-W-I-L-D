@@ -25,6 +25,8 @@ local NetController = nil
 local DataService = nil
 local InventoryService = nil
 local SaveService = nil
+local FacilityService = nil  -- SetFacilityService로 주입 (Phase 6 버그픽스)
+local BaseClaimService = nil -- SetBaseClaimService로 주입 (Phase 7)
 
 --========================================
 -- Private State
@@ -32,6 +34,9 @@ local SaveService = nil
 -- structures[structureId] = { id, facilityId, position, rotation, health, ownerId, placedAt }
 local structures = {}
 local structureCount = 0
+
+-- Quest callback (Phase 8)
+local questCallback = nil
 
 -- Workspace 폴더
 local facilitiesFolder = nil
@@ -222,6 +227,11 @@ function BuildService.place(player: Player, facilityId: string, position: Vector
 		return false, Enums.ErrorCode.NOT_FOUND, nil
 	end
 	
+	-- 1a. 기술 해금 검증 (Phase 6)
+	if TechService and not TechService.isFacilityUnlocked(userId, facilityId) then
+		return false, Enums.ErrorCode.RECIPE_LOCKED, nil
+	end
+	
 	-- 2. 거리 검증 (서버 권위)
 	if character then
 		local hrp = character:FindFirstChild("HumanoidRootPart")
@@ -278,29 +288,42 @@ function BuildService.place(player: Player, facilityId: string, position: Vector
 	structures[structureId] = structure
 	structureCount = structureCount + 1
 	
-	-- 10. WorldSave에 영속화
-	local worldState = SaveService.getWorldState()
-	if worldState then
-		if not worldState.structures then
-			worldState.structures = {}
-		end
-		-- Vector3는 직렬화 불가 → 테이블로 변환하여 저장
-		worldState.structures[structureId] = {
-			id = structureId,
-			facilityId = facilityId,
-			position = { X = position.X, Y = position.Y, Z = position.Z },
-			rotation = { X = actualRotation.X, Y = actualRotation.Y, Z = actualRotation.Z },
-			health = structure.health,
-			ownerId = userId,
-			placedAt = structure.placedAt,
-		}
-	end
-	
-	-- 11. Workspace에 모델 생성
+	-- 10. Workspace에 모델 생성
 	local model = spawnFacilityModel(facilityId, position, actualRotation, structureId, userId)
 	
-	-- 12. 이벤트 발행
+	-- 11. 이벤트 발행
 	emitPlaced(structure)
+	
+	-- 11a. 경험치 보상 (Phase 6)
+	if PlayerStatService then
+		PlayerStatService.addXP(userId, Balance.XP_BUILD or 30, "BUILD")
+	end
+	
+	-- 11b. 퀘스트 콜백 (Phase 8)
+	if questCallback then
+		questCallback(userId, facilityId)
+	end
+	
+	-- 12. FacilityService에 등록 (Lazy Update 상태 관리용)
+	if FacilityService and FacilityService.register then
+		FacilityService.register(structureId, facilityId, userId)
+	end
+	
+	-- 13. SaveService에 구조물 영속화
+	if SaveService and SaveService.updateWorldState then
+		SaveService.updateWorldState(function(state)
+			if not state.structures then
+				state.structures = {}
+			end
+			state.structures[structureId] = structure
+			return state
+		end)
+	end
+	
+	-- 14. BaseClaimService 연동: 첫 건물 설치 시 베이스 자동 생성 (Phase 7)
+	if BaseClaimService and BaseClaimService.onStructurePlaced then
+		BaseClaimService.onStructurePlaced(userId, position)
+	end
 	
 	print(string.format("[BuildService] Placed %s at (%.1f, %.1f, %.1f) by player %d", 
 		facilityId, position.X, position.Y, position.Z, userId))
@@ -356,6 +379,11 @@ function BuildService.removeStructure(structureId: string, reason: string)
 	local structure = structures[structureId]
 	if not structure then return end
 	
+	-- FacilityService에서 등록 해제 (팰 배치 해제 등)
+	if FacilityService and FacilityService.unregister then
+		FacilityService.unregister(structureId)
+	end
+	
 	-- Workspace에서 제거
 	despawnFacilityModel(structureId)
 	
@@ -363,10 +391,14 @@ function BuildService.removeStructure(structureId: string, reason: string)
 	structures[structureId] = nil
 	structureCount = structureCount - 1
 	
-	-- WorldSave에서 제거 (영속화)
-	local worldState = SaveService.getWorldState()
-	if worldState and worldState.structures then
-		worldState.structures[structureId] = nil
+	-- SaveService에서 구조물 제거
+	if SaveService and SaveService.updateWorldState then
+		SaveService.updateWorldState(function(state)
+			if state.structures then
+				state.structures[structureId] = nil
+			end
+			return state
+		end)
 	end
 	
 	-- 이벤트 발행
@@ -450,7 +482,15 @@ end
 -- Initialization
 --========================================
 
-function BuildService.Init(netController: any, dataService: any, inventoryService: any, saveService: any)
+local NetController = nil
+local DataService = nil
+local InventoryService = nil
+local SaveService = nil
+local FacilityService = nil  -- SetFacilityService로 주입 (Phase 6 버그픽스)
+local TechService = nil      -- Phase 6 연동
+local PlayerStatService = nil -- Phase 6 연동
+
+function BuildService.Init(netController: any, dataService: any, inventoryService: any, saveService: any, techService: any, playerStatService: any)
 	if initialized then
 		warn("[BuildService] Already initialized")
 		return
@@ -460,6 +500,8 @@ function BuildService.Init(netController: any, dataService: any, inventoryServic
 	DataService = dataService
 	InventoryService = inventoryService
 	SaveService = saveService
+	TechService = techService
+	PlayerStatService = playerStatService
 	
 	-- Workspace 폴더 생성
 	facilitiesFolder = workspace:FindFirstChild("Facilities")
@@ -500,6 +542,24 @@ function BuildService.Init(netController: any, dataService: any, inventoryServic
 		Balance.BUILD_STRUCTURE_CAP, Balance.BUILD_RANGE))
 end
 
+--- FacilityService 의존성 주입 (ServerInit에서 FacilityService Init 후 호출)
+function BuildService.SetFacilityService(facilityService)
+	FacilityService = facilityService
+	
+	-- 이미 로드된 구조물들 FacilityService에 등록
+	if facilityService and facilityService.register then
+		for structureId, struct in pairs(structures) do
+			facilityService.register(structureId, struct.facilityId, struct.ownerId)
+		end
+		print(string.format("[BuildService] Registered %d structures to FacilityService", structureCount))
+	end
+end
+
+--- BaseClaimService 의존성 주입 (Phase 7)
+function BuildService.SetBaseClaimService(baseClaimService)
+	BaseClaimService = baseClaimService
+end
+
 function BuildService.GetHandlers()
 	return {
 		["Build.Place.Request"] = handlePlace,
@@ -518,6 +578,11 @@ function BuildService.clearAll()
 		BuildService.removeStructure(structureId, "DEBUG_CLEAR")
 	end
 	print("[BuildService] Debug: Cleared all structures")
+end
+
+--- 퀘스트 콜백 설정 (Phase 8)
+function BuildService.SetQuestCallback(callback)
+	questCallback = callback
 end
 
 return BuildService

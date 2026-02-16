@@ -83,6 +83,26 @@ local FacilityData = {
 		interactRange = 2,
 		functionType = "RESPAWN",
 	},
+	
+	-- 채집 기지 (Phase 7)
+	{
+		id = "GATHERING_POST",
+		name = "채집 기지",
+		description = "팰이 주변 자원을 자동으로 수집합니다.",
+		modelName = "GatheringPost",
+		requirements = {
+			{ itemId = "WOOD", amount = 20 },
+			{ itemId = "STONE", amount = 10 },
+		},
+		buildTime = 0,
+		maxHealth = 200,
+		interactRange = 3,
+		functionType = "GATHERING",
+		gatherRadius = 30,         -- 자원 수집 범위
+		gatherInterval = 10,       -- 수집 간격 (초)
+		hasOutputSlot = true,      -- 수집한 아이템 저장
+		outputSlots = 20,
+	},
 }
 
 return FacilityData

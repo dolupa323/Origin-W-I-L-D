@@ -41,7 +41,12 @@ end
 local function _getStorages(): {[string]: any}
 	local worldState = SaveService.getWorldState()
 	if not worldState then
-		return {}
+		warn("[StorageService] worldState is nil - storage operations will not persist")
+		-- 임시 테이블 반환 (영속화 불가 경고 후 계속 동작)
+		if not StorageService._tempStorages then
+			StorageService._tempStorages = {}
+		end
+		return StorageService._tempStorages
 	end
 	if not worldState.storages then
 		worldState.storages = {}
@@ -282,6 +287,57 @@ function StorageService.getAllStorageIds(): {string}
 		table.insert(ids, id)
 	end
 	return ids
+end
+
+--- 내부 API: 아이템 직접 추가 (자동화 서비스용)
+--- @param storageId 창고 ID
+--- @param itemId 아이템 ID
+--- @param count 수량
+--- @return remaining 남은 수량 (추가 못한 양)
+function StorageService.addItemInternal(storageId: string, itemId: string, count: number): number
+	if not storageId or not itemId or count <= 0 then
+		return count
+	end
+	
+	local storage = _getOrCreateStorage(storageId)
+	local maxStack = Balance.MAX_STACK or 99
+	local maxSlots = Balance.STORAGE_SLOTS or 20
+	local remaining = count
+	local changes = {}
+	
+	-- 1단계: 기존 스택에 먼저 추가
+	for slot = 1, maxSlots do
+		if remaining <= 0 then break end
+		
+		local slotData = storage.slots[slot]
+		if slotData and slotData.itemId == itemId and slotData.count < maxStack then
+			local space = maxStack - slotData.count
+			local toAdd = math.min(remaining, space)
+			slotData.count = slotData.count + toAdd
+			remaining = remaining - toAdd
+			table.insert(changes, _makeChange(storage, slot))
+		end
+	end
+	
+	-- 2단계: 빈 슬롯에 추가
+	for slot = 1, maxSlots do
+		if remaining <= 0 then break end
+		
+		local slotData = storage.slots[slot]
+		if slotData == nil then
+			local toAdd = math.min(remaining, maxStack)
+			storage.slots[slot] = { itemId = itemId, count = toAdd }
+			remaining = remaining - toAdd
+			table.insert(changes, _makeChange(storage, slot))
+		end
+	end
+	
+	-- 변경 사항 브로드캐스트
+	if #changes > 0 then
+		_emitStorageChanged(storageId, changes)
+	end
+	
+	return remaining
 end
 
 --========================================

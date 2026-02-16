@@ -6,6 +6,8 @@ local NetClient = require(script.Parent.Parent.NetClient)
 
 local FacilityController = {}
 
+local initialized = false
+
 --========================================
 -- Event Handlers
 --========================================
@@ -21,7 +23,11 @@ end
 --========================================
 
 function FacilityController.Init()
+	if initialized then return end
+	
 	NetClient.On("Facility.StateChanged", onStateChanged)
+	
+	initialized = true
 	print("[FacilityController] Initialized")
 end
 

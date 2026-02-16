@@ -22,6 +22,8 @@ local tables = {}  -- 로드된 데이터 테이블 (맵 형태로 변환됨)
 local TABLE_NAMES = {
 	"ItemData",           -- 기본 (참조 대상)
 	"CreatureData",       -- 기본
+	"PalData",            -- 팰 데이터 (Phase 5)
+	"CaptureItemData",    -- 포획 아이템 데이터 (Phase 5)
 	"RecipeData",         -- Item 참조
 	"FacilityData",       -- Recipe 참조 가능
 	"TechUnlockData",     -- 다양한 참조
@@ -29,6 +31,7 @@ local TABLE_NAMES = {
 	"NPCShopData",        -- Item 참조
 	"DropTableData",      -- Item 참조
 	"DurabilityProfiles", -- 독립
+	"ResourceNodeData",   -- Phase 7: 자원 노드
 }
 
 --========================================
@@ -145,6 +148,21 @@ end
 --- 드롭테이블 조회 (단축)
 function DataService.getDropTable(id: string): any
 	return DataService.getById("DropTableData", id)
+end
+
+--- 자원 노드 조회 (Phase 7)
+function DataService.getResourceNode(id: string): any
+	return DataService.getById("ResourceNodeData", id)
+end
+
+--- 팰 데이터 조회 (Phase 5)
+function DataService.getPal(id: string): any
+	return DataService.getById("PalData", id)
+end
+
+--- 포획 아이템 조회 (Phase 5)
+function DataService.getCaptureItem(id: string): any
+	return DataService.getById("CaptureItemData", id)
 end
 
 --========================================

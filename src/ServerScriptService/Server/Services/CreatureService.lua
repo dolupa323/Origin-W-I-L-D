@@ -2,20 +2,24 @@
 -- 크리처 스폰 및 관리 서비스 (Phase 3-1)
 -- 서버 권위로 크리처 엔티티를 생성하고 관리
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Balance = require(Shared.Config.Balance)
+local Enums = require(Shared.Enums.Enums)
+
 local CreatureService = {}
 
 -- Dependencies
 local NetController
 local DataService
 local WorldDropService
-local Balance
+local PlayerStatService -- Phase 6 연동
 local DropTableData -- require 나중에 (상호참조 방지)
 local DebuffService -- Phase 4-4 연동
 
 -- Private State
 local activeCreatures = {} -- [instanceId] = { model=Part, data=Data, state=..., targetPosition=Vector3, lastStateChange=number }
 local creatureCount = 0
-local CREATURE_CAP = 50 -- 임시 제한 (Balance.WILDLIFE_CAP 대신 사용)
 
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
@@ -32,15 +36,19 @@ local CREATURE_ATTACK_COOLDOWN = 2 -- 크리처 공격 쿨다운 (초)
 local creatureFolder = workspace:FindFirstChild("Creatures") or Instance.new("Folder", workspace)
 creatureFolder.Name = "Creatures"
 
+-- 크리처 최대 수 (Balance에서 가져옴)
+local CREATURE_CAP = Balance.WILDLIFE_CAP or 250
+
 --========================================
 -- Public API
 --========================================
 
-function CreatureService.Init(_NetController, _DataService, _WorldDropService, _DebuffService)
+function CreatureService.Init(_NetController, _DataService, _WorldDropService, _DebuffService, _PlayerStatService)
 	NetController = _NetController
 	DataService = _DataService
 	WorldDropService = _WorldDropService
 	DebuffService = _DebuffService
+	PlayerStatService = _PlayerStatService
 	
 	-- DropTableData 로드 (ReplicatedStorage)
 	DropTableData = require(game:GetService("ReplicatedStorage").Data.DropTableData)
@@ -66,7 +74,8 @@ end
 
 --- 크리처 스폰 (위치 지정)
 function CreatureService.spawn(creatureId, position)
-	if creatureCount >= CREATURE_CAP then
+	local wildlifeCap = Balance and Balance.WILDLIFE_CAP or 50
+	if creatureCount >= wildlifeCap then
 		warn("[CreatureService] Creature cap reached")
 		return nil
 	end
@@ -115,10 +124,11 @@ function CreatureService.spawn(creatureId, position)
 	
 	model.Parent = creatureFolder
 	
-	print(string.format("[CreatureService] Spawned %s at (%.1f, %.1f, %.1f)", 
-		creatureId, position.X, position.Y, position.Z))
-		
 	local instanceId = game:GetService("HttpService"):GenerateGUID(false)
+	model:SetAttribute("InstanceId", instanceId)
+	
+	print(string.format("[CreatureService] Spawned %s at (%.1f, %.1f, %.1f) [ID:%s]", 
+		creatureId, position.X, position.Y, position.Z, instanceId))
 	
 	activeCreatures[instanceId] = {
 		id = instanceId,
@@ -144,6 +154,35 @@ end
 --- 크리처 런타임 조회 (CombatService 연동용)
 function CreatureService.getCreatureRuntime(instanceId: string)
 	return activeCreatures[instanceId]
+end
+
+--- 크리처 강제 제거 (포획 등 특수 상황용)
+function CreatureService.removeCreature(instanceId: string)
+	local creature = activeCreatures[instanceId]
+	if not creature then return end
+	
+	-- 즉시 런타임에서 제거
+	activeCreatures[instanceId] = nil
+	creatureCount = creatureCount - 1
+	
+	-- 시각적 제거
+	if creature.gui then
+		creature.gui:Destroy()
+	end
+	
+	if creature.model then
+		-- 연출을 위해 투명화 후 제거
+		for _, part in ipairs(creature.model:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.Transparency = 1
+				part.CanCollide = false
+			end
+		end
+		
+		task.delay(1, function()
+			creature.model:Destroy()
+		end)
+	end
 end
 
 --- 데미지 적용 및 사망 처리
@@ -190,7 +229,17 @@ function CreatureService.applyDamage(instanceId: string, damage: number, attacke
 			end
 		end
 		
-		-- 2. 사망 연출 (Anchored, Tipped Over)
+		-- 2. 경험치 보상 (Phase 6)
+		if PlayerStatService and attacker then
+			local xpAmount = Balance.XP_CREATURE_KILL or 25
+			-- 필요 시 크리처 데이터에 정의된 XP 사용
+			if creature.data and creature.data.xpReward then
+				xpAmount = creature.data.xpReward
+			end
+			PlayerStatService.addXP(attacker.UserId, xpAmount, Enums.XPSource.CREATURE_KILL)
+		end
+		
+		-- 3. 사망 연출 (Anchored, Tipped Over)
 		if creature.rootPart then
 			creature.rootPart.Anchored = true
 			creature.rootPart.CanCollide = false

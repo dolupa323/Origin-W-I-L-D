@@ -68,6 +68,65 @@ Balance.PAL_FOLLOW_DIST = 4            -- 팰이 주인과 유지하는 거리 (
 Balance.PAL_COMBAT_RANGE = 15          -- 팰이 전투를 시작하는 감지 범위 (스터드)
 Balance.CAPTURE_RANGE = 30             -- 기본 포획 사거리 (스터드)
 
+--========================================
+-- 플레이어 레벨 & 경험치 (Phase 6)
+--========================================
+Balance.PLAYER_MAX_LEVEL = 50          -- 최대 레벨
+Balance.BASE_XP_PER_LEVEL = 100        -- 레벨 1→2 필요 XP
+Balance.XP_SCALING = 1.2               -- 레벨당 필요 XP 증가율
+Balance.TECH_POINTS_PER_LEVEL = 2      -- 레벨업당 기술 포인트 지급
+
+--========================================
+-- XP 획득량 (Phase 6)
+--========================================
+Balance.XP_CREATURE_KILL = 25          -- 크리처 처치
+Balance.XP_CRAFT_ITEM = 5              -- 아이템 제작
+Balance.XP_CAPTURE_PAL = 50            -- 팰 포획 성공
+Balance.XP_HARVEST_RESOURCE = 2        -- 자원 채집
+
+--========================================
+-- 플레이어 스탯 보너스 (Phase 6)
+--========================================
+Balance.STAT_BONUS_PER_LEVEL = 0.02    -- 레벨당 스탯 보너스 (2%)
+--========================================
+-- 수확 시스템 (Phase 7)
+--========================================
+Balance.HARVEST_COOLDOWN = 0.5         -- 연속 타격 카다운 (초)
+Balance.HARVEST_RANGE = 5              -- 수확 가능 거리 (스터드)
+Balance.HARVEST_XP_PER_HIT = 2         -- 타격당 XP
+
+--========================================
+-- 베이스 시스템 (Phase 7)
+--========================================
+Balance.BASE_DEFAULT_RADIUS = 30       -- 기본 베이스 반경
+Balance.BASE_MAX_RADIUS = 100          -- 최대 베이스 반경
+Balance.BASE_RADIUS_PER_LEVEL = 10     -- 레벨당 추가 반경
+Balance.BASE_MAX_PER_PLAYER = 1        -- 플레이어당 최대 베이스 수
+
+--========================================
+-- 자동화 시스템 (Phase 7)
+--========================================
+Balance.AUTO_HARVEST_INTERVAL = 10     -- 팸 자동 수확 간격 (초)
+Balance.AUTO_DEPOSIT_INTERVAL = 5      -- 자동 저장 간격 (초)
+Balance.AUTO_DEPOSIT_RANGE = 20        -- Storage 검색 범위 (스터드)
+
+--========================================
+-- 퀘스트 시스템 (Phase 8)
+--========================================
+Balance.QUEST_MAX_ACTIVE = 10          -- 동시 진행 가능 퀘스트 수
+Balance.QUEST_DAILY_RESET_HOUR = 0     -- 일일 퀘스트 리셋 시간 (UTC)
+Balance.QUEST_ABANDON_COOLDOWN = 60    -- 퀘스트 포기 후 재수락 쿨다운 (초)
+
+--========================================
+-- NPC 상점 시스템 (Phase 9)
+--========================================
+Balance.SHOP_INTERACT_RANGE = 10       -- NPC 상점 상호작용 최대 거리 (스터드)
+Balance.SHOP_DEFAULT_SELL_MULT = 0.5   -- 기본 판매 배율 (구매가의 50%)
+Balance.SHOP_RESTOCK_TIME = 300        -- 재고 리필 시간 (초)
+Balance.STARTING_GOLD = 100            -- 신규 플레이어 기본 골드
+Balance.GOLD_CAP = 999999              -- 최대 보유 가능 골드
+Balance.GOLD_EARN_MULTIPLIER = 1.0     -- 골드 획득 배율 (이벤트용)
+
 -- 테이블 동결 (런타임 수정 방지)
 table.freeze(Balance)
 

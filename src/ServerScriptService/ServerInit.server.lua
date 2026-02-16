@@ -107,6 +107,24 @@ local function handleInventoryDropWithWorldDrop(player, payload)
 end
 NetController.RegisterHandler("Inventory.Drop.Request", handleInventoryDropWithWorldDrop)
 
+-- PlayerStatService 초기화 (Phase 6) - 다른 서비스에서 XP 보상을 위해 일찍 초기화
+local PlayerStatService = require(Services.PlayerStatService)
+PlayerStatService.Init(NetController, SaveService, DataService)
+
+-- PlayerStatService 핸들러 등록
+for command, handler in pairs(PlayerStatService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
+end
+
+-- TechService 초기화 (Phase 6) - 제작/건설 잠금 체크를 위해 일찍 초기화
+local TechService = require(Services.TechService)
+TechService.Init(NetController, DataService, PlayerStatService, SaveService)
+
+-- TechService 핸들러 등록
+for command, handler in pairs(TechService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
+end
+
 -- StorageService 초기화
 local StorageService = require(Services.StorageService)
 StorageService.Init(NetController, SaveService, InventoryService)
@@ -116,18 +134,18 @@ for command, handler in pairs(StorageService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)
 end
 
--- BuildService 초기화
+-- BuildService 초기화 (+ TechService, PlayerStatService 추가)
 local BuildService = require(Services.BuildService)
-BuildService.Init(NetController, DataService, InventoryService, SaveService)
+BuildService.Init(NetController, DataService, InventoryService, SaveService, TechService, PlayerStatService)
 
 -- BuildService 핸들러 등록
 for command, handler in pairs(BuildService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)
 end
 
--- CraftingService 초기화
+-- CraftingService 초기화 (+ TechService, PlayerStatService 추가)
 local CraftingService = require(Services.CraftingService)
-CraftingService.Init(NetController, DataService, InventoryService, BuildService, RecipeService)
+CraftingService.Init(NetController, DataService, InventoryService, BuildService, RecipeService, TechService, PlayerStatService)
 
 -- CraftingService 핸들러 등록
 for command, handler in pairs(CraftingService.GetHandlers()) do
@@ -145,6 +163,9 @@ for command, handler in pairs(FacilityService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)
 end
 
+-- BuildService에 FacilityService 주입 (양방향 연동)
+BuildService.SetFacilityService(FacilityService)
+
 -- DebuffService 초기화 (Phase 4-4) - CreatureService보다 먼저 초기화
 local DebuffService = require(Services.DebuffService)
 DebuffService.Init(NetController, TimeService)
@@ -154,9 +175,9 @@ for command, handler in pairs(DebuffService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)
 end
 
--- CreatureService 초기화 (Phase 3-1, + DebuffService 연동)
+-- CreatureService 초기화 (+ PlayerStatService 추가)
 local CreatureService = require(Services.CreatureService)
-CreatureService.Init(NetController, DataService, WorldDropService, DebuffService)
+CreatureService.Init(NetController, DataService, WorldDropService, DebuffService, PlayerStatService)
 
 -- CreatureService 핸들러 등록
 for command, handler in pairs(CreatureService.GetHandlers()) do
@@ -190,9 +211,12 @@ for command, handler in pairs(PalboxService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)
 end
 
--- CaptureService 초기화 (Phase 5-2)
+-- Phase 5-5: FacilityService에 PalboxService 주입 (팰 작업 배치 연동)
+FacilityService.SetPalboxService(PalboxService)
+
+-- CaptureService 초기화 (+ PlayerStatService 추가)
 local CaptureService = require(Services.CaptureService)
-CaptureService.Init(NetController, DataService, CreatureService, InventoryService, PalboxService)
+CaptureService.Init(NetController, DataService, CreatureService, InventoryService, PalboxService, PlayerStatService)
 
 -- CaptureService 핸들러 등록
 for command, handler in pairs(CaptureService.GetHandlers()) do
@@ -208,4 +232,78 @@ for command, handler in pairs(PartyService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)
 end
 
-print("[ServerInit] Server initialized (Phase 5)") -- 최종 완료 로그
+-- HarvestService 초기화 (Phase 7-1)
+local HarvestService = require(Services.HarvestService)
+HarvestService.Init(NetController, DataService, InventoryService, PlayerStatService, DurabilityService, WorldDropService)
+
+-- HarvestService 핸들러 등록
+for command, handler in pairs(HarvestService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
+end
+
+-- BaseClaimService 초기화 (Phase 7-2)
+local BaseClaimService = require(Services.BaseClaimService)
+BaseClaimService.Init(NetController, SaveService, BuildService)
+
+-- BuildService에 BaseClaimService 주입 (첫 건물 설치 시 베이스 자동 생성용)
+BuildService.SetBaseClaimService(BaseClaimService)
+
+-- BaseClaimService 핸들러 등록
+for command, handler in pairs(BaseClaimService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
+end
+
+-- AutoHarvestService 초기화 (Phase 7-3)
+local AutoHarvestService = require(Services.AutoHarvestService)
+AutoHarvestService.Init(HarvestService, FacilityService, BaseClaimService, PalboxService, DataService)
+
+-- AutoDepositService 초기화 (Phase 7-4)
+local AutoDepositService = require(Services.AutoDepositService)
+AutoDepositService.Init(FacilityService, StorageService, BaseClaimService, BuildService, DataService)
+
+-- QuestService 초기화 (Phase 8)
+local QuestService = require(Services.QuestService)
+QuestService.Init(NetController, DataService, SaveService, InventoryService, PlayerStatService, PalboxService)
+
+-- QuestService 핸들러 등록
+for command, handler in pairs(QuestService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
+end
+
+-- QuestService 진행 추적 연동: 다른 서비스에 콜백 주입
+-- HarvestService → onHarvest
+HarvestService.SetQuestCallback(function(userId, nodeType)
+	QuestService.onHarvest(userId, nodeType, 1)
+end)
+
+-- CombatService → onKill
+CombatService.SetQuestCallback(function(userId, creatureType)
+	QuestService.onKill(userId, creatureType, 1)
+end)
+
+-- CraftingService → onCraft
+CraftingService.SetQuestCallback(function(userId, recipeId)
+	QuestService.onCraft(userId, recipeId, 1)
+end)
+
+-- BuildService → onBuild
+BuildService.SetQuestCallback(function(userId, facilityId)
+	QuestService.onBuild(userId, facilityId)
+end)
+
+-- CaptureService → onCapture
+CaptureService.SetQuestCallback(function(userId, palType)
+	QuestService.onCapture(userId, palType)
+end)
+
+-- PlayerStatService → onLevelUp
+PlayerStatService.SetLevelUpCallback(function(userId, newLevel)
+	QuestService.onLevelUp(userId, newLevel)
+end)
+
+-- TechService → onTechUnlock
+TechService.SetUnlockCallback(function(userId, techId)
+	QuestService.onTechUnlock(userId, techId)
+end)
+
+print("[ServerInit] Server initialized (Phase 8)") -- 최종 완료 로그

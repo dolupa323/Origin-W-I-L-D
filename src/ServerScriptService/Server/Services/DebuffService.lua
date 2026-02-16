@@ -230,8 +230,8 @@ function DebuffService._environmentCheck()
 			local nearFire = false
 			
 			-- Workspace에서 Campfire 파트 검색 (간단한 거리 체크)
-			-- 추후 BuildService와 연동하여 정확한 시설 위치를 가져올 수 있음
-			local campfires = workspace:FindFirstChild("Structures")
+			-- BuildService가 "Facilities" 폴더를 생성함
+			local campfires = workspace:FindFirstChild("Facilities")
 			if campfires then
 				for _, obj in ipairs(campfires:GetChildren()) do
 					if obj:GetAttribute("FacilityType") == "COOKING" then

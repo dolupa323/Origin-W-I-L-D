@@ -120,24 +120,36 @@ local function _rotateSnapshots(snapshots: {any}, newSnapshot: any, maxSnapshots
 	return result
 end
 
---- 플레이어 스냅샷 생성
+--- 딥카피 헬퍼 함수
+local function _deepCopy(original: any): any
+	if type(original) ~= "table" then
+		return original
+	end
+	local copy = {}
+	for key, value in pairs(original) do
+		copy[_deepCopy(key)] = _deepCopy(value)
+	end
+	return copy
+end
+
+--- 플레이어 스냅샷 생성 (딥카피)
 local function _makePlayerSnapshot(playerState: any): any
-	-- 스냅샷은 현재 상태의 복사본 (스냅샷 필드 제외)
+	-- 스냅샷은 현재 상태의 딥카피 (스냅샷 필드 제외)
 	local snapshot = {}
 	for key, value in pairs(playerState) do
 		if key ~= "snapshots" then
-			snapshot[key] = value
+			snapshot[key] = _deepCopy(value)
 		end
 	end
 	return snapshot
 end
 
---- 월드 스냅샷 생성
+--- 월드 스냅샷 생성 (딥카피)
 local function _makeWorldSnapshot(worldStateData: any): any
 	local snapshot = {}
 	for key, value in pairs(worldStateData) do
 		if key ~= "snapshots" then
-			snapshot[key] = value
+			snapshot[key] = _deepCopy(value)
 		end
 	end
 	return snapshot

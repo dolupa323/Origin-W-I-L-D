@@ -40,6 +40,10 @@ if success then
 	-- FacilityController 초기화 (이벤트 소비자)
 	local FacilityController = require(Controllers.FacilityController)
 	FacilityController.Init()
+	
+	-- QuestController 초기화 (Phase 8)
+	local QuestController = require(Controllers.QuestController)
+	QuestController.Init()
 end
 
-print("[ClientInit] Client initialized")
+print("[ClientInit] Client initialized (Phase 8)")

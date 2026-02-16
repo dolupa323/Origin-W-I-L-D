@@ -6,6 +6,8 @@ local CraftController = {}
 
 local NetClient = require(script.Parent.Parent.NetClient)
 
+local initialized = false
+
 --========================================
 -- Event Handlers
 --========================================
@@ -42,6 +44,7 @@ end
 -- Initialization
 --========================================
 function CraftController.Init()
+	if initialized then return end
 	
 	-- 서버 이벤트 구독
 	NetClient.On("Craft.Started", onCraftStarted)
@@ -49,6 +52,7 @@ function CraftController.Init()
 	NetClient.On("Craft.Ready", onCraftReady)
 	NetClient.On("Craft.Cancelled", onCraftCancelled)
 	
+	initialized = true
 	print("[CraftController] Initialized")
 end
 

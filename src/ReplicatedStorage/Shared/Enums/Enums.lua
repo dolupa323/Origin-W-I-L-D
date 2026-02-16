@@ -42,6 +42,7 @@ Enums.ErrorCode = {
 	STACK_OVERFLOW = "STACK_OVERFLOW",
 	SLOT_NOT_EMPTY = "SLOT_NOT_EMPTY",
 	ITEM_MISMATCH = "ITEM_MISMATCH",
+	INVALID_ITEM = "INVALID_ITEM",     -- 해당 작업에 사용할 수 없는 아이템
 	
 	-- 건설 관련
 	COLLISION = "COLLISION",               -- 배치 위치 충돌
@@ -56,6 +57,7 @@ Enums.ErrorCode = {
 	-- 일반
 	NOT_FOUND = "NOT_FOUND",
 	INTERNAL_ERROR = "INTERNAL_ERROR",
+	NOT_SUPPORTED = "NOT_SUPPORTED",       -- 미지원 기능
 	
 	-- 포획/팰 관련 (Phase 5)
 	PALBOX_FULL = "PALBOX_FULL",           -- 팰 보관함 가득 참
@@ -65,6 +67,38 @@ Enums.ErrorCode = {
 	PAL_ALREADY_ASSIGNED = "PAL_ALREADY_ASSIGNED", -- 이미 배치됨
 	PAL_IN_PARTY = "PAL_IN_PARTY",         -- 파티 편성 중
 	NO_CAPTURE_ITEM = "NO_CAPTURE_ITEM",   -- 포획 아이템 없음
+	
+	-- 기술/레벨 관련 (Phase 6)
+	TECH_ALREADY_UNLOCKED = "TECH_ALREADY_UNLOCKED", -- 이미 해금됨
+	TECH_NOT_FOUND = "TECH_NOT_FOUND",               -- 기술 없음
+	INSUFFICIENT_TECH_POINTS = "INSUFFICIENT_TECH_POINTS", -- 기술 포인트 부족
+	PREREQUISITES_NOT_MET = "PREREQUISITES_NOT_MET", -- 선행 기술 미해금
+	RECIPE_LOCKED = "RECIPE_LOCKED",                 -- 레시피 미해금
+	
+	-- 수확/노드 관련 (Phase 7)
+	NO_TOOL = "NO_TOOL",                             -- 도구 없음
+	WRONG_TOOL = "WRONG_TOOL",                       -- 잘못된 도구
+	NODE_DEPLETED = "NODE_DEPLETED",                 -- 노드 고갈됨
+	NODE_NOT_FOUND = "NODE_NOT_FOUND",               -- 노드 없음
+	
+	-- 퀘스트 관련 (Phase 8)
+	QUEST_NOT_FOUND = "QUEST_NOT_FOUND",             -- 퀘스트 없음
+	QUEST_PREREQ_NOT_MET = "QUEST_PREREQ_NOT_MET",   -- 선행 퀘스트 미완료
+	QUEST_LEVEL_NOT_MET = "QUEST_LEVEL_NOT_MET",     -- 필요 레벨 미충족
+	QUEST_ALREADY_ACTIVE = "QUEST_ALREADY_ACTIVE",   -- 이미 진행 중
+	QUEST_NOT_COMPLETED = "QUEST_NOT_COMPLETED",     -- 미완료 상태에서 보상 요청
+	QUEST_ALREADY_CLAIMED = "QUEST_ALREADY_CLAIMED", -- 이미 보상 수령
+	QUEST_MAX_ACTIVE = "QUEST_MAX_ACTIVE",           -- 동시 진행 한도 초과
+	QUEST_NOT_REPEATABLE = "QUEST_NOT_REPEATABLE",   -- 비반복 퀘스트 재수락
+	
+	-- 상점 관련 (Phase 9)
+	SHOP_NOT_FOUND = "SHOP_NOT_FOUND",               -- 상점 없음
+	INSUFFICIENT_GOLD = "INSUFFICIENT_GOLD",         -- 골드 부족
+	SHOP_OUT_OF_STOCK = "SHOP_OUT_OF_STOCK",         -- 재고 부족
+	ITEM_NOT_IN_SHOP = "ITEM_NOT_IN_SHOP",           -- 상점에 해당 아이템 없음
+	ITEM_NOT_SELLABLE = "ITEM_NOT_SELLABLE",         -- 판매 불가 아이템
+	SHOP_TOO_FAR = "SHOP_TOO_FAR",                   -- 상점 거리 초과
+	GOLD_CAP_REACHED = "GOLD_CAP_REACHED",           -- 골드 한도 도달
 }
 
 --========================================
@@ -110,6 +144,7 @@ Enums.FacilityType = {
 	SMELTING = "SMELTING",     -- 제련 (용광로)
 	FARMING = "FARMING",       -- 농사 (화분)
 	DEFENSE = "DEFENSE",       -- 방어 (벽, 문)
+	GATHERING = "GATHERING",   -- 채집 (자동화) (Phase 7)
 }
 
 --========================================
@@ -140,6 +175,77 @@ Enums.PalState = {
 	IN_PARTY = "IN_PARTY",     -- 파티에 편성 (미소환)
 	SUMMONED = "SUMMONED",     -- 월드에 소환됨
 	WORKING = "WORKING",       -- 시설에서 작업 중
+}
+
+--========================================
+-- XP 획득 원천 (Phase 6)
+--========================================
+Enums.XPSource = {
+	CREATURE_KILL = "CREATURE_KILL",     -- 크리처 처치
+	CRAFT_ITEM = "CRAFT_ITEM",           -- 아이템 제작
+	CAPTURE_PAL = "CAPTURE_PAL",         -- 팰 포획
+	HARVEST_RESOURCE = "HARVEST_RESOURCE", -- 자원 채집
+}
+
+--========================================
+-- 기술 카테고리 (Phase 6)
+--========================================
+Enums.TechCategory = {
+	BASICS = "BASICS",           -- 기초
+	TOOLS = "TOOLS",             -- 도구
+	WEAPONS = "WEAPONS",         -- 무기
+	ARMOR = "ARMOR",             -- 방어구
+	STRUCTURES = "STRUCTURES",   -- 구조물
+	FACILITIES = "FACILITIES",   -- 시설
+	CRAFTING = "CRAFTING",       -- 제작
+	PAL = "PAL",                 -- 팰 관련
+}
+--========================================
+-- 자원 노드 타입 (Phase 7)
+--========================================
+Enums.NodeType = {
+	TREE = "TREE",               -- 나무
+	ROCK = "ROCK",               -- 바위
+	BUSH = "BUSH",               -- 덤불
+	FIBER = "FIBER",             -- 섬유/풀
+	ORE = "ORE",                 -- 광석
+}
+
+--========================================
+-- 퀘스트 카테고리 (Phase 8)
+--========================================
+Enums.QuestCategory = {
+	TUTORIAL = "TUTORIAL",       -- 튜토리얼
+	MAIN = "MAIN",               -- 메인 스토리
+	SIDE = "SIDE",               -- 사이드 퀘스트
+	DAILY = "DAILY",             -- 일일 퀘스트
+	ACHIEVEMENT = "ACHIEVEMENT", -- 업적
+}
+
+--========================================
+-- 퀘스트 목표 타입 (Phase 8)
+--========================================
+Enums.QuestObjectiveType = {
+	HARVEST = "HARVEST",         -- 자원 수확
+	KILL = "KILL",               -- 크리처 처치
+	CRAFT = "CRAFT",             -- 아이템 제작
+	BUILD = "BUILD",             -- 시설 건설
+	COLLECT = "COLLECT",         -- 아이템 수집 (인벤토리 보유)
+	CAPTURE = "CAPTURE",         -- 팰 포획
+	TALK = "TALK",               -- NPC 대화
+	REACH_LEVEL = "REACH_LEVEL", -- 레벨 달성
+	UNLOCK_TECH = "UNLOCK_TECH", -- 기술 해금
+}
+
+--========================================
+-- 퀘스트 상태 (Phase 8)
+--========================================
+Enums.QuestStatus = {
+	LOCKED = "LOCKED",           -- 잠김 (선행조건 미충족)
+	AVAILABLE = "AVAILABLE",     -- 수락 가능
+	ACTIVE = "ACTIVE",           -- 진행 중
+	COMPLETED = "COMPLETED",     -- 완료 (보상 수령 전)
+	CLAIMED = "CLAIMED",         -- 보상 수령 완료
 }
 
 -- 테이블 동결

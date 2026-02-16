@@ -148,8 +148,9 @@ function PalboxService.renamePal(userId: number, palUID: string, newName: string
 	local pal = palbox[palUID]
 	if not pal then return false end
 	
-	-- 닉네임 길이 제한
-	if #newName == 0 or #newName > 20 then
+	-- 닉네임 길이 제한 (UTF-8 문자 기준)
+	local charLen = utf8.len(newName)
+	if not charLen or charLen == 0 or charLen > 20 then
 		return false
 	end
 	
