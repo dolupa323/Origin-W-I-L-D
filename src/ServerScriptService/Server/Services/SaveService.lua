@@ -58,6 +58,8 @@ local function _getDefaultPlayerSave()
 		barn = {},
 		-- 기술 해금
 		unlockedTech = {},
+		-- 팰 보관함 (Phase 5)
+		palbox = {},
 		-- 통계
 		stats = {
 			playTime = 0,

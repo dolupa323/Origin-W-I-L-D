@@ -62,6 +62,21 @@ Protocol.Commands = {
 	-- Recipe 명령어
 	["Recipe.GetInfo.Request"] = true,         -- 레시피 정보 조회 (효율 보정 포함)
 	["Recipe.GetAll.Request"] = true,          -- 전체 해금 레시피 조회
+	
+	-- Capture 명령어 (Phase 5-2)
+	["Capture.Attempt.Request"] = true,        -- 포획 시도
+	
+	-- Palbox 명령어 (Phase 5-3)
+	["Palbox.List.Request"] = true,            -- 보관함 목록 조회
+	["Palbox.Rename.Request"] = true,          -- 팰 닉네임 변경
+	["Palbox.Release.Request"] = true,         -- 팰 해방 (삭제)
+	
+	-- Party 명령어 (Phase 5-4)
+	["Party.List.Request"] = true,             -- 파티 목록 조회
+	["Party.Add.Request"] = true,              -- 파티에 편성
+	["Party.Remove.Request"] = true,           -- 파티에서 해제
+	["Party.Summon.Request"] = true,           -- 팰 소환
+	["Party.Recall.Request"] = true,           -- 팰 회수
 }
 
 -- 에러 코드는 Enums.ErrorCode 사용

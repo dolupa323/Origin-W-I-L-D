@@ -56,6 +56,15 @@ Enums.ErrorCode = {
 	-- 일반
 	NOT_FOUND = "NOT_FOUND",
 	INTERNAL_ERROR = "INTERNAL_ERROR",
+	
+	-- 포획/팰 관련 (Phase 5)
+	PALBOX_FULL = "PALBOX_FULL",           -- 팰 보관함 가득 참
+	PARTY_FULL = "PARTY_FULL",             -- 파티 가득 참
+	NOT_CAPTURABLE = "NOT_CAPTURABLE",     -- 포획 불가 대상
+	CAPTURE_FAILED = "CAPTURE_FAILED",     -- 포획 실패 (확률 탈락)
+	PAL_ALREADY_ASSIGNED = "PAL_ALREADY_ASSIGNED", -- 이미 배치됨
+	PAL_IN_PARTY = "PAL_IN_PARTY",         -- 파티 편성 중
+	NO_CAPTURE_ITEM = "NO_CAPTURE_ITEM",   -- 포획 아이템 없음
 }
 
 --========================================
@@ -121,6 +130,16 @@ Enums.FacilityState = {
 	ACTIVE = "ACTIVE",         -- 가동 중 (연료+큐 있음)
 	FULL = "FULL",             -- 출력 슬롯 가득 참
 	NO_POWER = "NO_POWER",     -- 연료 없음
+}
+
+--========================================
+-- 팰(Pal) 상태 (Phase 5)
+--========================================
+Enums.PalState = {
+	STORED = "STORED",         -- 보관함에 저장
+	IN_PARTY = "IN_PARTY",     -- 파티에 편성 (미소환)
+	SUMMONED = "SUMMONED",     -- 월드에 소환됨
+	WORKING = "WORKING",       -- 시설에서 작업 중
 }
 
 -- 테이블 동결

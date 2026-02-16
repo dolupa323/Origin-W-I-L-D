@@ -181,4 +181,31 @@ for command, handler in pairs(PlayerLifeService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)
 end
 
-print("[ServerInit] Server initialized (Phase 4)") -- 최종 완료 로그
+-- PalboxService 초기화 (Phase 5-3) - CaptureService보다 먼저
+local PalboxService = require(Services.PalboxService)
+PalboxService.Init(NetController, DataService, SaveService)
+
+-- PalboxService 핸들러 등록
+for command, handler in pairs(PalboxService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
+end
+
+-- CaptureService 초기화 (Phase 5-2)
+local CaptureService = require(Services.CaptureService)
+CaptureService.Init(NetController, DataService, CreatureService, InventoryService, PalboxService)
+
+-- CaptureService 핸들러 등록
+for command, handler in pairs(CaptureService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
+end
+
+-- PartyService 초기화 (Phase 5-4)
+local PartyService = require(Services.PartyService)
+PartyService.Init(NetController, PalboxService, CreatureService)
+
+-- PartyService 핸들러 등록
+for command, handler in pairs(PartyService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
+end
+
+print("[ServerInit] Server initialized (Phase 5)") -- 최종 완료 로그

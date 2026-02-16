@@ -59,6 +59,15 @@ Balance.CRAFT_RANGE = 10               -- 시설 제작 가능 거리 (스터드
 Balance.CRAFT_QUEUE_MAX = 5            -- 플레이어 동시 제작 큐 최대 크기
 Balance.CRAFT_CANCEL_REFUND = 1.0      -- 취소 시 재료 환불 비율 (1.0 = 전액)
 
+--========================================
+-- 팰 (Pal) 시스템 (Phase 5)
+--========================================
+Balance.MAX_PALBOX = 30                -- 팰 보관함 최대 수
+Balance.MAX_PARTY = 5                  -- 파티 최대 슬롯
+Balance.PAL_FOLLOW_DIST = 4            -- 팰이 주인과 유지하는 거리 (스터드)
+Balance.PAL_COMBAT_RANGE = 15          -- 팰이 전투를 시작하는 감지 범위 (스터드)
+Balance.CAPTURE_RANGE = 30             -- 기본 포획 사거리 (스터드)
+
 -- 테이블 동결 (런타임 수정 방지)
 table.freeze(Balance)
 

@@ -1,7 +1,7 @@
 # DinoTribeSurvival (Origin-WILD) 프로젝트 인수인계 문서
 
 > **작성일**: 2026-02-14  
-> **현재 진행 상태**: Phase 4 완료 (전투 & 생존), Phase 5 대기  
+> **현재 진행 상태**: Phase 5 진행중 (테이밍 & 팰 시스템), Phase 5-5 대기  
 > **게임 개요**: 로블록스 기반 공룡+생존 서바이벌 게임
 
 ---
@@ -637,7 +637,12 @@ drops[dropId] = {
   - [x] **4-2**: PlayerLifeService (사망 처리, 아이템 30% 손실, 침대 리스폰 준비, 5초 리스폰 딜레이)
   - [x] **4-4**: DebuffService (BloodSmell/Freezing/Burning, 틱 데미지, 어그로 배율)
   - [x] **4-5**: Night & Fire System (밤 추위 디버프, Campfire 안전지대 판정)
-  - [ ] **Phase 5**: 바이옴 & 환경 (Next Focus)
+  - [x] **Phase 5**: 테이밍 & 팰(Pal) 시스템
+    - [x] **5-1**: 데이터 레이어 (PalData, CaptureItemData, ItemData 포획구 추가, Balance/Enums 확장)
+    - [x] **5-2**: CaptureService (포획 판정, HP 비율 포획률 공식, 포획구 소모)
+    - [x] **5-3**: PalboxService (보관함 CRUD, SaveService 연동, 닉네임/해방)
+    - [x] **5-4**: PartyService (파티 편성/해제, 소환/회수, 팰 AI FOLLOW/COMBAT/IDLE)
+    - [ ] **5-5**: 작업 배치 (FacilityService 확장, 팰 workPower 연동)
 
 ---
 

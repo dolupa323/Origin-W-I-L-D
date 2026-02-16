@@ -54,6 +54,60 @@ local RecipeData = {
 			{ itemId = "WOOD", count = 3 },  -- 임시: 캠프파이어 아이템 미구현으로 wood 반환
 		},
 	},
+	-- 기본 포획구 제작 (Phase 5)
+	{
+		id = "CRAFT_CAPTURE_SPHERE_BASIC",
+		name = "기본 포획구 제작",
+		category = "CONSUMABLE",
+		requiredFacility = "CRAFTING",
+		craftTime = 5,
+		techLevel = 0,
+		inputs = {
+			{ itemId = "STONE", count = 5 },
+			{ itemId = "WOOD", count = 3 },
+			{ itemId = "FIBER", count = 10 },
+		},
+		outputs = {
+			{ itemId = "CAPTURE_SPHERE_BASIC", count = 3 },
+		},
+	},
+	-- 고급 포획구 제작 (Phase 5)
+	{
+		id = "CRAFT_CAPTURE_SPHERE_MEGA",
+		name = "고급 포획구 제작",
+		category = "CONSUMABLE",
+		requiredFacility = "CRAFTING",
+		craftTime = 10,
+		techLevel = 1,
+		inputs = {
+			{ itemId = "STONE", count = 10 },
+			{ itemId = "WOOD", count = 5 },
+			{ itemId = "FIBER", count = 15 },
+			{ itemId = "HORN", count = 1 },
+		},
+		outputs = {
+			{ itemId = "CAPTURE_SPHERE_MEGA", count = 2 },
+		},
+	},
+	-- 마스터 포획구 제작 (Phase 5)
+	{
+		id = "CRAFT_CAPTURE_SPHERE_ULTRA",
+		name = "마스터 포획구 제작",
+		category = "CONSUMABLE",
+		requiredFacility = "CRAFTING",
+		craftTime = 20,
+		techLevel = 2,
+		inputs = {
+			{ itemId = "STONE", count = 15 },
+			{ itemId = "WOOD", count = 10 },
+			{ itemId = "FIBER", count = 20 },
+			{ itemId = "HORN", count = 3 },
+			{ itemId = "LEATHER", count = 5 },
+		},
+		outputs = {
+			{ itemId = "CAPTURE_SPHERE_ULTRA", count = 1 },
+		},
+	},
 }
 
 return RecipeData
