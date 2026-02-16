@@ -13,14 +13,6 @@ local NetClient = require(Client.NetClient)
 local success = NetClient.Init()
 
 if success then
-	-- 테스트: Ping
-	local pingOk, pingResult = NetClient.Ping()
-	print("[ClientInit] Ping:", pingOk, pingResult and pingResult.ok)
-	
-	-- 테스트: Echo
-	local echoOk, echoResult = NetClient.Echo("Hello")
-	print("[ClientInit] Echo:", echoOk, echoResult and echoResult.text)
-	
 	-- WorldDropController 초기화 (이벤트 소비자)
 	local WorldDropController = require(Controllers.WorldDropController)
 	WorldDropController.Init()
@@ -36,6 +28,18 @@ if success then
 	-- StorageController 초기화 (이벤트 소비자)
 	local StorageController = require(Controllers.StorageController)
 	StorageController.Init()
+	
+	-- BuildController 초기화 (이벤트 소비자)
+	local BuildController = require(Controllers.BuildController)
+	BuildController.Init()
+	
+	-- CraftController 초기화 (이벤트 소비자)
+	local CraftController = require(Controllers.CraftController)
+	CraftController.Init()
+	
+	-- FacilityController 초기화 (이벤트 소비자)
+	local FacilityController = require(Controllers.FacilityController)
+	FacilityController.Init()
 end
 
 print("[ClientInit] Client initialized")

@@ -16,6 +16,15 @@ DataService.Init()
 local NetController = require(Controllers.NetController)
 NetController.Init()
 
+-- RecipeService 초기화 (BuildService 등에서 참조하므로 미리 초기화)
+local RecipeService = require(Services.RecipeService)
+RecipeService.Init(DataService)
+
+-- RecipeService 핸들러 등록
+for command, handler in pairs(RecipeService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
+end
+
 -- TimeService 초기화
 local TimeService = require(Services.TimeService)
 TimeService.Init(NetController)
@@ -40,6 +49,15 @@ InventoryService.Init(NetController, DataService)
 
 -- InventoryService 핸들러 등록
 for command, handler in pairs(InventoryService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
+end
+
+-- DurabilityService 초기화 (Phase 2-4)
+local DurabilityService = require(Services.DurabilityService)
+DurabilityService.Init(NetController, InventoryService)
+
+-- DurabilityService 핸들러 등록
+for command, handler in pairs(DurabilityService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)
 end
 
@@ -98,41 +116,69 @@ for command, handler in pairs(StorageService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)
 end
 
--- Studio 전용 디버그 테스트
-local RunService = game:GetService("RunService")
-if RunService:IsStudio() then
-	task.defer(function()
-		task.wait(2)  -- 서버 초기화 대기
-		
-		print("=== WorldDropService DoD Tests ===")
-		
-		-- Test A: Cap Test (1000개 스폰 → 400개 이하 유지)
-		print("[Test A] Spawn 1000 drops...")
-		WorldDropService.DebugSpawnMany("STONE", 10, 1000)
-		print(string.format("[Test A] Result: dropCount = %d (expected <= 400)", WorldDropService.getDropCount()))
-		
-		-- Test B: Merge Test
-		WorldDropService.clearAllDrops()
-		print("[Test B] Merge test at same position...")
-		WorldDropService.DebugMergeTest("STONE", 10, 5)
-		print(string.format("[Test B] Result: dropCount = %d (expected 1 due to merge)", WorldDropService.getDropCount()))
-		
-		-- Test C: Despawn Timer (로그 확인용)
-		WorldDropService.clearAllDrops()
-		print("[Test C] Spawn STONE (600s) and STONE_PICKAXE (300s)...")
-		local s1, _, d1 = WorldDropService.spawnDrop(Vector3.new(10, 5, 10), "STONE", 5)
-		local s2, _, d2 = WorldDropService.spawnDrop(Vector3.new(20, 5, 20), "STONE_PICKAXE", 1)
-		if d1 and d2 then
-			local drop1 = WorldDropService.getDrop(d1.dropId)
-			local drop2 = WorldDropService.getDrop(d2.dropId)
-			if drop1 and drop2 then
-				print(string.format("[Test C] STONE despawnAt: %.1f (now+600)", drop1.despawnAt - tick()))
-				print(string.format("[Test C] STONE_PICKAXE despawnAt: %.1f (now+300)", drop2.despawnAt - tick()))
-			end
-		end
-		
-		print("=== WorldDropService DoD Tests Complete ===")
-	end)
+-- BuildService 초기화
+local BuildService = require(Services.BuildService)
+BuildService.Init(NetController, DataService, InventoryService, SaveService)
+
+-- BuildService 핸들러 등록
+for command, handler in pairs(BuildService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
 end
 
-print("[ServerInit] Server initialized")
+-- CraftingService 초기화
+local CraftingService = require(Services.CraftingService)
+CraftingService.Init(NetController, DataService, InventoryService, BuildService, RecipeService)
+
+-- CraftingService 핸들러 등록
+for command, handler in pairs(CraftingService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
+end
+
+-- FacilityService 초기화
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Balance = require(Shared.Config.Balance)
+local FacilityService = require(Services.FacilityService)
+FacilityService.Init(NetController, DataService, InventoryService, BuildService, Balance, RecipeService, WorldDropService)
+
+-- FacilityService 핸들러 등록
+for command, handler in pairs(FacilityService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
+end
+
+-- DebuffService 초기화 (Phase 4-4) - CreatureService보다 먼저 초기화
+local DebuffService = require(Services.DebuffService)
+DebuffService.Init(NetController, TimeService)
+
+-- DebuffService 핸들러 등록
+for command, handler in pairs(DebuffService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
+end
+
+-- CreatureService 초기화 (Phase 3-1, + DebuffService 연동)
+local CreatureService = require(Services.CreatureService)
+CreatureService.Init(NetController, DataService, WorldDropService, DebuffService)
+
+-- CreatureService 핸들러 등록
+for command, handler in pairs(CreatureService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
+end
+
+-- CombatService 초기화 (Phase 3-3, + DebuffService 연동)
+local CombatService = require(Services.CombatService)
+CombatService.Init(NetController, DataService, CreatureService, InventoryService, DurabilityService, DebuffService)
+
+-- CombatService 핸들러 등록
+for command, handler in pairs(CombatService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
+end
+
+-- PlayerLifeService 초기화 (Phase 4-2)
+local PlayerLifeService = require(Services.PlayerLifeService)
+PlayerLifeService.Init(NetController, DataService, InventoryService, BuildService)
+
+-- PlayerLifeService 핸들러 등록
+for command, handler in pairs(PlayerLifeService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
+end
+
+print("[ServerInit] Server initialized (Phase 4)") -- 최종 완료 로그

@@ -156,7 +156,6 @@ local function pruneOldestDrops()
 			drops[oldest.dropId] = nil
 			dropCount = dropCount - 1
 			emitDespawned(oldest.dropId, "CAP_PRUNE")
-			print(string.format("[WorldDropService] CAP_PRUNE: %s (%s x%d)", oldest.dropId, oldest.itemId, oldest.count))
 		else
 			break
 		end
@@ -234,7 +233,6 @@ function WorldDropService.spawnDrop(pos: Vector3, itemId: string, count: number)
 		-- 병합
 		mergeTarget.count = mergeTarget.count + count
 		emitChanged(mergeTarget.dropId, mergeTarget.count)
-		print(string.format("[WorldDropService] Merged: %s -> %d", mergeTarget.dropId, mergeTarget.count))
 		return true, nil, { merged = true, dropId = mergeTarget.dropId, count = mergeTarget.count }
 	end
 	
@@ -261,7 +259,6 @@ function WorldDropService.spawnDrop(pos: Vector3, itemId: string, count: number)
 	end
 	
 	emitSpawned(drop)
-	print(string.format("[WorldDropService] Spawned: %s (%s x%d) despawn=%ds", drop.dropId, itemId, count, despawnSeconds))
 	
 	return true, nil, { merged = false, dropId = drop.dropId, count = drop.count }
 end
@@ -307,8 +304,6 @@ function WorldDropService.loot(player: Player, dropId: string): (boolean, string
 	dropCount = dropCount - 1
 	emitDespawned(dropId, "LOOTED_OUT")
 	
-	print(string.format("[WorldDropService] Looted: %s by %s (%s x%d)", dropId, player.Name, drop.itemId, added))
-	
 	return true, nil, {
 		dropId = dropId,
 		itemId = drop.itemId,
@@ -323,7 +318,6 @@ function WorldDropService.clearAllDrops()
 	end
 	drops = {}
 	dropCount = 0
-	print("[WorldDropService] All drops cleared")
 end
 
 --- 현재 드롭 수
@@ -351,8 +345,6 @@ end
 
 --- 대량 스폰 테스트
 function WorldDropService.DebugSpawnMany(itemId: string, countPerDrop: number, numDrops: number)
-	print(string.format("[WorldDropService] DebugSpawnMany: %s x%d, %d drops", itemId, countPerDrop, numDrops))
-	
 	for i = 1, numDrops do
 		local pos = Vector3.new(
 			math.random(-100, 100),
@@ -361,20 +353,14 @@ function WorldDropService.DebugSpawnMany(itemId: string, countPerDrop: number, n
 		)
 		WorldDropService.spawnDrop(pos, itemId, countPerDrop)
 	end
-	
-	print(string.format("[WorldDropService] After spawn: dropCount = %d (cap=%d)", dropCount, Balance.DROP_CAP))
 end
 
 --- 병합 테스트 (같은 위치에 여러 번 스폰)
 function WorldDropService.DebugMergeTest(itemId: string, countPerDrop: number, numDrops: number)
 	local pos = Vector3.new(0, 5, 0)  -- 고정 위치
-	print(string.format("[WorldDropService] DebugMergeTest at (0,5,0): %s x%d, %d times", itemId, countPerDrop, numDrops))
-	
 	for i = 1, numDrops do
 		WorldDropService.spawnDrop(pos, itemId, countPerDrop)
 	end
-	
-	print(string.format("[WorldDropService] After merge test: dropCount = %d", dropCount))
 end
 
 --========================================

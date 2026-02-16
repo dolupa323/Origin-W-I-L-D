@@ -3,10 +3,7 @@
 -- 서버 Storage 이벤트 수신 및 로컬 캐시 관리
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local StarterPlayerScripts = game:GetService("StarterPlayer"):WaitForChild("StarterPlayerScripts")
-
-local Client = StarterPlayerScripts:WaitForChild("Client")
-local NetClient = require(Client.NetClient)
+local NetClient = require(script.Parent.Parent.NetClient)
 
 local StorageController = {}
 

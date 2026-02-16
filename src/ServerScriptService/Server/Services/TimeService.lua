@@ -60,7 +60,6 @@ local function _emitPhaseChanged(newPhase: string)
 			serverTime = _getElapsed(),
 		})
 	end
-	print(string.format("[TimeService] Phase changed: %s (count: %d)", newPhase, phaseChangeCount))
 end
 
 --- 시간 동기 이벤트 발생 (특정 플레이어 또는 전체)
@@ -144,8 +143,6 @@ end
 function TimeService.warp(seconds: number)
 	timeOffset += seconds
 	_forcePhaseUpdate()  -- 즉시 페이즈 갱신
-	print(string.format("[TimeService] Warped %d seconds. New dayTime: %.1f, Phase: %s", 
-		seconds, _getDayTime(), currentPhase))
 end
 
 --- 특정 페이즈로 워프 (디버그용)
@@ -167,7 +164,6 @@ function TimeService.warpToPhase(targetPhase: string)
 	end
 	
 	_forcePhaseUpdate()  -- 즉시 페이즈 갱신
-	print(string.format("[TimeService] Warped to %s. DayTime: %.1f", currentPhase, _getDayTime()))
 end
 
 --========================================

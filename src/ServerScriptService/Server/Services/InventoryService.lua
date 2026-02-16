@@ -166,10 +166,10 @@ local function _emitChanged(player: Player, changes: {{slot: number, itemId: str
 end
 
 --- 슬롯 데이터를 변경 델타로 변환
-local function _makeChange(inv: any, slot: number): {slot: number, itemId: string?, count: number?, empty: boolean?}
+local function _makeChange(inv: any, slot: number): {slot: number, itemId: string?, count: number?, empty: boolean?, durability: number?}
 	local slotData = inv.slots[slot]
 	if slotData then
-		return { slot = slot, itemId = slotData.itemId, count = slotData.count }
+		return { slot = slot, itemId = slotData.itemId, count = slotData.count, durability = slotData.durability }
 	else
 		return { slot = slot, empty = true }
 	end
@@ -196,7 +196,6 @@ function InventoryService.getOrCreateInventory(userId: number): any
 	end
 	
 	playerInventories[userId] = inv
-	print(string.format("[InventoryService] Created inventory for player %d", userId))
 	
 	return inv
 end
@@ -545,6 +544,13 @@ function InventoryService.addItem(userId: number, itemId: string, count: number)
 	local added = 0
 	local changedSlots = {}
 	
+	-- 내구도 정보 조회 (새 스택 생성 시 사용)
+	local maxDurability = nil
+	if DataService then
+		local itemData = DataService.getItem(itemId)
+		if itemData then maxDurability = itemData.durability end
+	end
+	
 	-- 1. 같은 아이템이 있는 슬롯에 먼저 채우기
 	for slot = 1, Balance.INV_SLOTS do
 		if remaining <= 0 then break end
@@ -568,6 +574,7 @@ function InventoryService.addItem(userId: number, itemId: string, count: number)
 			inv.slots[slot] = {
 				itemId = itemId,
 				count = canAdd,
+				durability = maxDurability,
 			}
 			remaining = remaining - canAdd
 			added = added + canAdd
@@ -632,6 +639,61 @@ function InventoryService.canAdd(userId: number, itemId: string, count: number):
 	return remaining <= 0
 end
 
+--- 아이템 보유 여부 확인 (순수 함수)
+function InventoryService.hasItem(userId: number, itemId: string, count: number): boolean
+	local inv = playerInventories[userId]
+	if not inv then return false end
+	
+	local total = 0
+	for slot = 1, Balance.INV_SLOTS do
+		local slotData = inv.slots[slot]
+		if slotData and slotData.itemId == itemId then
+			total = total + slotData.count
+			if total >= count then
+				return true
+			end
+		end
+	end
+	return total >= count
+end
+
+--- 아이템 제거 (여러 슬롯에서 분산 제거)
+--- 반환: 제거된 수량
+function InventoryService.removeItem(userId: number, itemId: string, count: number): number
+	local inv = playerInventories[userId]
+	if not inv then return 0 end
+	
+	local remaining = count
+	local removed = 0
+	local changedSlots = {}
+	
+	-- 슬롯 순회하며 제거
+	for slot = 1, Balance.INV_SLOTS do
+		if remaining <= 0 then break end
+		
+		local slotData = inv.slots[slot]
+		if slotData and slotData.itemId == itemId then
+			local canRemove = math.min(remaining, slotData.count)
+			_decreaseSlot(inv, slot, canRemove)
+			remaining = remaining - canRemove
+			removed = removed + canRemove
+			changedSlots[slot] = true
+		end
+	end
+	
+	-- 이벤트 발생
+	local player = Players:GetPlayerByUserId(userId)
+	if player then
+		local changes = {}
+		for slot, _ in pairs(changedSlots) do
+			table.insert(changes, _makeChange(inv, slot))
+		end
+		_emitChanged(player, changes)
+	end
+	
+	return removed
+end
+
 --- 전체 인벤토리 데이터 반환 (클라이언트 동기화용)
 function InventoryService.getFullInventory(userId: number): {{slot: number, itemId: string?, count: number?}}
 	local inv = playerInventories[userId]
@@ -649,6 +711,58 @@ function InventoryService.getFullInventory(userId: number): {{slot: number, item
 		end
 	end
 	return result
+end
+
+--- 내구도 감소 (0 이하 파괴)
+--- 반환: success, errorCode, currentDurability(or 0)
+function InventoryService.decreaseDurability(userId: number, slot: number, amount: number)
+	local inv = playerInventories[userId]
+	if not inv then return false, Enums.ErrorCode.NOT_FOUND end
+	
+	local slotData = inv.slots[slot]
+	
+	-- 아이템이 없거나 내구도가 없는 아이템이면 무시 (또는 에러)
+	if not slotData then return false, Enums.ErrorCode.SLOT_EMPTY end
+	if not slotData.durability then return false, Enums.ErrorCode.INVALID_ITEM end
+	
+	slotData.durability = slotData.durability - amount
+	local current = slotData.durability
+	
+	if current <= 0 then
+		-- 파괴
+		inv.slots[slot] = nil
+	end
+	
+	-- 이벤트
+	local player = Players:GetPlayerByUserId(userId)
+	if player then
+		_emitChanged(player, {_makeChange(inv, slot)})
+	end
+	
+	return true, nil, math.max(0, current)
+end
+
+--- 현재 장착 중인(선택된 핫바) 아이템 조회
+function InventoryService.getEquippedItem(userId: number): any?
+	local inv = playerInventories[userId]
+	if not inv then return nil end
+	
+	-- ActiveSlot 개념이 아직 없으므로 임시로 1번 슬롯이나, 클라이언트에서 보내주는 슬롯을 신뢰해야 함.
+	-- 하지만 Server Auth를 위해선 서버에 activeSlot 상태가 있어야 함.
+	-- 일단은 nil 반환하고, CombatService에서 payload.slot을 검증하는 방식으로 우회하거나,
+	-- 추후 Hotbar System 구현 시 activeSlot 동기화 추가 필요.
+	
+	-- Phase 3-3: 임시로 클라이언트 요청 payload의 item을 신뢰하지 않고,
+	-- CombatService가 인벤토리 슬롯을 조회하도록 함.
+	
+	return nil
+end
+
+--- 특정 슬롯 아이템 조회
+function InventoryService.getSlot(userId: number, slot: number): any?
+	local inv = playerInventories[userId]
+	if not inv then return nil end
+	return inv.slots[slot]
 end
 
 --========================================
@@ -736,7 +850,6 @@ local function onPlayerAdded(player: Player)
 	-- 디버그: 기본 아이템 지급 (Studio에서만)
 	if game:GetService("RunService"):IsStudio() then
 		InventoryService.addItem(userId, "STONE", 30)
-		print(string.format("[InventoryService] Debug: Gave STONE x30 to player %d", userId))
 	end
 end
 

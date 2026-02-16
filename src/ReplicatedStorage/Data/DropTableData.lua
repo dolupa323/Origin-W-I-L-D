@@ -1,29 +1,19 @@
 -- DropTableData.lua
--- 드롭 테이블 데이터 정의
--- 형태: 배열 { {id="...", drops={...}}, ... }
+-- Phase 3-3: 크리처 드롭 아이템 데이터 정의
 
 local DropTableData = {
-	-- 돌 노드 드롭
-	{
-		id = "STONE_NODE",
-		drops = {
-			{ itemId = "STONE", countMin = 1, countMax = 3, weight = 100 },
-			{ itemId = "FLINT", countMin = 1, countMax = 1, weight = 20 },
-		},
+	["RAPTOR"] = {
+		{ itemId = "MEAT", chance = 1.0, min = 1, max = 2 },
+		{ itemId = "LEATHER", chance = 0.5, min = 1, max = 2 },
 	},
-	-- 나무 노드 드롭
-	{
-		id = "TREE_NODE",
-		drops = {
-			{ itemId = "WOOD", countMin = 2, countMax = 5, weight = 100 },
-		},
+	["TRICERATOPS"] = {
+		{ itemId = "MEAT", chance = 1.0, min = 3, max = 5 },
+		{ itemId = "LEATHER", chance = 0.8, min = 2, max = 4 },
+		{ itemId = "HORN", chance = 0.3, min = 1, max = 1 }, -- 희귀
 	},
-	-- 풀 노드 드롭
-	{
-		id = "BUSH_NODE",
-		drops = {
-			{ itemId = "FIBER", countMin = 1, countMax = 3, weight = 100 },
-		},
+	["DODO"] = {
+		{ itemId = "MEAT", chance = 1.0, min = 1, max = 1 },
+		{ itemId = "FEATHER", chance = 0.7, min = 1, max = 3 },
 	},
 }
 

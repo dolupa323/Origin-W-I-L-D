@@ -158,11 +158,9 @@ function SaveService.loadPlayer(userId: number): (boolean, any)
 	if data == nil then
 		-- 신규 플레이어
 		data = _getDefaultPlayerSave()
-		print(string.format("[SaveService] New player %d - created default save", userId))
 	else
 		-- 기존 플레이어
 		data.stats.lastLogin = os.time()
-		print(string.format("[SaveService] Loaded player %d (version %d)", userId, data.version or 0))
 	end
 	
 	-- 메모리에 캐시
@@ -187,9 +185,7 @@ function SaveService.savePlayer(userId: number, snapshot: any?): (boolean, strin
 	local key = DataStoreClient.GetPlayerKey(userId)
 	local success, err = DataStoreClient.set(key, state)
 	
-	if success then
-		print(string.format("[SaveService] Saved player %d", userId))
-	else
+	if not success then
 		warn(string.format("[SaveService] Failed to save player %d: %s", userId, tostring(err)))
 	end
 	
@@ -226,9 +222,6 @@ function SaveService.loadWorld(): (boolean, any)
 	if data == nil then
 		-- 신규 월드
 		data = _getDefaultWorldSave()
-		print("[SaveService] New world - created default save")
-	else
-		print(string.format("[SaveService] Loaded world (version %d)", data.version or 0))
 	end
 	
 	worldState = data
@@ -252,9 +245,7 @@ function SaveService.saveWorld(snapshot: any?): (boolean, string?)
 	local key = DataStoreClient.Keys.WORLD_MAIN
 	local success, err = DataStoreClient.set(key, state)
 	
-	if success then
-		print("[SaveService] Saved world")
-	else
+	if not success then
 		warn(string.format("[SaveService] Failed to save world: %s", tostring(err)))
 	end
 	
@@ -296,8 +287,6 @@ function SaveService.saveNow(): (boolean, number, number)
 	local worldOk, _ = SaveService.saveWorld()
 	
 	lastSaveTime = os.time()
-	print(string.format("[SaveService] SaveNow complete - Players: %d/%d, World: %s", 
-		playerSuccess, playerSuccess + playerFail, worldOk and "OK" or "FAIL"))
 	
 	return worldOk, playerSuccess, playerFail
 end
@@ -316,13 +305,9 @@ end
 local function onPlayerRemoving(player: Player)
 	local userId = player.UserId
 	
-	print(string.format("[SaveService] PlayerRemoving: %d (%s)", userId, player.Name))
-	
 	-- 저장
 	local ok, err = SaveService.savePlayer(userId)
-	if ok then
-		print(string.format("[SaveService] PlayerRemoving save complete: %d", userId))
-	else
+	if not ok then
 		warn(string.format("[SaveService] PlayerRemoving save failed: %d - %s", userId, tostring(err)))
 	end
 	
@@ -335,8 +320,6 @@ local function startAutosave()
 	task.spawn(function()
 		while true do
 			task.wait(AUTOSAVE_INTERVAL)
-			
-			print("[SaveService] Autosave triggered")
 			SaveService.saveNow()
 		end
 	end)

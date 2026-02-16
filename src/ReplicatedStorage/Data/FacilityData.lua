@@ -4,20 +4,26 @@
 -- DataService에서 Map으로 변환됨
 
 local FacilityData = {
-	-- 기본 시설: 캠프파이어
+	-- 기본 시설: 캠프파이어 (연료 기반 요리)
 	{
 		id = "CAMPFIRE",
 		name = "캠프파이어",
-		description = "요리와 빛을 제공합니다. 밤에 야생동물을 쪰아냅니다.",
-		modelName = "Campfire",  -- ReplicatedStorage.Assets.Facilities 내 모델명
+		description = "요리와 빛을 제공합니다. 밤에 야생동물을 쫓아냅니다.",
+		modelName = "Campfire",
 		requirements = {
 			{ itemId = "WOOD", amount = 5 },
 			{ itemId = "STONE", amount = 2 },
 		},
-		buildTime = 0,      -- 0 = 즉시 배치
+		buildTime = 0,
 		maxHealth = 100,
-		interactRange = 5,  -- 상호작용 가능 거리
-		functionType = "COOKING",  -- 기능 타입
+		interactRange = 5,
+		functionType = "COOKING",
+		-- FacilityService 전용 필드
+		fuelConsumption = 1,    -- 초당 연료값 1 소모
+		craftSpeed = 1.0,       -- 제작 속도 배율 (1.0 = 기본)
+		hasInputSlot = true,    -- Input 슬롯 보유
+		hasFuelSlot = true,     -- Fuel 슬롯 보유
+		hasOutputSlot = true,   -- Output 슬롯 보유
 	},
 	
 	-- 기본 시설: 보관함
@@ -34,10 +40,10 @@ local FacilityData = {
 		maxHealth = 150,
 		interactRange = 3,
 		functionType = "STORAGE",
-		storageSlots = 20,  -- 창고 전용 속성
+		storageSlots = 20,
 	},
 	
-	-- 기본 시설: 작업대
+	-- 기본 시설: 작업대 (큐 기반 제작, 연료 불필요)
 	{
 		id = "CRAFTING_TABLE",
 		name = "작업대",
@@ -52,7 +58,14 @@ local FacilityData = {
 		maxHealth = 200,
 		interactRange = 4,
 		functionType = "CRAFTING",
-		recipes = {},  -- 이 시설에서 제작 가능한 레시피 ID 목록
+		-- FacilityService 전용 필드
+		fuelConsumption = 0,    -- 연료 불필요
+		craftSpeed = 1.0,       -- 제작 속도 배율
+		hasInputSlot = false,   -- 슬롯 없음 (CraftingService 큐 방식)
+		hasFuelSlot = false,
+		hasOutputSlot = false,  -- 결과물은 바닥 드랍
+		queueMax = 10,          -- 제작 대기열 최대 크기
+		recipes = {},
 	},
 	
 	-- 기본 시설: 침낭

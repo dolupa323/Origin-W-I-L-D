@@ -21,6 +21,7 @@ local ItemData = {
 		maxStack = 99,
 		description = "기본 건축 재료.",
 		dropDespawn = "GATHER",
+		fuelValue = 15,  -- 연료 가치 (15초 가동)
 	},
 	{
 		id = "FIBER",

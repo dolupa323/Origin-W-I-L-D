@@ -55,7 +55,6 @@ local function _getOrCreateStorage(storageId: string): any
 	
 	if not storages[storageId] then
 		storages[storageId] = _createDefaultStorage()
-		print(string.format("[StorageService] Created storage: %s", storageId))
 	end
 	
 	return storages[storageId]
@@ -124,8 +123,6 @@ function StorageService.open(player: Player, storageId: string): (boolean, strin
 		end
 	end
 	
-	print(string.format("[StorageService] Player %s opened storage %s", player.Name, storageId))
-	
 	return true, nil, {
 		storageId = storageId,
 		slots = slots,
@@ -143,8 +140,6 @@ function StorageService.close(player: Player, storageId: string): (boolean, stri
 	if not storageId or type(storageId) ~= "string" then
 		return false, Enums.ErrorCode.BAD_REQUEST, nil
 	end
-	
-	print(string.format("[StorageService] Player %s closed storage %s", player.Name, storageId))
 	
 	return true, nil, { storageId = storageId }
 end
@@ -262,11 +257,6 @@ function StorageService.move(
 		_emitStorageChanged(storageId, storageChanges)
 		_markStorageDirty(storageId)
 	end
-	
-	print(string.format("[StorageService] Move: %s[%d] -> %s[%d] by %s (%s x%d)",
-		sourceType, sourceSlot, targetType, targetSlot, player.Name,
-		data.movedItem and data.movedItem.itemId or "nil",
-		data.movedItem and data.movedItem.count or 0))
 	
 	return true, nil, {
 		movedItem = data.movedItem,

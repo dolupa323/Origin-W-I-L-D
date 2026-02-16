@@ -48,6 +48,11 @@ Enums.ErrorCode = {
 	INVALID_POSITION = "INVALID_POSITION", -- 유효하지 않은 위치
 	STRUCTURE_CAP = "STRUCTURE_CAP",       -- 구조물 최대 개수 초과
 	
+	-- 제작 관련
+	CRAFT_QUEUE_FULL = "CRAFT_QUEUE_FULL", -- 제작 큐 가득 참
+	NO_FACILITY = "NO_FACILITY",           -- 필요 시설 없음/범위 밖
+	CRAFT_NOT_FOUND = "CRAFT_NOT_FOUND",   -- 제작 항목 없음
+	
 	-- 일반
 	NOT_FOUND = "NOT_FOUND",
 	INTERNAL_ERROR = "INTERNAL_ERROR",
@@ -96,6 +101,26 @@ Enums.FacilityType = {
 	SMELTING = "SMELTING",     -- 제련 (용광로)
 	FARMING = "FARMING",       -- 농사 (화분)
 	DEFENSE = "DEFENSE",       -- 방어 (벽, 문)
+}
+
+--========================================
+-- 제작 상태
+--========================================
+Enums.CraftState = {
+	IDLE = "IDLE",             -- 대기
+	CRAFTING = "CRAFTING",     -- 제작 중
+	COMPLETED = "COMPLETED",   -- 완료 (수거 대기)
+	CANCELLED = "CANCELLED",   -- 취소됨
+}
+
+--========================================
+-- 시설 가동 상태
+--========================================
+Enums.FacilityState = {
+	IDLE = "IDLE",             -- 대기 (큐 없음)
+	ACTIVE = "ACTIVE",         -- 가동 중 (연료+큐 있음)
+	FULL = "FULL",             -- 출력 슬롯 가득 참
+	NO_POWER = "NO_POWER",     -- 연료 없음
 }
 
 -- 테이블 동결

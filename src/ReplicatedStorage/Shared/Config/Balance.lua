@@ -52,6 +52,13 @@ Balance.BUILD_RANGE = 20             -- 플레이어 건축 가능 거리 (스�
 Balance.BUILD_MIN_GROUND_DIST = 0.5  -- 지면 최소 거리 (스터드)
 Balance.BUILD_COLLISION_RADIUS = 2   -- 기본 충돌 체크 반경 (스터드)
 
+--========================================
+-- 제작 (Craft)
+--========================================
+Balance.CRAFT_RANGE = 10               -- 시설 제작 가능 거리 (스터드)
+Balance.CRAFT_QUEUE_MAX = 5            -- 플레이어 동시 제작 큐 최대 크기
+Balance.CRAFT_CANCEL_REFUND = 1.0      -- 취소 시 재료 환불 비율 (1.0 = 전액)
+
 -- 테이블 동결 (런타임 수정 방지)
 table.freeze(Balance)
 

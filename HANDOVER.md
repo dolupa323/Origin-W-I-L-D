@@ -1,7 +1,7 @@
 # DinoTribeSurvival (Origin-WILD) 프로젝트 인수인계 문서
 
 > **작성일**: 2026-02-14  
-> **현재 진행 상태**: Phase 2-1 완료, Phase 2-2 대기  
+> **현재 진행 상태**: Phase 4 완료 (전투 & 생존), Phase 5 대기  
 > **게임 개요**: 로블록스 기반 공룡+생존 서바이벌 게임
 
 ---
@@ -199,6 +199,7 @@ DataService.Init()                    -- 서버 시작 시 호출
 DataService.getItem(itemId)           -- ItemData 조회
 DataService.getRecipe(recipeId)       -- RecipeData 조회
 DataService.getFacility(facilityId)   -- FacilityData 조회
+DataService.getCreature(creatureId)   -- CreatureData 조회
 DataService.getDropTable(tableId)     -- DropTableData 조회
 ```
 
@@ -249,10 +250,12 @@ InventoryService.removeInventory(userId)
 
 -- 조작
 InventoryService.move(player, fromSlot, toSlot, count?)  -- 이동/합치기/스왑
-InventoryService.split(player, slot, count)              -- 분할
+InventoryService.split(player, fromSlot, toSlot, count)  -- 분할 (toSlot은 빈 슬롯 필수)
 InventoryService.drop(player, slot, count?)              -- 드롭 (서버에서만 슬롯 비움)
 InventoryService.canAdd(userId, itemId, count)           -- 추가 가능 여부
 InventoryService.addItem(userId, itemId, count)          -- 아이템 추가
+InventoryService.hasItem(userId, itemId, count)          -- 보유 여부 확인
+InventoryService.removeItem(userId, itemId, count)       -- 아이템 제거 (여러 슬롯 분산)
 
 -- 내부용 (다른 서비스에서 사용)
 InventoryService.MoveInternal(userId, fromSlot, toSlot, count, containerFrom, containerTo)
@@ -317,7 +320,149 @@ StorageService.GetHandlers()
 
 **이벤트**: `Storage.Changed`, `Storage.Opened`, `Storage.Closed`
 
----
+### 4.7 BuildService
+
+**경로**: `src/ServerScriptService/Server/Services/BuildService.lua`
+
+**역할**: 건설 시스템 (시설물 배치/해체/조회)
+
+**Cap 관리**:
+
+- 최대 500개 구조물 제한 (BUILD_STRUCTURE_CAP)
+- 초과 시 가장 오래된 구조물 제거 (prune)
+
+**검증**:
+
+- 거리: BUILD_RANGE (20 스터드)
+- 충돌: BUILD_COLLISION_RADIUS (2 스터드)
+- 위치: 지면 레이캐스트 검증
+- 재료: InventoryService.hasItem()으로 확인
+
+**API**:
+
+```lua
+BuildService.Init(NetController, DataService, InventoryService, SaveService)
+BuildService.place(player, facilityId, position, rotation)   -- 배치
+BuildService.remove(player, structureId)                     -- 해체
+BuildService.removeStructure(structureId, reason)            -- 내부 제거
+BuildService.getAll()                                        -- 전체 조회
+BuildService.get(structureId)                                -- 단일 조회
+BuildService.getCount()                                      -- 개수 조회
+BuildService.clearAll()                                      -- 디버그: 전체 제거
+BuildService.GetHandlers()
+```
+
+**이벤트**: `Build.Placed`, `Build.Removed`, `Build.Changed`
+
+### 4.8 CraftingService
+
+**경로**: `src/ServerScriptService/Server/Services/CraftingService.lua`
+
+**역할**: 제작 시스템 (Phase 2-2)
+
+**핵심 패턴**: Timestamp 기반 Lazy Update
+
+- craftTime == 0: 즐시 제작 (재료 차감 → 결과물 즈시 인벤 추가)
+- craftTime > 0: 대기 제작 (재료 차감 → 큐 등록 → 완료 시 collect로 수거)
+
+**검증**:
+
+- 레시피 존재 여부
+- 제작 큐 크기 (CRAFT_QUEUE_MAX = 5)
+- 시설 접근 검증 (requiredFacility → BuildService.get + 거리 CRAFT_RANGE)
+- 재료 보유 검증 (InventoryService.hasItem)
+- 인벤토리 여유 검증 (canAdd)
+
+**API**:
+
+```lua
+CraftingService.Init(NetController, DataService, InventoryService, BuildService)
+CraftingService.start(player, recipeId, structureId?)  -- 제작 시작
+CraftingService.cancel(player, craftId)                -- 제작 취소 (재료 환불)
+CraftingService.collect(player, craftId)               -- 완성품 수거
+CraftingService.getQueue(player)                       -- 큐 조회
+CraftingService.getAvailableRecipes(player, structureId?)  -- 사용 가능 레시피
+CraftingService.GetHandlers()
+```
+
+**이벤트**: `Craft.Started`, `Craft.Completed`, `Craft.Ready`, `Craft.Cancelled`
+
+### 4.9 FacilityService
+
+**경로**: `src/ServerScriptService/Server/Services/FacilityService.lua`
+
+**역할**: 시설 상태 관리 서비스 (Phase 2-2)
+
+**핵심 패턴**: 상태머신(IDLE/ACTIVE/FULL/NO_POWER) + Lazy Update
+
+- 연료 기반 시설 (화로): Input → Fuel 소모 → Output 생산
+- Lazy Update: 상호작용 시점에 (now - lastUpdateAt) 계산으로 일괄 처리
+- 연료값: ItemData.fuelValue (WOOD=15초)
+- 제작속도: FacilityData.craftSpeed (배율)
+- 연료소모: FacilityData.fuelConsumption (초당)
+
+**API**:
+
+```lua
+FacilityService.Init(NetController, DataService, InventoryService, BuildService, Balance)
+FacilityService.register(structureId, facilityId, ownerId)  -- 시설 등록
+FacilityService.unregister(structureId)                     -- 시설 제거
+FacilityService.getInfo(player, structureId)                -- 정보 조회 (Lazy Update 트리거)
+FacilityService.addFuel(player, structureId, invSlot)       -- 연료 투입
+FacilityService.addInput(player, structureId, invSlot, count?)  -- 재료 투입
+FacilityService.collectOutput(player, structureId)          -- 산출물 수거
+FacilityService.GetHandlers()
+```
+
+**이벤트**: `Facility.StateChanged`
+
+### 4.10 RecipeService
+
+**경로**: `src/ServerScriptService/Server/Services/RecipeService.lua`
+
+**역할**: 제작 효율 계산 서비스 (Phase 2-3)
+
+**로직**:
+
+- `Efficiency = FacilitySpeed * (1 + CreatureBonus + BondBonus + TraitBonus + PlayerStat)`
+- `RealTime = BaseCraftTime / Efficiency`
+- **목적**: 동적 제작 시간 계산을 위한 중앙 서비스
+
+**API**:
+
+```lua
+RecipeService.Init(DataService)
+RecipeService.calculateEfficiency(context) -- 효율 배율 반환
+RecipeService.calculateCraftTime(recipeId, context) -- 실제 소요 시간 반환
+RecipeService.getRecipeInfo(recipeId, context) -- 보정된 정보 반환
+RecipeService.GetHandlers()
+```
+
+### 4.11 DurabilityService (Phase 2-4)
+
+- **역할**: 아이템 내구도 관리
+- **API**: `reduceDurability(player, slot, amount)`
+- **Integration**: `InventoryService`와 연동하여 내구도 0 시 파괴 처리
+
+### 4.12 CreatureService (Phase 3-1)
+
+- **역할**: 크리처 엔티티 관리 및 스폰
+- **API**: `spawn(creatureId, position)`
+- **Data**: `CreatureData.lua` (Raptor, Triceratops, Dodo)
+- **Features**:
+  - **Spawn Loop**: 플레이어 주변 40~80m 내 랜덤 스폰 (Cap 50)
+  - **AI Loop**: 상태 머신 (IDLE, WANDER, CHASE) 및 Humanoid 이동
+  - **Despawn**: 플레이어와 150m 이상 멀어지면 삭제
+  - **Damage & Death**: `applyDamage()` 호출 시 체력 차감 및 사망 처리 (아이템 드롭)
+
+### 4.13 CombatService (Phase 3-3)
+
+- **역할**: 전투 로직 및 데미지 계산
+- **API**: `processPlayerAttack(player, targetId, toolSlot)`
+- **Integration**:
+  - `CreatureService`에 데미지 적용 위임
+  - `DurabilityService`로 무기 내구도 차감
+  - `InventoryService`에서 무기 정보 조회 (검증)
 
 ## 5. 네트워크 계층
 
@@ -365,6 +510,8 @@ NetClient.onEvent(eventName, callback)           -- 이벤트 리스너 등록
 | `StorageController.lua`   | `Storage.*` 이벤트 수신                  |
 | `TimeController.lua`      | `Time.*` 이벤트 수신, 시간 UI            |
 | `InteractController.lua`  | 상호작용 처리 (스텁)                     |
+| `BuildController.lua`     | `Build.*` 이벤트 수신, 구조물 캐시       |
+| `CraftController.lua`     | `Craft.*` 이벤트 수신, 제작 UI          |
 
 ---
 
@@ -477,19 +624,32 @@ drops[dropId] = {
 
 ### Phase 2: 게임플레이 시스템
 
-- [x] **2-1**: Build 전제조건 (Protocol, FacilityData, Enums, Balance)
-- [ ] **2-2**: BuildService 구현 (다음 작업)
+- [x] **2-1**: Build 전제조건 (Protocol, FacilityData, Enums, Balance) + BuildService 구현
+- [x] **2-2**: CraftingService + FacilityService (상태머신, Lazy Update)
+- [x] **2-3**: RecipeService (효율 계산 로직)
+- [x] **2-4**: DurabilityService (내구도 시스템)
+- [x] **Phase 3**: Creature System
+  - [x] **3-1**: CreatureData 정의 및 Service 스켈레톤
+  - [x] **3-2**: Spawn System (Donut Shape, Raycast) & Basic AI (FSM: Idle/Wander/Chase)
+  - [x] **3-3**: Combat & Loot (Player Attack, Death Handling, WorldDrop)
+- [x] **Phase 4**: 전투 & 생존 (손맛 구현)
+  - [x] **4-1**: CombatService 보강 (Creature→Player 공격, BloodSmell 연동, Hit Result Event)
+  - [x] **4-2**: PlayerLifeService (사망 처리, 아이템 30% 손실, 침대 리스폰 준비, 5초 리스폰 딜레이)
+  - [x] **4-4**: DebuffService (BloodSmell/Freezing/Burning, 틱 데미지, 어그로 배율)
+  - [x] **4-5**: Night & Fire System (밤 추위 디버프, Campfire 안전지대 판정)
+  - [ ] **Phase 5**: 바이옴 & 환경 (Next Focus)
 
 ---
 
-## 10. 다음 작업: Phase 2-2 BuildService
+## 10. 완료: BuildService (Phase 2-1)
 
-### 10.1 구현 목표
+### 10.1 구현 완료
 
-- `BuildService.lua` 생성
-- 시설물 배치/해체/조회 기능
+- `BuildService.lua` 생성 완료
+- 시설물 배치/해체/조회 기능 구현
+- `BuildController.lua` 클라이언트 컨트롤러 생성
 
-### 10.2 API 설계
+### 10.2 API
 
 ```lua
 BuildService.Init(NetController, DataService, InventoryService, SaveService)
@@ -500,7 +660,7 @@ BuildService.place(player, facilityId, position, rotation)
 
 BuildService.remove(player, structureId)
 -- 검증: 권한, 거리
--- 성공 시: 구조물 제거, 재료 일부 반환(?)
+-- 성공 시: 구조물 제거
 
 BuildService.getAll()
 -- 모든 구조물 목록 반환

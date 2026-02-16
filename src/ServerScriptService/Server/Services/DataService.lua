@@ -37,8 +37,6 @@ local TABLE_NAMES = {
 
 --- 모든 데이터 테이블 로드
 local function _loadAll()
-	print("[DataService] Loading data tables...")
-	
 	for _, tableName in ipairs(TABLE_NAMES) do
 		local moduleInstance = Data:FindFirstChild(tableName)
 		
@@ -52,15 +50,10 @@ local function _loadAll()
 			-- 빈 테이블은 허용
 			if rawData == nil or (type(rawData) == "table" and next(rawData) == nil) then
 				tables[tableName] = {}
-				print(string.format("[DataService] Loaded %s: empty", tableName))
 			else
 				-- validateIdTable로 검증 + 맵 형태 변환
 				local mapData = Validator.validateIdTable(rawData, tableName)
 				tables[tableName] = mapData
-				
-				local count = 0
-				for _ in pairs(mapData) do count += 1 end
-				print(string.format("[DataService] Loaded %s: %d entries", tableName, count))
 			end
 		else
 			-- 모듈이 없으면 빈 테이블
@@ -72,8 +65,6 @@ end
 
 --- 모든 참조 검증
 local function _validateRefs()
-	print("[DataService] Validating references...")
-	
 	local items = tables.ItemData or {}
 	local recipes = tables.RecipeData or {}
 	local dropTables = tables.DropTableData or {}
@@ -82,13 +73,11 @@ local function _validateRefs()
 	-- Recipe → Item 참조 검증
 	if next(recipes) then
 		Validator.validateRecipeRefs(recipes, items, "RecipeData")
-		print("[DataService] RecipeData -> ItemData: OK")
 	end
 	
 	-- DropTable → Item 참조 검증
 	if next(dropTables) then
 		Validator.validateDropTableRefs(dropTables, items, "DropTableData")
-		print("[DataService] DropTableData -> ItemData: OK")
 	end
 	
 	-- Facility → Recipe 참조 검증 (있다면)
@@ -102,10 +91,7 @@ local function _validateRefs()
 				end
 			end
 		end
-		print("[DataService] FacilityData -> RecipeData: OK")
 	end
-	
-	print("[DataService] All references validated")
 end
 
 --========================================
@@ -149,6 +135,16 @@ end
 --- 크리처 조회 (단축)
 function DataService.getCreature(id: string): any
 	return DataService.getById("CreatureData", id)
+end
+
+--- 시설 조회 (단축)
+function DataService.getFacility(id: string): any
+	return DataService.getById("FacilityData", id)
+end
+
+--- 드롭테이블 조회 (단축)
+function DataService.getDropTable(id: string): any
+	return DataService.getById("DropTableData", id)
 end
 
 --========================================
