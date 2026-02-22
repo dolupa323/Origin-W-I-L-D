@@ -9,6 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Balance = require(Shared.Config.Balance)
+local AnimationIds = require(Shared.Config.AnimationIds)
 
 local MovementController = {}
 
@@ -73,6 +74,11 @@ local function fireStaminaChanged()
 	end
 end
 
+local AnimationManager = require(Client.Utils.AnimationManager)
+
+-- 현재 재생 중인 애니메이션 트랙
+local currentRollTrack = nil
+
 local function playDodgeAnimation()
 	local character = player.Character
 	if not character then return end
@@ -80,29 +86,52 @@ local function playDodgeAnimation()
 	local humanoid = character:FindFirstChild("Humanoid")
 	if not humanoid then return end
 	
-	-- 구르기 애니메이션 재생
-	local animator = humanoid:FindFirstChildOfClass("Animator")
-	if animator then
-		-- 기본 구르기 애니메이션 (애셋이 없으면 생략)
-		local dodgeAnim = Instance.new("Animation")
-		dodgeAnim.AnimationId = "rbxassetid://0" -- 구르기 애니메이션 ID (나중에 교체)
-		
-		-- 임시: 애니메이션 없이 카메라 효과만
+	-- 기존 구르기 애니메이션 중지
+	if currentRollTrack and currentRollTrack.IsPlaying then
+		currentRollTrack:Stop(0.1)
 	end
 	
-	-- 카메라 쉐이크 효과
-	local camera = workspace.CurrentCamera
-	if camera then
+	-- 구르기 애니메이션 재생 (AnimationManager 사용)
+	local track = AnimationManager.play(humanoid, AnimationIds.ROLL.FORWARD)
+	if track then
+		track.Priority = Enum.AnimationPriority.Action
+		currentRollTrack = track
+	end
+	
+	-- 구르기 방향으로 캐릭터 이동 효과
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		local moveDir = getMoveDirection()
+		local dodgeDistance = Balance.DODGE_DISTANCE or 8
+		local dodgeDuration = Balance.DODGE_DURATION or 0.5
+		
+		-- BodyVelocity로 구르기 이동
+		local bodyVel = Instance.new("BodyVelocity")
+		bodyVel.MaxForce = Vector3.new(50000, 0, 50000)
+		bodyVel.Velocity = moveDir * (dodgeDistance / dodgeDuration)
+		bodyVel.Parent = hrp
+		
+		-- 무적 표시 (반투명 효과)
 		task.spawn(function()
-			local originalCFrame = camera.CFrame
-			for i = 1, 5 do
-				local shake = CFrame.new(
-					math.random(-5, 5) / 100,
-					math.random(-5, 5) / 100,
-					0
-				)
-				camera.CFrame = camera.CFrame * shake
-				task.wait(0.02)
+			for _, part in ipairs(character:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.Transparency = math.min(part.Transparency + 0.3, 0.6)
+				end
+			end
+		end)
+		
+		-- 구르기 종료 후 정리
+		task.delay(dodgeDuration, function()
+			if bodyVel.Parent then
+				bodyVel:Destroy()
+			end
+			-- 투명도 복원
+			for _, part in ipairs(character:GetDescendants()) do
+				if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+					if part.Name == "Head" or part.Name == "Torso" or part.Name:find("Arm") or part.Name:find("Leg") then
+						part.Transparency = 0
+					end
+				end
 			end
 		end)
 	end

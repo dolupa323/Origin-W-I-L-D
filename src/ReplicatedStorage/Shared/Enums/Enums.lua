@@ -211,42 +211,7 @@ Enums.NodeType = {
 	ORE = "ORE",                 -- 광석
 }
 
---========================================
--- 퀘스트 카테고리 (Phase 8)
---========================================
-Enums.QuestCategory = {
-	TUTORIAL = "TUTORIAL",       -- 튜토리얼
-	MAIN = "MAIN",               -- 메인 스토리
-	SIDE = "SIDE",               -- 사이드 퀘스트
-	DAILY = "DAILY",             -- 일일 퀘스트
-	ACHIEVEMENT = "ACHIEVEMENT", -- 업적
-}
-
---========================================
--- 퀘스트 목표 타입 (Phase 8)
---========================================
-Enums.QuestObjectiveType = {
-	HARVEST = "HARVEST",         -- 자원 수확
-	KILL = "KILL",               -- 크리처 처치
-	CRAFT = "CRAFT",             -- 아이템 제작
-	BUILD = "BUILD",             -- 시설 건설
-	COLLECT = "COLLECT",         -- 아이템 수집 (인벤토리 보유)
-	CAPTURE = "CAPTURE",         -- 팰 포획
-	TALK = "TALK",               -- NPC 대화
-	REACH_LEVEL = "REACH_LEVEL", -- 레벨 달성
-	UNLOCK_TECH = "UNLOCK_TECH", -- 기술 해금
-}
-
---========================================
--- 퀘스트 상태 (Phase 8)
---========================================
-Enums.QuestStatus = {
-	LOCKED = "LOCKED",           -- 잠김 (선행조건 미충족)
-	AVAILABLE = "AVAILABLE",     -- 수락 가능
-	ACTIVE = "ACTIVE",           -- 진행 중
-	COMPLETED = "COMPLETED",     -- 완료 (보상 수령 전)
-	CLAIMED = "CLAIMED",         -- 보상 수령 완료
-}
+-- (Quest 시스템 삭제됨)
 
 -- 테이블 동결
 for key, subTable in pairs(Enums) do

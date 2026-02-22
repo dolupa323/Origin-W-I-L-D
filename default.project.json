@@ -2,10 +2,16 @@
   "name": "DinoTribeSurvival",
   "tree": {
     "$className": "DataModel",
-    "ReplicatedStorage": { "$path": "src/ReplicatedStorage" },
+    "ReplicatedStorage": {
+      "$path": "src/ReplicatedStorage",
+      "$ignoreUnknownInstances": true
+    },
     "ServerScriptService": { "$path": "src/ServerScriptService" },
     "StarterPlayer": {
-    "StarterPlayerScripts": { "$path": "src/StarterPlayer/StarterPlayerScripts" }
-  }
+      "StarterPlayerScripts": { "$path": "src/StarterPlayer/StarterPlayerScripts" }
+    },
+    "Workspace": {
+      "$ignoreUnknownInstances": true
+    }
   }
 }

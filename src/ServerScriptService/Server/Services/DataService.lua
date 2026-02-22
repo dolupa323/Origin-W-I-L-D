@@ -27,7 +27,6 @@ local TABLE_NAMES = {
 	"RecipeData",         -- Item 참조
 	"FacilityData",       -- Recipe 참조 가능
 	"TechUnlockData",     -- 다양한 참조
-	"QuestData",          -- 다양한 참조
 	"NPCShopData",        -- Item 참조
 	"DropTableData",      -- Item 참조
 	"DurabilityProfiles", -- 독립

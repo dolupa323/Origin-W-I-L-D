@@ -51,68 +51,73 @@ end
 
 --- 골드 정보 요청
 function ShopController.requestGold(callback: ((boolean, number?) -> ())?)
-	NetClient.Request("Shop.GetGold.Request", {}, function(response)
-		if response.success and response.data then
-			goldCache = response.data.gold or 0
+	task.spawn(function()
+		local ok, data = NetClient.Request("Shop.GetGold.Request", {})
+		if ok and data then
+			goldCache = data.gold or 0
 			_fireListeners("goldChanged", goldCache)
 		end
 		if callback then
-			callback(response.success, goldCache)
+			callback(ok, goldCache)
 		end
 	end)
 end
 
 --- 상점 목록 요청
 function ShopController.requestShopList(callback: ((boolean, any?) -> ())?)
-	NetClient.Request("Shop.List.Request", {}, function(response)
-		if response.success and response.data and response.data.shops then
-			shopListCache = response.data.shops
+	task.spawn(function()
+		local ok, data = NetClient.Request("Shop.List.Request", {})
+		if ok and data and data.shops then
+			shopListCache = data.shops
 		end
 		if callback then
-			callback(response.success, shopListCache)
+			callback(ok, shopListCache)
 		end
 	end)
 end
 
 --- 특정 상점 정보 요청
 function ShopController.requestShopInfo(shopId: string, callback: ((boolean, any?) -> ())?)
-	NetClient.Request("Shop.GetInfo.Request", { shopId = shopId }, function(response)
-		if response.success and response.data and response.data.shop then
-			shopInfoCache[shopId] = response.data.shop
-			_fireListeners("shopUpdated", response.data.shop)
+	task.spawn(function()
+		local ok, data = NetClient.Request("Shop.GetInfo.Request", { shopId = shopId })
+		if ok and data and data.shop then
+			shopInfoCache[shopId] = data.shop
+			_fireListeners("shopUpdated", data.shop)
 		end
 		if callback then
-			callback(response.success, shopInfoCache[shopId])
+			callback(ok, shopInfoCache[shopId])
 		end
 	end)
 end
 
 --- 아이템 구매 요청
 function ShopController.requestBuy(shopId: string, itemId: string, count: number?, callback: ((boolean, string?) -> ())?)
-	NetClient.Request("Shop.Buy.Request", {
-		shopId = shopId,
-		itemId = itemId,
-		count = count or 1,
-	}, function(response)
+	task.spawn(function()
+		local ok, data = NetClient.Request("Shop.Buy.Request", {
+			shopId = shopId,
+			itemId = itemId,
+			count = count or 1,
+		})
 		-- 성공 시 상점 정보 갱신
-		if response.success then
+		if ok then
 			ShopController.requestShopInfo(shopId)
 		end
 		if callback then
-			callback(response.success, response.errorCode)
+			callback(ok, not ok and tostring(data) or nil)
 		end
 	end)
 end
 
 --- 아이템 판매 요청
 function ShopController.requestSell(shopId: string, slot: number, count: number?, callback: ((boolean, string?) -> ())?)
-	NetClient.Request("Shop.Sell.Request", {
-		shopId = shopId,
-		slot = slot,
-		count = count,
-	}, function(response)
+	task.spawn(function()
+		local ok, data = NetClient.Request("Shop.Sell.Request", {
+			shopId = shopId,
+			slot = slot,
+			count = count,
+		})
 		if callback then
-			callback(response.success, response.errorCode)
+			callback(ok, not ok and tostring(data) or nil)
 		end
 	end)
 end

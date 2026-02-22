@@ -204,9 +204,51 @@ local function handleGetRecipeInfo(player, payload)
 end
 
 local function handleGetAllRecipes(player, payload)
-	-- 현재 Phase에서는 techLevel 0 = 모든 레시피 해금
-	local recipes = RecipeService.getRecipesForTechLevel(0)
+	-- 모든 레시피 반환 (techLevel 필터 없이)
+	local recipes = RecipeService.getRecipesForTechLevel(999)
 	return { success = true, data = { recipes = recipes } }
+end
+
+local function handleListRecipes(player, payload)
+	-- 모든 레시피 + 재료/산출물 상세 정보 포함
+	local allRecipes = DataService.get("RecipeData")
+	if not allRecipes then
+		return { success = true, data = { recipes = {} } }
+	end
+	
+	local result = {}
+	-- RecipeData는 배열 형태일 수 있음
+	if allRecipes[1] then
+		-- 배열인 경우
+		for _, recipe in ipairs(allRecipes) do
+			table.insert(result, {
+				id = recipe.id,
+				name = recipe.name,
+				category = recipe.category,
+				techLevel = recipe.techLevel or 0,
+				requiredFacility = recipe.requiredFacility,
+				craftTime = recipe.craftTime or 0,
+				inputs = recipe.inputs,
+				outputs = recipe.outputs,
+			})
+		end
+	else
+		-- 딕셔너리인 경우
+		for recipeId, recipe in pairs(allRecipes) do
+			table.insert(result, {
+				id = recipe.id or recipeId,
+				name = recipe.name,
+				category = recipe.category,
+				techLevel = recipe.techLevel or 0,
+				requiredFacility = recipe.requiredFacility,
+				craftTime = recipe.craftTime or 0,
+				inputs = recipe.inputs,
+				outputs = recipe.outputs,
+			})
+		end
+	end
+	
+	return { success = true, data = { recipes = result } }
 end
 
 --========================================
@@ -224,6 +266,7 @@ function RecipeService.GetHandlers()
 	return {
 		["Recipe.GetInfo.Request"] = handleGetRecipeInfo,
 		["Recipe.GetAll.Request"] = handleGetAllRecipes,
+		["Recipe.List.Request"] = handleListRecipes,
 	}
 end
 

@@ -261,50 +261,7 @@ AutoHarvestService.Init(HarvestService, FacilityService, BaseClaimService, Palbo
 local AutoDepositService = require(Services.AutoDepositService)
 AutoDepositService.Init(FacilityService, StorageService, BaseClaimService, BuildService, DataService)
 
--- QuestService 초기화 (Phase 8)
-local QuestService = require(Services.QuestService)
-QuestService.Init(NetController, DataService, SaveService, InventoryService, PlayerStatService, PalboxService)
-
--- QuestService 핸들러 등록
-for command, handler in pairs(QuestService.GetHandlers()) do
-	NetController.RegisterHandler(command, handler)
-end
-
--- QuestService 진행 추적 연동: 다른 서비스에 콜백 주입
--- HarvestService → onHarvest
-HarvestService.SetQuestCallback(function(userId, nodeType)
-	QuestService.onHarvest(userId, nodeType, 1)
-end)
-
--- CombatService → onKill
-CombatService.SetQuestCallback(function(userId, creatureType)
-	QuestService.onKill(userId, creatureType, 1)
-end)
-
--- CraftingService → onCraft
-CraftingService.SetQuestCallback(function(userId, recipeId)
-	QuestService.onCraft(userId, recipeId, 1)
-end)
-
--- BuildService → onBuild
-BuildService.SetQuestCallback(function(userId, facilityId)
-	QuestService.onBuild(userId, facilityId)
-end)
-
--- CaptureService → onCapture
-CaptureService.SetQuestCallback(function(userId, palType)
-	QuestService.onCapture(userId, palType)
-end)
-
--- PlayerStatService → onLevelUp
-PlayerStatService.SetLevelUpCallback(function(userId, newLevel)
-	QuestService.onLevelUp(userId, newLevel)
-end)
-
--- TechService → onTechUnlock
-TechService.SetUnlockCallback(function(userId, techId)
-	QuestService.onTechUnlock(userId, techId)
-end)
+-- (Quest 시스템 삭제됨)
 
 -- NPCShopService 초기화 (Phase 9)
 local NPCShopService = require(Services.NPCShopService)
@@ -326,5 +283,9 @@ end
 
 -- CombatService에 StaminaService 연동 (무적 프레임 체크용)
 CombatService.SetStaminaService(StaminaService)
+
+-- CharacterSetupService 초기화 (선사시대 캐릭터 스타일)
+local CharacterSetupService = require(Services.CharacterSetupService)
+CharacterSetupService.Init()
 
 print("[ServerInit] Server initialized (Phase 10)") -- 최종 완료 로그

@@ -46,10 +46,6 @@ if success then
 	local FacilityController = require(Controllers.FacilityController)
 	FacilityController.Init()
 	
-	-- QuestController 초기화 (Phase 8)
-	local QuestController = require(Controllers.QuestController)
-	QuestController.Init()
-	
 	-- ShopController 초기화 (Phase 9)
 	local ShopController = require(Controllers.ShopController)
 	ShopController.Init()
@@ -74,20 +70,20 @@ if success then
 		UIManager.updateStamina(current, max)
 	end)
 	
-	-- 키 바인딩: B = 인벤토리, J = 퀸스트 (Tab/I/Q는 로블록스 기본 기능과 충돌)
+	-- 키 바인딩: B = 인벤토리, C = 제작
 	InputManager.bindKey(Enum.KeyCode.B, "ToggleInventory", function()
 		UIManager.toggleInventory()
 	end)
 	
-	InputManager.bindKey(Enum.KeyCode.J, "ToggleQuest", function()
-		UIManager.toggleQuest()
+	InputManager.bindKey(Enum.KeyCode.C, "ToggleCrafting", function()
+		UIManager.toggleCrafting()
 	end)
 	
 	InputManager.bindKey(Enum.KeyCode.Escape, "CloseUI", function()
 		UIManager.closeInventory()
-		UIManager.closeQuest()
+		UIManager.closeCrafting()
 		UIManager.closeShop()
 	end)
 end
 
-print("[ClientInit] Client initialized (Phase 9 + UI)")
+print("[ClientInit] Client initialized")

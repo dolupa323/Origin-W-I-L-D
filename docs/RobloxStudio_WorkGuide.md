@@ -67,22 +67,51 @@ ServerStorage
 
 ### 3.1 크리처 모델 (CreatureModels/)
 
-| ID            | 이름         | 설명                     | 모델 이름          |
-| ------------- | ------------ | ------------------------ | ------------------ |
-| `RAPTOR`      | 랩터         | 빠른 소형 육식공룡, 선공 | `Raptor.rbxm`      |
-| `TRICERATOPS` | 트리케라톱스 | 대형 초식공룡, 중립      | `Triceratops.rbxm` |
-| `DODO`        | 도도새       | 약한 새, 도망형          | `Dodo.rbxm`        |
+**위치**: `ReplicatedStorage/Assets/CreatureModels/`
 
-#### 크리처 모델 필수 구조:
+| ID            | 이름         | 설명                     | 권장 모델 이름 |
+| ------------- | ------------ | ------------------------ | -------------- |
+| `RAPTOR`      | 랩터         | 빠른 소형 육식공룡, 선공 | `Raptor`       |
+| `TRICERATOPS` | 트리케라톱스 | 대형 초식공룡, 중립      | `Triceratops`  |
+| `DODO`        | 도도새       | 약한 새, 도망형          | `DodoBird`     |
+
+#### 모델 배치 방법 (Toolbox에서 가져오기):
+
+1. **Roblox Studio** → View → Toolbox
+2. 원하는 동물/공룡 모델 검색 (예: "Dodo Bird", "Raptor", "Triceratops")
+3. 모델을 **ReplicatedStorage/Assets/CreatureModels** 폴더에 배치
+4. 끝! (스크립트, GUI, 사운드는 자동 제거됨)
 
 ```
-[CreatureName] (Model)
-├── HumanoidRootPart (Part, Anchored=false)
-├── Humanoid (Humanoid)
-│   └── Health = CreatureData.maxHealth
-├── [BodyParts...] (Part)
-└── CreatureId (StringValue) = "RAPTOR" 등
+ReplicatedStorage
+└── Assets
+    └── CreatureModels
+        ├── DodoBird (Model)      ← Toolbox에서 가져온 그대로
+        ├── Raptor (Model)
+        ├── Triceratops (Model)
+        └── [기타 모델...]
 ```
+
+#### 유연한 모델 매칭 시스템:
+
+CreatureService는 다음 순서로 모델을 찾습니다:
+
+1. **정확한 이름** 매칭 (예: `DodoBird`)
+2. **creatureId** 매칭 (예: `DODO`)
+3. **대소문자 무시** 매칭 (예: `dodobird`, `DODOBIRD`)
+4. **부분 문자열** 매칭 (예: `VelociraptorModel` → `RAPTOR`)
+
+> **중요**: 어떤 모델 구조든 자동 처리됩니다.
+>
+> - HumanoidRootPart 없음 → 자동 생성
+> - Humanoid 없음 → 자동 생성
+> - 파트 연결 안됨 → WeldConstraint 자동 생성
+> - 기존 스크립트/사운드/GUI → 자동 제거
+
+#### 모델 없으면 플레이스홀더 사용:
+
+모델이 없으면 임시 플레이스홀더(2x2x2 랜덤색상 박스)가 생성됩니다.
+Output에서 `[CreatureService] Model 'X' not found` 경고를 확인하세요.
 
 #### CreatureData.lua 참조 스탯:
 
@@ -180,52 +209,170 @@ CRAFTING_TABLE = {
 
 ### 3.3 자원 노드 모델 (ResourceNodeModels/)
 
-| ID            | 이름        | 필요 도구 | 자원             | 모델 이름         |
-| ------------- | ----------- | --------- | ---------------- | ----------------- |
-| `TREE_OAK`    | 참나무      | 도끼      | 나무 3-5개       | `TreeOak.rbxm`    |
-| `TREE_PINE`   | 소나무      | 도끼      | 나무 4-6개, 수지 | `TreePine.rbxm`   |
-| `ROCK_NORMAL` | 바위        | 곡괭이    | 돌 2-4개, 부싯돌 | `RockNormal.rbxm` |
-| `ROCK_IRON`   | 철광석 바위 | 곡괭이    | 철광석 1-3개     | `RockIron.rbxm`   |
-| `BUSH_BERRY`  | 베리 덤불   | 맨손      | 베리 2-5개       | `BushBerry.rbxm`  |
-| `FIBER_GRASS` | 풀          | 맨손      | 섬유 2-4개       | `FiberGrass.rbxm` |
+**유연한 모델 로딩 시스템** - Toolbox에서 가져온 어떤 구조의 모델도 자원 노드로 변환됩니다.
 
-#### 자원 노드 모델 필수 구조:
+| ID            | 이름        | 필요 도구 | 자원             | modelName (권장) |
+| ------------- | ----------- | --------- | ---------------- | ---------------- |
+| `TREE_OAK`    | 참나무      | 도끼      | 나무 3-5개       | `OakTree`        |
+| `TREE_PINE`   | 소나무      | 도끼      | 나무 4-6개, 수지 | `PineTree`       |
+| `ROCK_NORMAL` | 바위        | 곡괭이    | 돌 2-4개, 부싯돌 | `Rock`           |
+| `ROCK_IRON`   | 철광석 바위 | 곡괭이    | 철광석 1-3개     | `IronRock`       |
+| `BUSH_BERRY`  | 베리 덤불   | 맨손      | 베리 2-5개       | `BerryBush`      |
+| `FIBER_GRASS` | 풀          | 맨손      | 섬유 2-4개       | `Grass`          |
+| `ORE_COAL`    | 석탄 광맥   | 곡괭이    | 석탄 2-4개       | `CoalOre`        |
+| `ORE_GOLD`    | 금 광맥     | 곡괭이    | 금광석 1-2개     | `GoldOre`        |
+
+#### Toolbox 모델 사용 방법:
+
+1. **Toolbox에서 원하는 나무/바위/광석 모델 검색**
+2. **ReplicatedStorage/Assets/ResourceNodeModels/ 폴더에 배치**
+3. **ResourceNodeData.lua의 modelName 필드에 모델 이름 지정**
 
 ```
-[NodeName] (Model)
-├── PrimaryPart (Part, Anchored=true)
-├── NodeId (StringValue) = "TREE_OAK" 등
-├── HitsRemaining (IntValue) = maxHits
-├── Depleted (BoolValue) = false
-└── [Visual Parts...]
+ReplicatedStorage/
+└── Assets/
+    └── ResourceNodeModels/
+        ├── OakTree         -- Toolbox에서 가져온 참나무 모델
+        ├── PineTree        -- Toolbox에서 가져온 소나무 모델
+        ├── Rock            -- Toolbox에서 가져온 바위 모델
+        ├── IronRock        -- 철광석 바위 (빛나는 효과 추가)
+        └── BerryBush       -- 베리 덤불 모델
 ```
 
-#### ResourceNodeData.lua 참조:
+#### 자동 모델 설정 (setupModelForNode):
+
+HarvestService가 자동으로 처리하는 것들:
+
+- **스크립트 제거**: Script, LocalScript, ModuleScript 자동 제거
+- **사운드/GUI 제거**: Sound, BillboardGui, SurfaceGui 자동 제거
+- **Anchored 설정**: 모든 파트를 Anchored=true로 설정
+- **Humanoid 제거**: Humanoid가 있으면 제거 (NPC용 모델도 사용 가능)
+- **PrimaryPart 자동 탐색**: PrimaryPart → HumanoidRootPart → 첫 번째 BasePart
+- **CollectionService 태그**: "ResourceNode" 태그 자동 추가
+
+#### 모델 이름 매칭 규칙 (findResourceModel):
+
+1. **정확한 이름**: `modelName`과 정확히 일치
+2. **nodeId 매칭**: `TREE_OAK` → `Tree_Oak`, `TreeOak`
+3. **대소문자 무시**: `oaktree` = `OakTree` = `OAKTREE`
+4. **부분 매칭**: `OakTreeModel` → `oak` 포함 시 매칭
+5. **nodeType 매칭**: `TREE_*` → `tree` 포함 모델 검색
+
+#### ResourceNodeData.lua 예시:
 
 ```lua
-TREE_OAK = {
+{
+    id = "TREE_OAK",
+    name = "참나무",
+    modelName = "OakTree",  -- Assets/ResourceNodeModels/OakTree
     nodeType = "TREE",
-    requiredTool = "AXE",
+    optimalTool = "AXE",
+    resources = {
+        { itemId = "WOOD", min = 3, max = 5, weight = 1.0 }
+    },
     maxHits = 5,
     respawnTime = 300,  -- 5분
-    resources = { WOOD min=3 max=5 }
+    xpPerHit = 2,
 }
 
-ROCK_NORMAL = {
+{
+    id = "ROCK_IRON",
+    name = "철광석 바위",
+    modelName = "IronRock",  -- Assets/ResourceNodeModels/IronRock
     nodeType = "ROCK",
-    requiredTool = "PICKAXE",
-    maxHits = 4,
-    respawnTime = 240,  -- 4분
-    resources = { STONE min=2 max=4, FLINT min=0 max=1 (30%) }
-}
-
-FIBER_GRASS = {
-    nodeType = "FIBER",
-    requiredTool = nil,  -- 맨손 가능
-    maxHits = 2,
-    respawnTime = 120   -- 2분
+    optimalTool = "PICKAXE",
+    resources = {
+        { itemId = "STONE", min = 1, max = 2, weight = 0.5 },
+        { itemId = "IRON_ORE", min = 1, max = 3, weight = 1.0 },
+    },
+    maxHits = 6,
+    respawnTime = 480,  -- 8분
+    xpPerHit = 4,
 }
 ```
+
+#### 모델 없을 때 폴백:
+
+모델을 찾지 못하면 자동으로 플레이스홀더 생성:
+
+- **TREE**: 갈색 원기둥 (나무 줄기)
+- **ROCK/ORE**: 회색 구형 (바위)
+- **BUSH/FIBER**: 녹색 작은 박스 (풀)
+
+---
+
+### 3.3.1 자원 노드 자동 스폰 시스템
+
+**공룡 스폰과 동일한 방식으로 자원 노드도 자동 스폰됩니다.**
+
+#### 스폰 규칙:
+
+| 지형 Material                | 스폰되는 자원                 |
+| ---------------------------- | ----------------------------- |
+| Grass, LeafyGrass            | 참나무, 소나무, 베리 덤불, 풀 |
+| Rock, Slate, Basalt, Granite | 바위, 철광석 바위, 석탄       |
+| Sand, Sandstone              | 바위, 풀                      |
+| Ground, Mud                  | 참나무, 바위, 베리 덤불, 풀   |
+
+#### 자동 스폰 흐름:
+
+```
+1. 플레이어 주변 20~60 studs 범위에서 스폰 위치 검색
+2. Raycast로 지형 Material 확인
+3. Material에 맞는 자원 노드 선택 (풀밭→나무, 바위→광석)
+4. Assets/ResourceNodeModels에서 모델 복제
+5. workspace.ResourceNodes에 배치
+6. 플레이어가 150 studs 이상 멀어지면 디스폰
+```
+
+#### 채집 → 드롭 → 리스폰 흐름:
+
+```
+1. 플레이어가 자원 노드 채집 (E키 또는 도구 사용)
+2. 채집 완료 시:
+   - 노드 모델 투명화 (Transparency=1, CanCollide=false, CanQuery=false)
+   - 월드 드롭 생성 (WorldDropService.spawnDrop)
+   - 드롭된 아이템은 3D 시각화 + ProximityPrompt로 루팅 가능
+3. respawnTime 후 노드 복원 (모델 다시 보임, 채집 가능)
+```
+
+#### Balance.lua 설정:
+
+```lua
+Balance.RESOURCE_NODE_CAP = 100    -- 자동 스폰 노드 최대 수
+Balance.NODE_SPAWN_INTERVAL = 20   -- 스폰 간격 (초)
+Balance.NODE_DESPAWN_DIST = 150    -- 디스폰 거리
+```
+
+#### 수동 배치 vs 자동 스폰:
+
+| 구분      | 수동 배치                                      | 자동 스폰                                |
+| --------- | ---------------------------------------------- | ---------------------------------------- |
+| 배치 방법 | Studio에서 workspace.ResourceNodes에 직접 배치 | HarvestService.\_spawnLoop()가 자동 생성 |
+| 속성      | `AutoSpawned = nil`                            | `AutoSpawned = true`                     |
+| 디스폰    | 안됨 (항상 유지)                               | 플레이어와 멀면 디스폰                   |
+| 리스폰    | respawnTime 후 같은 위치에 복원                | respawnTime 후 같은 위치에 복원          |
+
+---
+
+### 3.3.2 자원 노드 채집 판정 파트 배치 가이드
+
+> **중요**: 자원 노드 모델에는 반드시 채집 판정용 파트(Hitbox 또는 InteractPart)가 포함되어야 하며, 이 파트의 위치는 플레이어가 채집 시 접근하는 시선 위치(몸통, 표면 등)에 배치해야 합니다.
+>
+> - 모델 하위에 `Hitbox` 또는 `InteractPart` 파트를 추가
+> - 판정 파트는 투명(Transparency=1)으로 설정 가능, 크기와 위치는 상호작용이 자연스럽게 이루어지도록 조정
+> - 판정 파트가 없으면 채집이 불가능하거나 판정이 어색해질 수 있음
+> - 모델링 시 반드시 판정 파트 위치를 플레이어 접근 위치에 맞게 배치
+
+#### 예시 구조:
+
+```
+OakTree (Model)
+├── Hitbox (Part, Transparency=1, Size=3,3,3, 위치=몸통 중앙)
+├── [Visual Parts...]
+```
+
+HarvestService와 InteractController는 판정 파트를 우선 탐색하며, 없을 경우 PrimaryPart 또는 첫 BasePart를 사용합니다.
 
 ---
 

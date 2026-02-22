@@ -16,10 +16,14 @@ local player = Players.LocalPlayer
 
 -- 키 바인딩 콜백
 local keyCallbacks = {}  -- [keyCode] = { callback, name }
+local keyHoldCallbacks = {}  -- [keyCode] = { onPress, onRelease, name }
 local mouseCallbacks = {
 	leftClick = nil,
 	rightClick = nil,
 }
+
+-- 현재 누르고 있는 키 상태
+local heldKeys = {}  -- [keyCode] = true/false
 
 -- 상태
 local isUIOpen = false  -- UI 열림 상태 (게임 입력 차단용)
@@ -53,6 +57,25 @@ function InputManager.unbindKey(keyCode: Enum.KeyCode)
 	keyCallbacks[keyCode] = nil
 end
 
+--- 키 홀드 바인딩 등록 (누름/뗌 시점 모두 콜백)
+function InputManager.bindKeyHold(keyCode: Enum.KeyCode, name: string, onPress: () -> (), onRelease: () -> ())
+	keyHoldCallbacks[keyCode] = {
+		onPress = onPress,
+		onRelease = onRelease,
+		name = name,
+	}
+end
+
+--- 키 홀드 바인딩 해제
+function InputManager.unbindKeyHold(keyCode: Enum.KeyCode)
+	keyHoldCallbacks[keyCode] = nil
+end
+
+--- 특정 키가 현재 눌려있는지 확인
+function InputManager.isKeyHeld(keyCode: Enum.KeyCode): boolean
+	return heldKeys[keyCode] == true
+end
+
 --========================================
 -- Public API: Mouse Binding
 --========================================
@@ -75,9 +98,20 @@ local function onInputBegan(input: InputObject, gameProcessed: boolean)
 	-- 키보드 입력 (채팅 등 UI 입력 처리 중이면 무시)
 	if input.UserInputType == Enum.UserInputType.Keyboard then
 		if gameProcessed then return end
+		
+		-- 키 홀드 상태 업데이트
+		heldKeys[input.KeyCode] = true
+		
+		-- 일반 키 콜백
 		local binding = keyCallbacks[input.KeyCode]
 		if binding then
 			binding.callback()
+		end
+		
+		-- 키 홀드 콜백 (눌림)
+		local holdBinding = keyHoldCallbacks[input.KeyCode]
+		if holdBinding and holdBinding.onPress then
+			holdBinding.onPress()
 		end
 	end
 	
@@ -97,6 +131,20 @@ local function onInputBegan(input: InputObject, gameProcessed: boolean)
 				local hitPos = mouse.Hit and mouse.Hit.Position
 				mouseCallbacks.rightClick(hitPos)
 			end
+		end
+	end
+end
+
+local function onInputEnded(input: InputObject, gameProcessed: boolean)
+	-- 키보드 입력
+	if input.UserInputType == Enum.UserInputType.Keyboard then
+		-- 키 홀드 상태 업데이트
+		heldKeys[input.KeyCode] = false
+		
+		-- 키 홀드 콜백 (뗌)
+		local holdBinding = keyHoldCallbacks[input.KeyCode]
+		if holdBinding and holdBinding.onRelease then
+			holdBinding.onRelease()
 		end
 	end
 end
@@ -145,6 +193,7 @@ function InputManager.Init()
 	end
 	
 	UserInputService.InputBegan:Connect(onInputBegan)
+	UserInputService.InputEnded:Connect(onInputEnded)
 	
 	initialized = true
 	print("[InputManager] Initialized")

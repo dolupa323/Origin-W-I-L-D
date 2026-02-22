@@ -33,10 +33,26 @@ Balance.DROP_DESPAWN_GATHER = 600  -- 채집 드롭 디스폰 시간 (초)
 Balance.DROP_LOOT_RANGE = 10       -- 루팅 최대 거리 (스터드)
 
 --========================================
+-- 월드 / 맵 설정
+--========================================
+Balance.MAP_EXTENT = 2500          -- 초기 스폰 시 탐색할 맵 최대 범위 (스터드, 1500 -> 2500)
+Balance.SEA_LEVEL = 10              -- 해수면 높이 (이보다 낮으면 바다, 0 -> 10)
+
+--========================================
 -- 야생동물 / 크리처
 --========================================
-Balance.WILDLIFE_CAP = 250         -- 서버 전체 야생동물 최대 수
+Balance.WILDLIFE_CAP = 300         -- 서버 전체 야생동물 최대 수
 Balance.CREATURE_COOLDOWN = 600    -- 크리처 리스폰 쿨다운 (초)
+Balance.INITIAL_CREATURE_COUNT = 80 -- 서버 시작 시 초기 스폰 크리처 수 (30->80)
+Balance.CREATURE_REPLENISH_INTERVAL = 45 -- 보충 스폰 간격 (초)
+
+--========================================
+-- 자원 노드 (Resource Nodes)
+--========================================
+Balance.RESOURCE_NODE_CAP = 250    -- 서버 전체 자동 스폰 자원 노드 최대 수
+Balance.NODE_SPAWN_INTERVAL = 20   -- 자원 노드 보충 스폰 간격 (초)
+Balance.NODE_DESPAWN_DIST = 150    -- 자원 노드 디스폰 거리
+Balance.INITIAL_NODE_COUNT = 150   -- 서버 시작 시 초기 스폰 노드 수 (60->150)
 
 --========================================
 -- 시설
@@ -97,8 +113,8 @@ Balance.STAMINA_REGEN = 8              -- 초당 스태미나 회복량
 Balance.STAMINA_REGEN_DELAY = 1.5      -- 스태미나 사용 후 회복 시작 딜레이 (초)
 
 -- 스프린트 (빠르게 달리기)
-Balance.SPRINT_SPEED_MULT = 1.6        -- 스프린트 속도 배율
-Balance.SPRINT_STAMINA_COST = 12       -- 초당 스태미나 소모
+Balance.SPRINT_SPEED_MULT = 2.0        -- 스프린트 속도 배율 (기본 1.6 → 2.0)
+Balance.SPRINT_STAMINA_COST = 20       -- 초당 스태미나 소모 (기본 12 → 20)
 Balance.SPRINT_MIN_STAMINA = 10        -- 스프린트 시작 최소 스태미나
 
 -- 구르기 (회피)
@@ -111,8 +127,15 @@ Balance.DODGE_IFRAMES = 0.25           -- 무적 프레임 지속 시간 (초)
 -- 수확 시스템 (Phase 7)
 --========================================
 Balance.HARVEST_COOLDOWN = 0.5         -- 연속 타격 카다운 (초)
-Balance.HARVEST_RANGE = 5              -- 수확 가능 거리 (스터드)
+Balance.HARVEST_RANGE = 12             -- 수확 가능 거리 (스터드) — 기본 8 → 12 확대
 Balance.HARVEST_XP_PER_HIT = 2         -- 타격당 XP
+
+-- 채집 홀드 시스템 (E키 꿉 누르기)
+Balance.HARVEST_HOLD_TIME_BASE = 2.0   -- 기본 채집 시간 (초, 맨손 기준)
+Balance.HARVEST_HOLD_TIME_OPTIMAL = 0.8 -- 최적 도구 사용 시 채집 시간 (초)
+Balance.HARVEST_EFFICIENCY_BAREHAND = 0.5 -- 맨손 효율 (자원 획득량 배율)
+Balance.HARVEST_EFFICIENCY_WRONG_TOOL = 0.7 -- 맞지 않는 도구 효율
+Balance.HARVEST_EFFICIENCY_OPTIMAL = 1.2 -- 최적 도구 효율
 
 --========================================
 -- 베이스 시스템 (Phase 7)

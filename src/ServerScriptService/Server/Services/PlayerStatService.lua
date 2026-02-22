@@ -170,33 +170,31 @@ function PlayerStatService.addXP(userId: number, amount: number, source: string?
 		-- 기술 포인트 지급 (레벨업당 TECH_POINTS_PER_LEVEL)
 		local techPointsGained = (newLevel - oldLevel) * Balance.TECH_POINTS_PER_LEVEL
 		
-		-- 저장
-		_savePlayerStats(userId)
-		
-		-- 이벤트 발행
-		local player = game:GetService("Players"):GetPlayerByUserId(userId)
-		if player and NetController then
-			NetController.FireClient(player, "Player.Stats.Changed", {
-				level = newLevel,
-				currentXP = stats.currentXP,
-				requiredXP = _getXPForNextLevel(newLevel),
-				totalXP = stats.totalXP,
-				techPointsAvailable = PlayerStatService.getTechPoints(userId),
-				techPointsGained = techPointsGained,
-				source = source,
-			})
-		end
-		
 		print(string.format("[PlayerStatService] Player %d leveled up: %d → %d (gained %d tech points)", 
 			userId, oldLevel, newLevel, techPointsGained))
 		
-		-- Phase 8: 레벨업 콜백
+		-- 레벨업 콜백
 		if levelUpCallback then
 			levelUpCallback(userId, newLevel)
 		end
-	else
-		-- 저장만 (이벤트 없이)
-		_savePlayerStats(userId)
+	end
+	
+	-- 저장
+	_savePlayerStats(userId)
+	
+	-- 매 XP 획득마다 클라이언트에 알림 (HUD 실시간 갱신용)
+	local player = game:GetService("Players"):GetPlayerByUserId(userId)
+	if player and NetController then
+		local currentInLevel = _getCurrentLevelXP(stats.totalXP, stats.level)
+		local requiredXP = _getXPForNextLevel(stats.level)
+		NetController.FireClient(player, "Player.Stats.Changed", {
+			level = stats.level,
+			currentXP = currentInLevel,
+			requiredXP = requiredXP,
+			totalXP = stats.totalXP,
+			leveledUp = leveledUp,
+			source = source,
+		})
 	end
 	
 	return leveledUp, stats.level

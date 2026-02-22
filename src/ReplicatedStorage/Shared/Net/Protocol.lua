@@ -99,11 +99,10 @@ Protocol.Commands = {
 	["Base.Get.Request"] = true,               -- 베이스 정보 조회
 	["Base.Expand.Request"] = true,            -- 베이스 확장
 	
-	-- Quest 명령어 (Phase 8)
-	["Quest.List.Request"] = true,             -- 퀘스트 목록 요청
-	["Quest.Accept.Request"] = true,           -- 퀘스트 수락
-	["Quest.Claim.Request"] = true,            -- 보상 수령
-	["Quest.Abandon.Request"] = true,          -- 퀘스트 포기
+	-- (Quest 시스템 삭제됨)
+	
+	-- Recipe 목록 조회
+	["Recipe.List.Request"] = true,            -- 전체 레시피 목록 조회
 	
 	-- Shop 명령어 (Phase 9)
 	["Shop.List.Request"] = true,              -- 상점 목록 요청
