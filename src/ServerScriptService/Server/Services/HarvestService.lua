@@ -611,6 +611,7 @@ function HarvestService.registerNode(nodeId: string, position: Vector3): string
 			nodeUID = nodeUID,
 			nodeId = nodeId,
 			position = position,
+			maxHits = nodeData.maxHits, -- 최대 체력 정보 추가
 		})
 	end
 	
@@ -698,6 +699,15 @@ function HarvestService.hit(player: Player, nodeUID: string): (boolean, string?,
 	
 	-- 7. 타격 처리
 	nodeState.remainingHits = nodeState.remainingHits - 1
+	
+	-- 타격 브로드캐스트 (클라이언트 HP 바 업데이트용)
+	if NetController then
+		NetController.FireAllClients("Harvest.Node.Hit", {
+			nodeUID = nodeUID,
+			remainingHits = nodeState.remainingHits,
+			maxHits = nodeData.maxHits
+		})
+	end
 	
 	-- 8. 노드 고갈 처리 (모델 파괴 + 드롭 생성)
 	local drops = {}

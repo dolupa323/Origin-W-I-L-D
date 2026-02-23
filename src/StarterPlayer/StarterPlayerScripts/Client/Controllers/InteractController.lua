@@ -486,7 +486,7 @@ end
 -- Public API
 --========================================
 
---- E키 눌림 처리 (채집 시작)
+--- Z키 눌림 처리 (줍기, 대화 등)
 function InteractController.onInteractPress()
 	if InputManager.isUIOpen() then
 		return
@@ -494,8 +494,8 @@ function InteractController.onInteractPress()
 	
 	if currentTarget and currentTargetType then
 		if currentTargetType == "resource" then
-			-- 채집은 홀드 방식
-			startHarvest(currentTarget)
+			-- 채집은 이제 공격(좌클릭)으로 처리하므로 여기서는 무시하거나 안내만 함
+			print("[InteractController] 공격(좌클릭)으로 채집하세요.")
 		elseif currentTargetType == "drop" then
 			-- 드롭 줍기는 즉시
 			pickupDrop(currentTarget)
@@ -504,13 +504,6 @@ function InteractController.onInteractPress()
 		elseif currentTargetType == "facility" then
 			interactFacility(currentTarget)
 		end
-	end
-end
-
---- E키 뗌 처리 (채집 중단)
-function InteractController.onInteractRelease()
-	if isHarvesting then
-		cancelHarvest()
 	end
 end
 
@@ -532,9 +525,9 @@ local function onHeartbeat()
 		
 		if UIManager then
 			if target then
-				local promptText = "[E] "
+				local promptText = "[Z] "
 				if targetType == "resource" then
-					promptText = "[E 꾹] 채집"  -- 홀드 표시
+					promptText = "" -- 안내문 삭제 (HP바로 대체)
 				elseif targetType == "drop" then
 					promptText = promptText .. "줍기"
 				elseif targetType == "npc" then
@@ -544,7 +537,12 @@ local function onHeartbeat()
 				else
 					promptText = promptText .. "상호작용"
 				end
-				UIManager.showInteractPrompt(promptText)
+				
+				if promptText ~= "" then
+					UIManager.showInteractPrompt(promptText)
+				else
+					UIManager.hideInteractPrompt()
+				end
 			else
 				UIManager.hideInteractPrompt()
 			end
@@ -567,18 +565,11 @@ function InteractController.Init()
 		UIManager = require(Client.UIManager)
 	end)
 	
-	-- E 키 홀드 바인딩 (채집용)
-	InputManager.bindKeyHold(Enum.KeyCode.E, "Interact", function()
-		InteractController.onInteractPress()
-	end, function()
-		InteractController.onInteractRelease()
-	end)
-	
-	-- 매 프레임 대상 감지 및 채집 업데이트
+	-- 매 프레임 대상 감지 업데이트
 	RunService.Heartbeat:Connect(onHeartbeat)
 	
 	initialized = true
-	print("[InteractController] Initialized")
+	print("[InteractController] Initialized (Z = Interact)")
 end
 
 return InteractController

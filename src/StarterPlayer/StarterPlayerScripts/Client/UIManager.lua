@@ -257,9 +257,10 @@ end
 ----------------------------------------------------------------
 local function createActionButtons()
 	local acts = {
-		{key="E", label="상호작용", y=-140},
+		{key="Z", label="상호작용", y=-195, fn=function() end}, -- Z로 변경
+		{key="E", label="장비", y=-140, fn=function() UIManager.toggleInventory() end}, -- E는 장비/인벤토리
 		{key="C", label="제작", y=-85, fn=function() UIManager.toggleCrafting() end},
-		{key="B", label="인벤토리", y=-30, fn=function() UIManager.toggleInventory() end},
+		{key="B", label="가방", y=-30, fn=function() UIManager.toggleInventory() end},
 	}
 	for _, a in ipairs(acts) do
 		local rect = mkFrame({name="Act"..a.key, size=UDim2.new(0,44,0,44), pos=UDim2.new(1,-18,1,a.y), anchor=Vector2.new(1,1), bg=C.BG_OVERLAY, bgT=0.4, r=8, stroke=1.5, strokeC=C.BORDER, z=3, parent=mainGui})

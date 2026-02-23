@@ -177,15 +177,17 @@ local function setupModelForCreature(model: Model, position: Vector3, data: any)
 	local rootPart = model:FindFirstChild("HumanoidRootPart")
 	
 	if not rootPart then
-		-- 모델 중심 계산
+		-- 모델 중심 및 크기 계산
+		local _, modelSize = model:GetBoundingBox()
 		local center = getModelCenter(model)
 		
-		-- HumanoidRootPart 생성 (투명, 중심에 위치)
+		-- HumanoidRootPart 생성 (모델 크기에 맞춤)
 		rootPart = Instance.new("Part")
 		rootPart.Name = "HumanoidRootPart"
-		rootPart.Size = Vector3.new(2, 2, 2)
+		rootPart.Size = modelSize -- 모델 크기와 동일하게 설정 (히트박스 확대)
 		rootPart.Transparency = 1
 		rootPart.CanCollide = false
+		rootPart.CanQuery = true -- 공격 감지 가능하게
 		rootPart.Position = center
 		rootPart.Parent = model
 		
@@ -350,20 +352,59 @@ function CreatureService.spawn(creatureId, position)
 		humanoid.Parent = model
 	end
 	
-	-- 빌보드 GUI (이름/체력 표시)
+	-- 빌보드 GUI (세련된 이름/체력 표시)
 	local modelHeight = getModelHeight(model)
 	local bg = Instance.new("BillboardGui")
-	bg.Size = UDim2.new(0, 100, 0, 50)
-	bg.StudsOffset = Vector3.new(0, modelHeight / 2 + 1, 0)
-	bg.AlwaysOnTop = true
+	bg.Name = "CreatureLabel"
+	bg.Size = UDim2.new(0, 120, 0, 40)
+	bg.StudsOffset = Vector3.new(0, modelHeight / 2 + 1.5, 0)
+	bg.AlwaysOnTop = false -- 너무 멀면 가려지게
+	bg.MaxDistance = 60
 	bg.Parent = rootPart
 	
-	local txt = Instance.new("TextLabel")
-	txt.Size = UDim2.new(1, 0, 1, 0)
-	txt.BackgroundTransparency = 1
-	txt.Text = string.format("%s\nHP: %d/%d", data.name, data.maxHealth, data.maxHealth)
-	txt.TextColor3 = Color3.new(1, 1, 1)
-	txt.Parent = bg
+	-- 배경 (이름 + 바)
+	local mainFrame = Instance.new("Frame")
+	mainFrame.Size = UDim2.new(1, 0, 1, 0)
+	mainFrame.BackgroundTransparency = 1
+	mainFrame.Parent = bg
+	
+	-- 이름 텍스트 (타입 제거)
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Name = "NameLabel"
+	nameLabel.Size = UDim2.new(1, 0, 0.4, 0)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Text = data.name or creatureId
+	nameLabel.TextColor3 = Color3.new(1, 1, 1)
+	nameLabel.TextStrokeTransparency = 0.5
+	nameLabel.Font = Enum.Font.GothamBold
+	nameLabel.TextSize = 12
+	nameLabel.Parent = mainFrame
+	
+	-- HP 바 배경
+	local healthBG = Instance.new("Frame")
+	healthBG.Name = "HealthBG"
+	healthBG.Size = UDim2.new(0.8, 0, 0.2, 0)
+	healthBG.Position = UDim2.new(0.5, 0, 0.6, 0)
+	healthBG.AnchorPoint = Vector2.new(0.5, 0)
+	healthBG.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+	healthBG.BackgroundTransparency = 0.3
+	healthBG.BorderSizePixel = 0
+	healthBG.Parent = mainFrame
+	
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 4)
+	corner.Parent = healthBG
+	
+	-- HP 바 채우기
+	local healthFill = Instance.new("Frame")
+	healthFill.Name = "HealthFill"
+	healthFill.Size = UDim2.new(1, 0, 1, 0)
+	healthFill.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
+	healthFill.BorderSizePixel = 0
+	healthFill.Parent = healthBG
+	
+	local corner2 = corner:Clone()
+	corner2.Parent = healthFill
 	
 	model.Parent = creatureFolder
 	
@@ -385,7 +426,7 @@ function CreatureService.spawn(creatureId, position)
 		state = "IDLE",
 		targetPosition = nil,
 		lastStateChange = tick(),
-		gui = txt, -- GUI 업데이트용
+		gui = healthFill, -- HP 바 업데이트용
 	}
 	creatureCount = creatureCount + 1
 	
@@ -451,9 +492,19 @@ function CreatureService.applyDamage(instanceId: string, damage: number, attacke
 		creature.humanoid.WalkSpeed = (creature.data.runSpeed or 20) * 1.2
 	end
 	
-	-- GUI 갱신
+	-- GUI 갱신 (HP 바 크기 조절)
 	if creature.gui then
-		creature.gui.Text = string.format("%s\nState: %s\nHP: %d", creature.data.name, creature.state, creature.currentHealth)
+		local ratio = math.clamp(creature.currentHealth / creature.maxHealth, 0, 1)
+		creature.gui.Size = UDim2.new(ratio, 0, 1, 0)
+		
+		-- 체력에 따른 색상 변화 (옵션: 낮을수록 빨갛게)
+		if ratio > 0.5 then
+			creature.gui.BackgroundColor3 = Color3.fromRGB(60, 220, 60) -- 초록
+		elseif ratio > 0.2 then
+			creature.gui.BackgroundColor3 = Color3.fromRGB(220, 180, 60) -- 노랑
+		else
+			creature.gui.BackgroundColor3 = Color3.fromRGB(220, 60, 60) -- 빨강
+		end
 	end
 
 	-- 사망 처리
@@ -484,20 +535,22 @@ function CreatureService.applyDamage(instanceId: string, damage: number, attacke
 			PlayerStatService.addXP(attacker.UserId, xpAmount, Enums.XPSource.CREATURE_KILL)
 		end
 		
-		-- 3. 사망 연출 (Anchored, Tipped Over)
-		if creature.rootPart then
-			creature.rootPart.Anchored = true
-			creature.rootPart.CanCollide = false
-			creature.rootPart.Transparency = 0.5
-			creature.rootPart.Orientation = Vector3.new(0, 0, 90) -- 눕기
+		-- 3. 사망 연출 (즉시 투명화 및 제거)
+		if creature.model then
+			for _, part in ipairs(creature.model:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.Transparency = 1
+					part.CanCollide = false
+				end
+			end
 		end
 		if creature.gui then creature.gui:Destroy() end
 		
-		-- 3. 데이터 삭제 & 모델 제거 딜레이
-		activeCreatures[instanceId] = nil -- 로직에서 제외
+		-- 3. 데이터 삭제 & 모델 제거
+		activeCreatures[instanceId] = nil 
 		creatureCount = creatureCount - 1
 		
-		task.delay(2, function()
+		task.delay(0.5, function() -- 드롭 생성 시간 정도만 대기 후 제거
 			if creature.model then creature.model:Destroy() end
 		end)
 		
@@ -1104,9 +1157,19 @@ function CreatureService._updateAILoop()
 			end
 		end
 		
-		-- GUI 업데이트
+		-- GUI 업데이트 (HP 바 크기 조절)
 		if creature.gui then
-			creature.gui.Text = string.format("%s\nState: %s\nHP: %d", creature.data.name, creature.state, creature.currentHealth)
+			local ratio = math.clamp(creature.currentHealth / creature.maxHealth, 0, 1)
+			creature.gui.Size = UDim2.new(ratio, 0, 1, 0)
+			
+			-- 체력에 따른 색상 변화
+			if ratio > 0.5 then
+				creature.gui.BackgroundColor3 = Color3.fromRGB(60, 220, 60)
+			elseif ratio > 0.2 then
+				creature.gui.BackgroundColor3 = Color3.fromRGB(220, 180, 60)
+			else
+				creature.gui.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
+			end
 		end
 	end
 end

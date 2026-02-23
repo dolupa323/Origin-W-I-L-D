@@ -104,34 +104,17 @@ local function playDodgeAnimation()
 		local moveDir = getMoveDirection()
 		local dodgeDistance = Balance.DODGE_DISTANCE or 8
 		local dodgeDuration = Balance.DODGE_DURATION or 0.5
-		
-		-- BodyVelocity로 구르기 이동
+
+		-- BodyVelocity로 구르기 이동 (투명도 효과 없음 - 애니메이션만 사용)
 		local bodyVel = Instance.new("BodyVelocity")
 		bodyVel.MaxForce = Vector3.new(50000, 0, 50000)
 		bodyVel.Velocity = moveDir * (dodgeDistance / dodgeDuration)
 		bodyVel.Parent = hrp
-		
-		-- 무적 표시 (반투명 효과)
-		task.spawn(function()
-			for _, part in ipairs(character:GetDescendants()) do
-				if part:IsA("BasePart") then
-					part.Transparency = math.min(part.Transparency + 0.3, 0.6)
-				end
-			end
-		end)
-		
-		-- 구르기 종료 후 정리
+
+		-- 구르기 종료 후 BodyVelocity 제거
 		task.delay(dodgeDuration, function()
 			if bodyVel.Parent then
 				bodyVel:Destroy()
-			end
-			-- 투명도 복원
-			for _, part in ipairs(character:GetDescendants()) do
-				if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-					if part.Name == "Head" or part.Name == "Torso" or part.Name:find("Arm") or part.Name:find("Leg") then
-						part.Transparency = 0
-					end
-				end
 			end
 		end)
 	end

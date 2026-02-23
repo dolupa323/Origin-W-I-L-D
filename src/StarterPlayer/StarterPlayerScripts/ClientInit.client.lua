@@ -62,6 +62,10 @@ if success then
 	local MovementController = require(Controllers.MovementController)
 	MovementController.Init()
 	
+	-- ResourceUIController 초기화 (노드 HP 바)
+	local ResourceUIController = require(Controllers.ResourceUIController)
+	ResourceUIController.Init()
+	
 	-- UIManager 초기화 (UI 생성 - 컨트롤러들 초기화 후)
 	UIManager.Init()
 	
@@ -70,13 +74,21 @@ if success then
 		UIManager.updateStamina(current, max)
 	end)
 	
-	-- 키 바인딩: B = 인벤토리, C = 제작
-	InputManager.bindKey(Enum.KeyCode.B, "ToggleInventory", function()
+	-- 키 바인딩 설정
+	-- E = 장비창 (인벤토리), B = 인벤토리
+	InputManager.bindKey(Enum.KeyCode.E, "ToggleInventoryE", function()
 		UIManager.toggleInventory()
 	end)
-	
+	InputManager.bindKey(Enum.KeyCode.B, "ToggleInventoryB", function()
+		UIManager.toggleInventory()
+	end)
+	-- C = 제작
 	InputManager.bindKey(Enum.KeyCode.C, "ToggleCrafting", function()
 		UIManager.toggleCrafting()
+	end)
+	-- Z = 상호작용 (줍기, NPC 등)
+	InputManager.bindKey(Enum.KeyCode.Z, "InteractZ", function()
+		InteractController.onInteractPress()
 	end)
 	
 	InputManager.bindKey(Enum.KeyCode.Escape, "CloseUI", function()

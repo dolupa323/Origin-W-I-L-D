@@ -6,6 +6,7 @@ local Players = game:GetService("Players")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local AnimationIds = require(Shared.Config.AnimationIds)
+local Balance = require(Shared.Config.Balance)
 
 local Client = script.Parent.Parent
 local NetClient = require(Client.NetClient)
@@ -110,40 +111,82 @@ local function playAttackAnimation(isHit: boolean)
 	end)
 end
 
---- 공격 대상 찾기 (마우스 위치 기준)
-local function findTarget(): (Instance?, Vector3?, string?)
+--- 공격 대상 찾기 (마우스 위치 + 구체 영역 체크)
+local function findTarget(): (Instance?, Vector3?, string?, string?)
+	-- 1. 마우스 위치 타겟 확인
 	local target = InputManager.getMouseTarget()
-	
-	if not target then
-		return nil, nil, nil
-	end
-	
-	-- Creatures 폴더 하위인지 확인
 	local creaturesFolder = workspace:FindFirstChild("Creatures")
-	if creaturesFolder and target:IsDescendantOf(creaturesFolder) then
-		-- 모델 찾기 (루트 파트의 부모)
-		local model = target:FindFirstAncestorOfClass("Model")
-		if model then
+	local nodesFolder = workspace:FindFirstChild("ResourceNodes")
+	
+	local function checkModel(part)
+		if not part then return nil end
+		local model = part:FindFirstAncestorOfClass("Model")
+		if not model then return nil end
+		
+		if creaturesFolder and model:IsDescendantOf(creaturesFolder) then
 			local hrp = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
 			local instanceId = model:GetAttribute("InstanceId")
 			if hrp and instanceId then
-				return model, hrp.Position, instanceId
+				return model, hrp.Position, instanceId, "creature"
 			end
+		elseif nodesFolder and model:IsDescendantOf(nodesFolder) then
+			local nodeUID = model:GetAttribute("NodeUID")
+			local primary = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+			if nodeUID and primary then
+				return model, primary.Position, nodeUID, "resource"
+			end
+		end
+		return nil
+	end
+
+	-- 마우스 타겟 우선 확인
+	local mModel, mPos, mId, mType = checkModel(target)
+	if mModel then return mModel, mPos, mId, mType end
+	
+	-- 2. 플레이어 전방 구체 범위(Hitbox) 체크
+	local char = player.Character
+	if char and char.PrimaryPart then
+		local findRadius = Balance.COMBAT_HITBOX_SIZE or 8
+		local pos = char.PrimaryPart.Position + char.PrimaryPart.CFrame.LookVector * (findRadius * 0.6)
+		
+		local overlap = OverlapParams.new()
+		overlap.FilterType = Enum.RaycastFilterType.Include
+		overlap.FilterDescendantsInstances = {creaturesFolder, nodesFolder}
+		
+		local parts = workspace:GetPartBoundsInRadius(pos, findRadius, overlap)
+		local bestTarget, bestPos, bestId, bestType
+		local minDist = math.huge
+		
+		for _, p in ipairs(parts) do
+			local model, pPos, id, tType = checkModel(p)
+			if model then
+				local dist = (char.PrimaryPart.Position - pPos).Magnitude
+				if dist < minDist then
+					minDist = dist
+					bestTarget, bestPos, bestId, bestType = model, pPos, id, tType
+				end
+			end
+		end
+		
+		if bestTarget then
+			return bestTarget, bestPos, bestId, bestType
 		end
 	end
 	
-	return nil, nil, nil
+	return nil, nil, nil, nil
 end
 
---- 플레이어와 대상 간 거리 확인
 local function getDistanceToTarget(targetPos: Vector3): number
 	local character = player.Character
 	if not character then return math.huge end
 	
-	local hrp = character:FindFirstChild("HumanoidRootPart")
+	local hrp = character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart
 	if not hrp then return math.huge end
 	
-	return (hrp.Position - targetPos).Magnitude
+	-- Y축 차이를 줄인 평면 거리로 계산 (거대 공룡/나무 대응)
+	local p1 = Vector3.new(hrp.Position.X, 0, hrp.Position.Z)
+	local p2 = Vector3.new(targetPos.X, 0, targetPos.Z)
+	return (p1 - p2).Magnitude
 end
 
 --========================================
@@ -165,36 +208,40 @@ function CombatController.attack()
 	
 	lastAttackTime = now
 	
-	local targetModel, targetPos, instanceId = findTarget()
+	local targetModel, targetPos, targetId, targetType = findTarget()
 	
-	if targetModel and targetPos and instanceId then
+	if targetModel and targetPos and targetId then
 		local distance = getDistanceToTarget(targetPos)
+		local maxRange = Balance.HARVEST_RANGE or 15
 		
-		-- 공격 범위 체크 (10 스터드)
-		if distance > 10 then
+		-- 공격 범위 체크
+		if distance > maxRange then
 			-- 범위 밖 - 빈 스윙 애니메이션
 			playAttackAnimation(false)
-			print("[CombatController] Target too far: " .. string.format("%.1f", distance))
 			return
 		end
 		
 		-- 공격 성공 애니메이션 (타격)
 		playAttackAnimation(true)
 		
-		-- 서버에 공격 요청 (InstanceId 전송)
-		local success, data = NetClient.Request("Combat.Hit.Request", {
-			targetInstanceId = instanceId,
-			targetPosition = { x = targetPos.X, y = targetPos.Y, z = targetPos.Z },
-		})
-		if success then
-			print("[CombatController] Attack hit!")
+		if targetType == "resource" then
+			-- 자원 채집 처리 (좌클릭 공격으로 수확!)
+			local success, data = NetClient.Request("Harvest.Hit.Request", {
+				nodeUID = targetId
+			})
+			if success then
+				-- 채집 성공 시 별도 피드백 (효과음 등)
+			end
 		else
-			print("[CombatController] Attack failed:", tostring(data))
+			-- 크리처 공격 처리
+			local success, data = NetClient.Request("Combat.Hit.Request", {
+				targetInstanceId = targetId,
+				targetPosition = { x = targetPos.X, y = targetPos.Y, z = targetPos.Z },
+			})
 		end
 	else
 		-- 대상 없이 빈 공격 (공기 스윙)
 		playAttackAnimation(false)
-		print("[CombatController] Swing (no target)")
 	end
 end
 

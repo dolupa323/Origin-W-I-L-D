@@ -109,13 +109,13 @@ Balance.STAT_BONUS_PER_LEVEL = 0.02    -- 레벨당 스탯 보너스 (2%)
 -- 스태미나 & 이동 시스템 (Phase 10)
 --========================================
 Balance.STAMINA_MAX = 100              -- 최대 스태미나
-Balance.STAMINA_REGEN = 8              -- 초당 스태미나 회복량
-Balance.STAMINA_REGEN_DELAY = 1.5      -- 스태미나 사용 후 회복 시작 딜레이 (초)
+Balance.STAMINA_REGEN = 25             -- 초당 스태미나 회복량 (상향: 8 -> 25)
+Balance.STAMINA_REGEN_DELAY = 0.8      -- 회복 시작 딜레이 (단축: 1.5 -> 0.8)
 
 -- 스프린트 (빠르게 달리기)
-Balance.SPRINT_SPEED_MULT = 2.0        -- 스프린트 속도 배율 (기본 1.6 → 2.0)
-Balance.SPRINT_STAMINA_COST = 20       -- 초당 스태미나 소모 (기본 12 → 20)
-Balance.SPRINT_MIN_STAMINA = 10        -- 스프린트 시작 최소 스태미나
+Balance.SPRINT_SPEED_MULT = 2.0        -- 스프린트 속도 배율
+Balance.SPRINT_STAMINA_COST = 12       -- 초당 스태미나 소모 (완화: 20 -> 12)
+Balance.SPRINT_MIN_STAMINA = 5         -- 스프린트 시작 최소 스태미나 (10 -> 5)
 
 -- 구르기 (회피)
 Balance.DODGE_STAMINA_COST = 25        -- 구르기 1회 스태미나 소모
@@ -124,11 +124,12 @@ Balance.DODGE_DISTANCE = 12            -- 구르기 이동 거리 (스터드)
 Balance.DODGE_DURATION = 0.4           -- 구르기 소요 시간 (초)
 Balance.DODGE_IFRAMES = 0.25           -- 무적 프레임 지속 시간 (초)
 --========================================
--- 수확 시스템 (Phase 7)
+-- 수확 및 공격 판정 (Phase 7)
 --========================================
-Balance.HARVEST_COOLDOWN = 0.5         -- 연속 타격 카다운 (초)
-Balance.HARVEST_RANGE = 12             -- 수확 가능 거리 (스터드) — 기본 8 → 12 확대
-Balance.HARVEST_XP_PER_HIT = 2         -- 타격당 XP
+Balance.HARVEST_COOLDOWN = 0.4         -- 연속 타격 쿨다운 (0.5 -> 0.4 단축)
+Balance.HARVEST_RANGE = 25             -- 수확 가능 거리 (18 -> 25 확대)
+Balance.COMBAT_HITBOX_SIZE = 12        -- 맨손 공격 판정 반경 (8 -> 12 상향)
+Balance.XP_HARVEST_XP_PER_HIT = 2      -- 타격당 XP
 
 -- 채집 홀드 시스템 (E키 꿉 누르기)
 Balance.HARVEST_HOLD_TIME_BASE = 2.0   -- 기본 채집 시간 (초, 맨손 기준)

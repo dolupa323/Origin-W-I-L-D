@@ -146,7 +146,7 @@ local function createDropModel(dropData)
 	prompt.ObjectText = getItemDisplayName(dropData.itemId)
 	prompt.MaxActivationDistance = 8  -- 6 -> 8 로 상향
 	prompt.HoldDuration = 0
-	prompt.KeyboardKeyCode = Enum.KeyCode.E
+	prompt.KeyboardKeyCode = Enum.KeyCode.Z
 	prompt.Parent = part
 	
 	-- 줍기 이벤트
