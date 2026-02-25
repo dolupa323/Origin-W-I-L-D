@@ -120,7 +120,7 @@ function CaptureService.attemptCapture(player: Player, targetId: string, capture
 	end
 	
 	-- 5. 포획구 소모 (1개)
-	local removed = InventoryService.removeItem(userId, slotData.itemId, 1)
+	local removed = InventoryService.removeItemFromSlot(userId, captureItemSlot, 1)
 	if removed < 1 then
 		return false, Enums.ErrorCode.SLOT_EMPTY
 	end

@@ -210,6 +210,12 @@ local function handleGetAllRecipes(player, payload)
 end
 
 local function handleListRecipes(player, payload)
+	local targetFacilityId = payload.facilityId
+	local activeFacilityData = nil
+	if targetFacilityId then
+		activeFacilityData = DataService.getFacility(targetFacilityId)
+	end
+
 	-- 모든 레시피 + 재료/산출물 상세 정보 포함
 	local allRecipes = DataService.get("RecipeData")
 	if not allRecipes then
@@ -217,24 +223,23 @@ local function handleListRecipes(player, payload)
 	end
 	
 	local result = {}
-	-- RecipeData는 배열 형태일 수 있음
-	if allRecipes[1] then
-		-- 배열인 경우
-		for _, recipe in ipairs(allRecipes) do
-			table.insert(result, {
-				id = recipe.id,
-				name = recipe.name,
-				category = recipe.category,
-				techLevel = recipe.techLevel or 0,
-				requiredFacility = recipe.requiredFacility,
-				craftTime = recipe.craftTime or 0,
-				inputs = recipe.inputs,
-				outputs = recipe.outputs,
-			})
+	for recipeId, recipe in pairs(allRecipes) do
+		-- 필터링: facilityId가 있으면 해당 시설의 functionType과 일치하는 레시피만 결과에 포함
+		local matches = true
+		if activeFacilityData then
+			if recipe.requiredFacility ~= activeFacilityData.functionType then
+				matches = false
+			end
+		elseif recipe.requiredFacility ~= nil then
+			-- 시설 없이 그냥 여는 경우 (C 키 등): 맨손 제작 가능한 것만 표시할 수도 있고 전부 표시할 수도 있음
+			-- 여기서는 맨손 제작(requiredFacility == nil)만 보내거나 전부 보낼지 결정
+			-- 일단 맨손 제작물만 표시하도록 필터링 (기획에 따라 변경 가능)
+			if recipe.requiredFacility ~= nil then
+				matches = false
+			end
 		end
-	else
-		-- 딕셔너리인 경우
-		for recipeId, recipe in pairs(allRecipes) do
+
+		if matches then
 			table.insert(result, {
 				id = recipe.id or recipeId,
 				name = recipe.name,

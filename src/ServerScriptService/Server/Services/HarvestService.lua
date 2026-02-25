@@ -18,18 +18,18 @@ local HarvestService = {}
 --========================================
 -- 스폰 상수
 --========================================
-local NODE_SPAWN_INTERVAL = 20 -- 20초마다 스폰 시도
-local NODE_CAP = Balance.RESOURCE_NODE_CAP or 100 -- 자원 노드 최대 수
-local MIN_SPAWN_DIST = 20 -- 플레이어에서 최소 거리
-local MAX_SPAWN_DIST = 60 -- 플레이어에서 최대 거리
-local DESPAWN_DIST = 150 -- 디스폰 거리
-local SEA_LEVEL = 10 -- 해수면 높이
+local NODE_SPAWN_INTERVAL = Balance.NODE_SPAWN_INTERVAL or 10
+local NODE_CAP = Balance.RESOURCE_NODE_CAP or 400
+local MIN_SPAWN_DIST = 20
+local MAX_SPAWN_DIST = 60
+local DESPAWN_DIST = Balance.NODE_DESPAWN_DIST or 300
+local SEA_LEVEL = Balance.SEA_LEVEL or 10
 
 -- 지형별 스폰 풀
-local GRASS_TERRAIN_NODES = {"TREE_OAK", "TREE_OAK", "TREE_PINE", "BUSH_BERRY", "FIBER_GRASS", "FIBER_GRASS"}
-local ROCK_TERRAIN_NODES = {"ROCK_NORMAL", "ROCK_NORMAL", "ROCK_IRON", "ORE_COAL"}
-local SAND_TERRAIN_NODES = {"ROCK_NORMAL", "FIBER_GRASS"}
-local GROUND_TERRAIN_NODES = {"TREE_OAK", "ROCK_NORMAL", "BUSH_BERRY", "FIBER_GRASS"}
+local GRASS_TERRAIN_NODES = {"TREE_OAK", "TREE_PINE", "BUSH_BERRY", "FIBER_GRASS", "GROUND_BRANCH", "GROUND_BRANCH", "GROUND_STONE", "GROUND_STONE"}
+local ROCK_TERRAIN_NODES = {"ROCK_NORMAL", "ORE_COPPER", "ORE_TIN", "ORE_IRON", "ORE_COAL", "GROUND_STONE"}
+local SAND_TERRAIN_NODES = {"ROCK_NORMAL", "FIBER_GRASS", "GROUND_STONE", "GROUND_STONE"}
+local GROUND_TERRAIN_NODES = {"TREE_OAK", "ROCK_NORMAL", "BUSH_BERRY", "FIBER_GRASS", "GROUND_BRANCH", "GROUND_BRANCH", "GROUND_STONE", "GROUND_STONE"}
 
 -- 풀밑 (Grass) 지형 Material
 local GRASS_MATERIALS = {
@@ -82,10 +82,10 @@ local depletedNodes = {}
 -- 플레이어 쿨다운 { [userId] = lastHitTime }
 local playerCooldowns = {}
 
--- 퀘스트 콜백 (Phase 8)
 local questCallback = nil
 -- 스폰된 노드 수 추적 (자동스폰된 노드만)
 local spawnedNodeCount = 0
+local spawnedNodesByType = {} -- { [nodeId] = count }
 --========================================
 -- Internal Functions
 --========================================
@@ -237,7 +237,7 @@ local function setupModelForNode(model: Model, position: Vector3, nodeData: any)
 end
 
 --- 자원 모델 스폰 (Assets 폴더에서)
-function HarvestService.spawnNodeModel(nodeId: string, position: Vector3): Model?
+function HarvestService.spawnNodeModel(nodeId: string, position: Vector3, nodeUID: string?): Model?
 	local nodeData = DataService.getResourceNode(nodeId)
 	if not nodeData then
 		warn(string.format("[HarvestService] Unknown nodeId: %s", nodeId))
@@ -308,6 +308,7 @@ function HarvestService.spawnNodeModel(nodeId: string, position: Vector3): Model
 	
 	-- 속성 설정
 	model:SetAttribute("NodeId", nodeId)
+	model:SetAttribute("NodeUID", nodeUID or "") -- 필수: 상호작용 UID
 	model:SetAttribute("NodeType", nodeData.nodeType or "UNKNOWN")
 	model:SetAttribute("OptimalTool", nodeData.optimalTool or "")
 	model:SetAttribute("Depleted", false)
@@ -324,47 +325,113 @@ function HarvestService.spawnNodeModel(nodeId: string, position: Vector3): Model
 	return model
 end
 
---- 도구 타입 검증 (이제 모든 자원은 맨손 채집 가능)
-local function validateTool(player: Player, optimalTool: string?): (boolean, string?)
-	-- 모든 자원은 맨손으로 채집 가능
-	-- optimalTool은 효율에만 영향
-	return true, nil
-end
-
---- 장착 도구 타입 가져오기
-local function getEquippedToolType(player: Player): string?
-	local character = player.Character
-	if not character then return nil end
+--- 도구 타입 가져오기 (인벤토리 슬롯 우선, 캐릭터 폴백)
+local function getToolType(player: Player, toolSlot: number?): string?
+	local userId = player.UserId
+	local toolItem = nil
 	
-	local tool = character:FindFirstChildOfClass("Tool")
-	if tool then
-		return tool:GetAttribute("ToolType") or tool.Name:upper()
+	-- 1. 제공된 슬롯에서 아이템 데이터 조회
+	if toolSlot and InventoryService then
+		toolItem = InventoryService.getSlot(userId, toolSlot)
+	end
+	
+	-- 2. 슬롯 정보가 없으면 캐릭터에 들고있는 도구 확인
+	if not toolItem then
+		local character = player.Character
+		local tool = character and character:FindFirstChildOfClass("Tool")
+		if tool then
+			return tool:GetAttribute("ToolType") or tool.Name:upper()
+		end
+	end
+	
+	-- 3. 아이템 데이터의 optimalTool(타입) 확인
+	if toolItem and DataService then
+		local itemData = DataService.getItem(toolItem.itemId)
+		if itemData then
+			return itemData.optimalTool or itemData.id:upper()
+		end
 	end
 	
 	return nil
 end
 
+--- 도구와 노드 타입 호환성 확인
+local function isCompatible(toolType: string?, optimalType: string?): boolean
+	if not optimalType or optimalType == "" then return true end
+	if not toolType then return false end
+	
+	local t = toolType:upper()
+	local o = optimalType:upper()
+	return t:find(o) ~= nil or o:find(t) ~= nil
+end
+
+local function validateTool(player: Player, nodeData: any, toolSlot: number?): (boolean, string?)
+	-- nodeData가 nil인 경우 (비정상)
+	if not nodeData then return false, Enums.ErrorCode.NOT_FOUND end
+	
+	local equippedToolType = getToolType(player, toolSlot)
+	
+	-- 도구 필수 여부 확인
+	if nodeData.requiresTool then
+		if not equippedToolType then
+			-- 맨손인데 도구가 필수인 경우
+			return false, Enums.ErrorCode.WRONG_TOOL
+		end
+		
+		-- 최적 도구(optimalTool)가 지정된 경우, 호환되는 도구여야만 함
+		if nodeData.optimalTool and nodeData.optimalTool ~= "" then
+			if not isCompatible(equippedToolType, nodeData.optimalTool) then
+				return false, Enums.ErrorCode.WRONG_TOOL
+			end
+		end
+	end
+	
+	-- 모든 자원은 도구가 있으면 일단 채집 가능 (효율은 calculateEfficiency에서 처리)
+	-- (위의 requiresTool 체크를 통과했다면)
+	return true, nil
+end
+
 --- 채집 효율 계산
-local function calculateEfficiency(player: Player, optimalTool: string?): number
-	local equippedTool = getEquippedToolType(player)
+local function calculateEfficiency(player: Player, nodeOptimalType: string?, toolSlot: number?): number
+	local toolType = getToolType(player, toolSlot)
+	local baseEff = 1.0
+	local toolDamage = 5 -- 맨손 기본
 	
-	-- 최적 도구가 없으면 맨손이 최적 (효율 1.0)
-	if not optimalTool or optimalTool == "" then
-		return 1.0
+	if toolSlot and InventoryService and DataService then
+		local slotData = InventoryService.getSlot(player.UserId, toolSlot)
+		if slotData then
+			local itemData = DataService.getItem(slotData.itemId)
+			if itemData then
+				toolDamage = itemData.damage or 5
+			end
+		end
 	end
 	
-	-- 최적 도구 장착
-	if equippedTool and equippedTool:upper() == optimalTool:upper() then
-		return Balance.HARVEST_EFFICIENCY_OPTIMAL or 1.2
+	-- 1. 도구 타입 일치 여부에 따른 보너스
+	if not nodeOptimalType or nodeOptimalType == "" then
+		baseEff = 1.0
+	elseif isCompatible(toolType, nodeOptimalType) then
+		-- 타입 일치: 기본 효율 높음 + 도구 위력(데미지)에 따른 보정
+		baseEff = Balance.HARVEST_EFFICIENCY_OPTIMAL or 1.2
+		-- 티어 가산: 데미지 10당 +0.1 효율 (청동 = 25뎀 = +0.25)
+		baseEff = baseEff + (toolDamage / 100)
+	elseif toolType then
+		-- 잘못된 도구 (validateTool에서 걸러지지 않은 경우 - requiresTool=false인 대형 노드 등)
+		baseEff = Balance.HARVEST_EFFICIENCY_WRONG_TOOL or 0.7
+	else
+		-- 맨손
+		baseEff = Balance.HARVEST_EFFICIENCY_BAREHAND or 0.5
 	end
 	
-	-- 다른 도구 장착
-	if equippedTool then
-		return Balance.HARVEST_EFFICIENCY_WRONG_TOOL or 0.7
+	-- 2. Work Speed 보너스 (10점당 +5%)
+	local workSpeedBonus = 0
+	if PlayerStatService then
+		local stats = PlayerStatService.getStats(player.UserId)
+		local workSpeedStat = (stats and stats.statInvested and stats.statInvested[Enums.StatId.WORK_SPEED]) or 0
+		workSpeedBonus = math.floor(workSpeedStat / 10) * 0.05
 	end
 	
-	-- 맨손
-	return Balance.HARVEST_EFFICIENCY_BAREHAND or 0.5
+	return baseEff + workSpeedBonus
 end
 
 --- 드롭 아이템 계산 (효율 적용)
@@ -410,30 +477,42 @@ local function isMaterialInList(material, materialList)
 	return false
 end
 
---- 지형에 따른 자원 노드 ID 선택
+--- 지형에 따른 자원 노드 ID 선택 (균형 잡힌 스폰)
 local function selectNodeForTerrain(material: Enum.Material): string?
-	-- 풀밭 → 나무, 베리, 섬유
+	local pool
 	if isMaterialInList(material, GRASS_MATERIALS) then
-		return GRASS_TERRAIN_NODES[math.random(1, #GRASS_TERRAIN_NODES)]
+		pool = GRASS_TERRAIN_NODES
+	elseif isMaterialInList(material, ROCK_MATERIALS) then
+		pool = ROCK_TERRAIN_NODES
+	elseif isMaterialInList(material, SAND_MATERIALS) then
+		pool = SAND_TERRAIN_NODES
+	elseif isMaterialInList(material, GROUND_MATERIALS) then
+		pool = GROUND_TERRAIN_NODES
+	else
+		pool = GROUND_TERRAIN_NODES
 	end
 	
-	-- 바위 → 돌, 철광석, 석탄
-	if isMaterialInList(material, ROCK_MATERIALS) then
-		return ROCK_TERRAIN_NODES[math.random(1, #ROCK_TERRAIN_NODES)]
+	if not pool then return nil end
+	
+	-- 섞기 (Shuffle)
+	local shuffled = {}
+	for _, id in ipairs(pool) do table.insert(shuffled, id) end
+	for i = #shuffled, 2, -1 do
+		local j = math.random(1, i)
+		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
 	end
 	
-	-- 모래 → 바위, 섬유
-	if isMaterialInList(material, SAND_MATERIALS) then
-		return SAND_TERRAIN_NODES[math.random(1, #SAND_TERRAIN_NODES)]
+	-- 개별 타입별 캡 (전체 캡의 25%, 최소 5)
+	local typeCap = math.max(5, math.floor(NODE_CAP * 0.25))
+	
+	for _, id in ipairs(shuffled) do
+		if (spawnedNodesByType[id] or 0) < typeCap then
+			return id
+		end
 	end
 	
-	-- 흙 → 일반 자원
-	if isMaterialInList(material, GROUND_MATERIALS) then
-		return GROUND_TERRAIN_NODES[math.random(1, #GROUND_TERRAIN_NODES)]
-	end
-	
-	-- 기타 지형 → 기본 자원
-	return GROUND_TERRAIN_NODES[math.random(1, #GROUND_TERRAIN_NODES)]
+	-- 모두 다 찼다면 가장 적은 것 중 하나 (옵션) 혹은 nil
+	return nil
 end
 
 --- 유효한 스폰 위치 및 지형 찾기 (플레이어 주변)
@@ -497,18 +576,15 @@ function HarvestService._spawnAutoNode(nodeId: string, position: Vector3): strin
 		return nil
 	end
 	
-	-- 모델 생성
-	local model = HarvestService.spawnNodeModel(nodeId, position)
+	-- 모델 생성 (NodeUID 미리 생성하여 전달)
+	local nodeUID = HarvestService.registerNode(nodeId, position, true)
+	local model = HarvestService.spawnNodeModel(nodeId, position, nodeUID)
+	
 	if not model then
 		return nil
 	end
 	
-	-- 노드 등록
-	local nodeUID = HarvestService.registerNode(nodeId, position)
-	model:SetAttribute("NodeUID", nodeUID)
-	model:SetAttribute("AutoSpawned", true) -- 자동 스폰 표시
-	
-	spawnedNodeCount = spawnedNodeCount + 1
+	model:SetAttribute("AutoSpawned", true) -- 자동 스폰 표시 (디스폰 대상)
 	
 	return nodeUID
 end
@@ -572,12 +648,16 @@ function HarvestService._despawnCheck()
 				if minDist > DESPAWN_DIST then
 					-- activeNodes에서 제거
 					if nodeUID and activeNodes[nodeUID] then
+						local nodeId = activeNodes[nodeUID].nodeId
 						activeNodes[nodeUID] = nil
+						
+						-- 카운트 감소
+						spawnedNodesByType[nodeId] = math.max(0, (spawnedNodesByType[nodeId] or 0) - 1)
+						spawnedNodeCount = math.max(0, spawnedNodeCount - 1)
 					end
 					
 					-- 모델 제거
 					nodeModel:Destroy()
-					spawnedNodeCount = math.max(0, spawnedNodeCount - 1)
 				end
 			end
 		end
@@ -589,7 +669,7 @@ end
 --========================================
 
 --- 자원 노드 등록 (맵 로드 시 호출)
-function HarvestService.registerNode(nodeId: string, position: Vector3): string
+function HarvestService.registerNode(nodeId: string, position: Vector3, isAutoSpawned: boolean?): string
 	local nodeUID = generateNodeUID()
 	local nodeData = DataService.getResourceNode(nodeId)
 	
@@ -603,15 +683,22 @@ function HarvestService.registerNode(nodeId: string, position: Vector3): string
 		remainingHits = nodeData.maxHits,
 		depletedAt = nil,
 		position = position,
+		isAutoSpawned = isAutoSpawned,
 	}
 	
-	-- 클라이언트에 노드 스폰 알림
+	-- 타입별 카운트 증가 (모든 노드 추적)
+	spawnedNodesByType[nodeId] = (spawnedNodesByType[nodeId] or 0) + 1
+	if isAutoSpawned then
+		spawnedNodeCount = spawnedNodeCount + 1
+	end
+	
+	-- 클라이언트에 노드 스폰 알림 (네트워크 최적화: 400스터드)
 	if NetController then
-		NetController.FireAllClients("Harvest.Node.Spawned", {
+		NetController.FireClientsInRange(position, 400, "Harvest.Node.Spawned", {
 			nodeUID = nodeUID,
 			nodeId = nodeId,
 			position = position,
-			maxHits = nodeData.maxHits, -- 최대 체력 정보 추가
+			maxHits = nodeData.maxHits,
 		})
 	end
 	
@@ -652,7 +739,7 @@ end
 --========================================
 
 --- 자원 노드 타격 (플레이어 수동 채집)
-function HarvestService.hit(player: Player, nodeUID: string): (boolean, string?, {any}?)
+function HarvestService.hit(player: Player, nodeUID: string, toolSlot: number?, hitCount: number?): (boolean, string?, {any}?)
 	local userId = player.UserId
 	
 	-- 1. 쿨다운 체크
@@ -688,21 +775,41 @@ function HarvestService.hit(player: Player, nodeUID: string): (boolean, string?,
 		end
 	end
 	
-	-- 5. 도구 검증 (이제 모든 자원은 맨손 가능)
-	local toolOk, toolError = validateTool(player, nodeData.optimalTool)
+	-- 5. 도구 검증 (특정 자원은 맨손 불가)
+	local toolOk, toolError = validateTool(player, nodeData, toolSlot)
 	if not toolOk then
+		-- 맨손 채집 불가 시 안내 (클라이언트에서 처리하거나 여기서 ErrorCode 전달)
 		return false, toolError or Enums.ErrorCode.WRONG_TOOL, nil
 	end
 	
 	-- 6. 효율 계산
-	local efficiency = calculateEfficiency(player, nodeData.optimalTool)
+	local efficiency = calculateEfficiency(player, nodeData.optimalTool, toolSlot)
 	
 	-- 7. 타격 처리
-	nodeState.remainingHits = nodeState.remainingHits - 1
+	local workSpeedStat = 0
+	if PlayerStatService then
+		local stats = PlayerStatService.getStats(player.UserId)
+		workSpeedStat = (stats and stats.statInvested and stats.statInvested[Enums.StatId.WORK_SPEED]) or 0
+	end
 	
-	-- 타격 브로드캐스트 (클라이언트 HP 바 업데이트용)
+	local power = 1 + math.floor(workSpeedStat / 10) -- 10점당 타격 횟수 +1 (속도)
+	local actualHitCount = math.min(power, nodeState.remainingHits)
+	nodeState.remainingHits = nodeState.remainingHits - actualHitCount
+	
+	-- 도구 내구도 감소
+	if toolSlot and DurabilityService then
+		DurabilityService.reduceDurability(player, toolSlot, 1)
+	end
+	
+	-- 7.5 XP 보상 (타격당 지급)
+	if PlayerStatService then
+		local xpPerHit = nodeData.xpPerHit or Balance.XP_HARVEST_XP_PER_HIT or 2
+		PlayerStatService.addXP(player.UserId, xpPerHit * actualHitCount, Enums.XPSource.HARVEST_RESOURCE)
+	end
+	
+	-- 타격 브로드캐스트 (네트워크 최적화: 400스터드)
 	if NetController then
-		NetController.FireAllClients("Harvest.Node.Hit", {
+		NetController.FireClientsInRange(nodeState.position, 400, "Harvest.Node.Hit", {
 			nodeUID = nodeUID,
 			remainingHits = nodeState.remainingHits,
 			maxHits = nodeData.maxHits
@@ -743,33 +850,28 @@ function HarvestService.hit(player: Player, nodeUID: string): (boolean, string?,
 		-- 서버에서 모델 파괴 (원본 데이터 저장)
 		local originalPartData = HarvestService._destroyNodeModel(nodeUID)
 		
-		-- 고갈된 노드 목록으로 이동 (activeNodes에서 제거)
-		depletedNodes[nodeUID] = {
-			nodeId = nodeState.nodeId,
-			position = nodeState.position,
-			respawnAt = os.time() + (nodeData.respawnTime or 300),
-			originalPartData = originalPartData,
-		}
-		activeNodes[nodeUID] = nil
-		
-		-- 모델 파괴 이벤트
-		if NetController then
-			NetController.FireAllClients("Harvest.Node.Depleted", {
-				nodeUID = nodeUID,
-				respawnTime = nodeData.respawnTime or 300,
-			})
-		end
-		
-		print(string.format("[HarvestService] Node depleted: %s, drops: %d items", nodeUID, #drops))
-		
-		-- 리스폰 예약
-		task.delay(nodeData.respawnTime or 300, function()
-			HarvestService._respawnNode(nodeUID)
-		end)
-		
-		-- XP 보상 (채집 완료 시에만)
-		if PlayerStatService then
-			PlayerStatService.addXP(userId, nodeData.xpPerHit or Balance.HARVEST_XP_PER_HIT or 2, Enums.XPSource.HARVEST_RESOURCE)
+		-- 고갈된 노드 처리
+		if nodeState.isAutoSpawned then
+			-- 자동 스폰된 노드는 리스폰 시키지 않고 카운트만 감소
+			local nodeId = nodeState.nodeId
+			spawnedNodesByType[nodeId] = math.max(0, (spawnedNodesByType[nodeId] or 0) - 1)
+			spawnedNodeCount = math.max(0, spawnedNodeCount - 1)
+			activeNodes[nodeUID] = nil
+			-- _respawnNode를 예약하지 않음
+		else
+			-- 수동 배치된 노드는 리스폰 예약
+			depletedNodes[nodeUID] = {
+				nodeId = nodeState.nodeId,
+				position = nodeState.position,
+				respawnAt = os.time() + (nodeData.respawnTime or 300),
+				originalPartData = originalPartData,
+			}
+			activeNodes[nodeUID] = nil
+			
+			-- 리스폰 예약
+			task.delay(nodeData.respawnTime or 300, function()
+				HarvestService._respawnNode(nodeUID)
+			end)
 		end
 		
 		-- 퀘스트 콜백 (Phase 8)
@@ -777,12 +879,17 @@ function HarvestService.hit(player: Player, nodeUID: string): (boolean, string?,
 			questCallback(userId, nodeData.nodeType or nodeData.id)
 		end
 		
-		-- 도구 내구도 감소 (최적 도구 사용 시에만)
-		if DurabilityService and nodeData.optimalTool then
-			local equippedTool = getEquippedToolType(player)
-			if equippedTool and equippedTool:upper() == nodeData.optimalTool:upper() then
-				-- TODO: 장착된 도구 내구도 감소
+		-- 도구 내구도 감소
+		if DurabilityService and toolSlot then
+			-- 타격 횟수만큼 내구도 감소
+			-- 내구도가 있는 아이템인지 확인 (InventoryService가 내부에서 검증하지만 warn 방지용 사전 체크)
+			local inv = InventoryService.getInventory(player.UserId)
+			local slotData = inv and inv.slots[toolSlot]
+			if slotData and slotData.durability then
+				DurabilityService.reduceDurability(player, toolSlot, actualHitCount)
 			end
+		elseif DurabilityService and not toolSlot and nodeData.optimalTool then
+			warn(string.format("[HarvestService] No toolSlot provided for node %s", nodeUID))
 		end
 	end
 	
@@ -849,12 +956,12 @@ function HarvestService._respawnNode(nodeUID: string)
 	print(string.format("[HarvestService] Node respawned: %s (%s)", nodeUID, depletedNode.nodeId))
 end
 
---- 맨손 타격 가능 여부 (모든 자원은 맨손 채집 가능)
+--- 맨손 타격 가능 여부
 function HarvestService.canHarvestBareHanded(nodeId: string): boolean
 	local nodeData = DataService.getResourceNode(nodeId)
 	if not nodeData then return false end
-	-- 모든 자원은 맨손으로 채집 가능 (optimalTool은 효율에만 영향)
-	return true
+	-- requiresTool이 true인 경우 맨손 채집 불가
+	return not nodeData.requiresTool
 end
 
 --========================================
@@ -863,12 +970,19 @@ end
 
 local function handleHitRequest(player: Player, payload: any)
 	local nodeUID = payload.nodeUID
+	local hitCount = payload.hitCount -- Optional (Interact 시 전량 채집용)
 	
 	if not nodeUID then
 		return { success = false, errorCode = Enums.ErrorCode.BAD_REQUEST }
 	end
+
+	-- 보안/기획: 클라이언트가 보낸 toolSlot 대신, 서버의 현재 활성 슬롯(Active Slot)을 사용
+	local activeSlot = 1
+	if InventoryService then
+		activeSlot = InventoryService.getActiveSlot(player.UserId)
+	end
 	
-	local success, errorCode, drops = HarvestService.hit(player, nodeUID)
+	local success, errorCode, drops = HarvestService.hit(player, nodeUID, activeSlot, hitCount)
 	
 	if success then
 		return { success = true, data = { drops = drops } }
@@ -1017,10 +1131,13 @@ function HarvestService._initialSpawn()
 					local pos = result.Position + Vector3.new(0, 0.5, 0)
 					local nodeId = selectNodeForTerrain(result.Material)
 					if nodeId then
-						local uid = HarvestService._spawnAutoNode(nodeId, pos)
-						if uid then
-							spawned = spawned + 1
-						end
+						-- ★ 초기 스폰은 isAutoSpawned = false로 설정하여 "Map" 노드화 (해당 자리 리젠)
+						local uid = HarvestService.registerNode(nodeId, pos, false)
+						
+						-- 모델 생성 (uid 전달하여 속성 설정)
+						HarvestService.spawnNodeModel(nodeId, pos, uid)
+						
+						spawned = spawned + 1
 					end
 				end
 			end

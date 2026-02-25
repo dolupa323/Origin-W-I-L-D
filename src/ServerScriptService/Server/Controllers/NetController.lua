@@ -74,7 +74,7 @@ local function onServerInvoke(player: Player, request)
 	
 	local command = request.command
 	local requestId = request.requestId
-	local payload = request.payload or {}
+	local payload = Protocol.Decompress(request.payload or {})
 	
 	-- 명령어 존재 확인
 	if not command or not Protocol.Commands[command] then
@@ -114,9 +114,24 @@ local function onServerInvoke(player: Player, request)
 		}
 	end
 	
+	-- 결과 처리 및 압축
+	if type(result) == "table" and result.success ~= nil then
+		if result.success then
+			return {
+				success = true,
+				data = Protocol.Compress(result.data or result),
+			}
+		else
+			return {
+				success = false,
+				error = result.errorCode or result.error or Enums.ErrorCode.INTERNAL_ERROR,
+			}
+		end
+	end
+	
 	return {
 		success = true,
-		data = result,
+		data = Protocol.Compress(result),
 	}
 end
 
@@ -157,14 +172,31 @@ end
 -- 클라이언트에 이벤트 전송
 function NetController.FireClient(player: Player, eventName: string, data: any)
 	if Evt then
-		Evt:FireClient(player, { event = eventName, data = data })
+		local compressedData = Protocol.Compress(data)
+		Evt:FireClient(player, { event = eventName, data = compressedData })
 	end
 end
 
 -- 모든 클라이언트에 이벤트 전송
 function NetController.FireAllClients(eventName: string, data: any)
 	if Evt then
-		Evt:FireAllClients({ event = eventName, data = data })
+		local compressedData = Protocol.Compress(data)
+		Evt:FireAllClients({ event = eventName, data = compressedData })
+	end
+end
+
+-- 특정 위치 기준 일정 범위 내의 클라이언트에게만 전송 (네트워크 최적화)
+function NetController.FireClientsInRange(position: Vector3, range: number, eventName: string, data: any)
+	if not Evt then return end
+	
+	for _, player in ipairs(Players:GetPlayers()) do
+		local char = player.Character
+		if char and char:FindFirstChild("HumanoidRootPart") then
+			local dist = (char.HumanoidRootPart.Position - position).Magnitude
+			if dist <= range then
+				NetController.FireClient(player, eventName, data)
+			end
+		end
 	end
 end
 

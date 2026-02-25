@@ -3,13 +3,17 @@
 -- 형태: 배열 { {id="...", ...}, ... }
 
 local ItemData = {
-	-- 기본 자원
+	--========================================
+	-- 기초 자원 (Tier 0-1)
+	--========================================
 	{
 		id = "STONE",
 		name = "돌",
 		type = "RESOURCE",
 		rarity = "COMMON",
 		maxStack = 99,
+		weight = 1.0,
+		icon = "rbxassetid://123456789", -- 아이템 아이콘 이미지 (예시 ID)
 		description = "가장 기본적인 자원. 도구와 건물에 사용된다.",
 		dropDespawn = "GATHER",
 	},
@@ -19,9 +23,10 @@ local ItemData = {
 		type = "RESOURCE",
 		rarity = "COMMON",
 		maxStack = 99,
+		weight = 1.0, -- 추가
 		description = "기본 건축 재료.",
 		dropDespawn = "GATHER",
-		fuelValue = 15,  -- 연료 가치 (15초 가동)
+		fuelValue = 15,
 	},
 	{
 		id = "FIBER",
@@ -29,14 +34,8 @@ local ItemData = {
 		type = "RESOURCE",
 		rarity = "COMMON",
 		maxStack = 99,
-		description = "풀에서 채집한 섬유. 밧줄과 천을 만들 수 있다.",		dropDespawn = "GATHER",	},
-	{
-		id = "FLINT",
-		name = "부싯돌",
-		type = "RESOURCE",
-		rarity = "COMMON",
-		maxStack = 99,
-		description = "날카로운 돌. 초기 도구 제작에 필수.",
+		weight = 0.5, -- 추가
+		description = "풀에서 채집한 섬유. 밧줄과 천을 만들 수 있다.",
 		dropDespawn = "GATHER",
 	},
 	{
@@ -45,6 +44,7 @@ local ItemData = {
 		type = "FOOD",
 		rarity = "COMMON",
 		maxStack = 99,
+		weight = 0.1, -- 추가
 		description = "덤불에서 채집한 베리. 먹으면 체력이 조금 회복된다.",
 		dropDespawn = "GATHER",
 		foodValue = 5,
@@ -56,6 +56,28 @@ local ItemData = {
 		rarity = "COMMON",
 		maxStack = 99,
 		description = "나무에서 나오는 끈적한 수지. 접착제로 사용된다.",
+		dropDespawn = "GATHER",
+	},
+	
+	--========================================
+	-- 광석 및 주괴 (Tier 3-4)
+	--========================================
+	{
+		id = "COPPER_ORE",
+		name = "구리 광석",
+		type = "RESOURCE",
+		rarity = "COMMON",
+		maxStack = 99,
+		description = "구리를 추출할 수 있는 광석.",
+		dropDespawn = "GATHER",
+	},
+	{
+		id = "TIN_ORE",
+		name = "주석 광석",
+		type = "RESOURCE",
+		rarity = "COMMON",
+		maxStack = 99,
+		description = "주석을 추출할 수 있는 광석.",
 		dropDespawn = "GATHER",
 	},
 	{
@@ -75,7 +97,25 @@ local ItemData = {
 		maxStack = 99,
 		description = "검은 광석. 연료와 제련에 사용된다.",
 		dropDespawn = "GATHER",
-		fuelValue = 30,  -- 연료 가치 (30초 가동, 나무보다 효율적)
+		fuelValue = 30,
+	},
+	{
+		id = "BRONZE_INGOT",
+		name = "청동 주괴",
+		type = "RESOURCE",
+		rarity = "UNCOMMON",
+		maxStack = 99,
+		description = "구리와 주석을 제련하여 만든 합금 주괴.",
+		dropDespawn = "GATHER",
+	},
+	{
+		id = "IRON_INGOT",
+		name = "철 주괴",
+		type = "RESOURCE",
+		rarity = "RARE",
+		maxStack = 99,
+		description = "철광석을 제련하여 만든 단단한 주괴.",
+		dropDespawn = "GATHER",
 	},
 	{
 		id = "GOLD_ORE",
@@ -83,37 +123,24 @@ local ItemData = {
 		type = "RESOURCE",
 		rarity = "RARE",
 		maxStack = 50,
-		description = "희귀한 금이 포함된 광석. 고급 장비와 거래에 사용된다.",
+		description = "희귀한 금이 포함된 광석.",
 		dropDespawn = "GATHER",
 	},
-	{
-		id = "THATCH",
-		name = "초가",
-		type = "RESOURCE",
-		rarity = "COMMON",
-		maxStack = 99,
-		description = "마른 풀로 만든 초가. 지붕 제작에 사용된다.",
-		dropDespawn = "GATHER",
-	},
-	{
-		id = "HIDE",
-		name = "가죽",
-		type = "RESOURCE",
-		rarity = "COMMON",
-		maxStack = 99,
-		description = "동물에서 얻은 가죽. 방어구 제작에 사용된다.",
-		dropDespawn = "GATHER",
-	},
-	
-	-- 기본 도구
+
+	--========================================
+	-- 1단계 도구 및 무기 (원시 시대)
+	--========================================
 	{
 		id = "STONE_PICKAXE",
 		name = "돌 곡괭이",
 		type = "TOOL",
 		rarity = "COMMON",
 		maxStack = 1,
+		weight = 5.0, -- 추가
 		durability = 100,
+		damage = 8,
 		description = "돌을 캘 수 있는 기본 도구.",
+		optimalTool = "PICKAXE",
 	},
 	{
 		id = "STONE_AXE",
@@ -122,78 +149,243 @@ local ItemData = {
 		rarity = "COMMON",
 		maxStack = 1,
 		durability = 100,
+		damage = 8,
 		description = "나무를 벨 수 있는 기본 도구.",
+		optimalTool = "AXE",
 	},
-	
-	-- 전투 드롭 아이템
 	{
-		id = "MEAT",
-		name = "생고기",
-		type = "RESOURCE",
+		id = "STONE_SPEAR",
+		name = "돌 창",
+		type = "WEAPON",
 		rarity = "COMMON",
-		maxStack = 99,
-		description = "크리처에서 얻은 날고기. 조리해서 먹을 수 있다.",
+		maxStack = 1,
+		durability = 100,
+		damage = 25,
+		description = "기초 근접 무기.",
 	},
 	{
-		id = "LEATHER",
-		name = "가죽",
-		type = "RESOURCE",
+		id = "TORCH",
+		name = "횃불",
+		type = "TOOL",
 		rarity = "COMMON",
-		maxStack = 99,
-		description = "동물 가죽. 방어구 제작에 사용된다.",
+		maxStack = 1,
+		durability = 60,
+		damage = 5,
+		description = "시야 확보 및 체온 유지.",
 	},
 	{
-		id = "FEATHER",
-		name = "깃털",
-		type = "RESOURCE",
+		id = "WOODEN_CLUB",
+		name = "나무 몽둥이",
+		type = "WEAPON",
 		rarity = "COMMON",
-		maxStack = 99,
-		description = "새의 깃털. 화살과 침낭 제작에 사용된다.",
+		maxStack = 1,
+		durability = 120,
+		damage = 15,
+		isBlunt = true,  -- 기절 수치 적용용
+		description = "야수를 때려서 기절시키거나 체력을 깎는 둔기.",
 	},
 	{
-		id = "HORN",
-		name = "뿔",
-		type = "RESOURCE",
-		rarity = "RARE",
-		maxStack = 50,
-		description = "강력한 공룡의 뿔. 고급 장비 제작에 필수.",
-	},
-	{
-		id = "BONE",
-		name = "뼈",
-		type = "RESOURCE",
-		rarity = "COMMON",
-		maxStack = 99,
-		description = "크리처의 뼈. 무기와 갑옷 강화에 사용된다.",
-	},
-	
-	-- Phase 5: 포획 도구
-	{
-		id = "CAPTURE_SPHERE_BASIC",
-		name = "기본 포획구",
+		id = "VINE_BOLA",
+		name = "넝쿨 볼라",
 		type = "CONSUMABLE",
 		rarity = "COMMON",
-		maxStack = 20,
-		description = "약해진 크리처를 포획할 수 있는 기본 도구.",
+		maxStack = 10,
+		description = "소형 크리처에게 던져 묶고 길들이는 기초 투척 도구.",
 		captureMultiplier = 1.0,
+		tier = 1,
+	},
+
+	--========================================
+	-- 2단계 도구 및 무기 (목조 시대)
+	--========================================
+	{
+		id = "WOODEN_BOW",
+		name = "나무 활",
+		type = "WEAPON",
+		rarity = "COMMON",
+		maxStack = 1,
+		durability = 150,
+		damage = 40,
+		description = "원거리 공격이 가능한 기초적인 활.",
 	},
 	{
-		id = "CAPTURE_SPHERE_MEGA",
-		name = "고급 포획구",
+		id = "STONE_ARROW",
+		name = "돌 화살",
+		type = "AMMO",
+		rarity = "COMMON",
+		maxStack = 100,
+		description = "나무 활 전용 기초 화살.",
+	},
+	{
+		id = "STONE_HOE",
+		name = "돌 괭이",
+		type = "TOOL",
+		rarity = "COMMON",
+		maxStack = 1,
+		durability = 100,
+		damage = 5,
+		description = "농경지 개간용 기초 도구.",
+	},
+	{
+		id = "BONE_BOLA",
+		name = "뼈 볼라",
 		type = "CONSUMABLE",
 		rarity = "UNCOMMON",
-		maxStack = 15,
-		description = "더 높은 포획률을 가진 개량형 포획구.",
+		maxStack = 10,
+		description = "포획 확률을 높인 강화된 투척 도구.",
 		captureMultiplier = 1.5,
+		tier = 2,
+	},
+
+	--========================================
+	-- 3단계 도구 및 무기 (청동기 시대)
+	--========================================
+	{
+		id = "BRONZE_PICKAXE",
+		name = "청동 곡괭이",
+		type = "TOOL",
+		rarity = "UNCOMMON",
+		maxStack = 1,
+		durability = 250,
+		damage = 25,
+		description = "더 단단한 광석을 캘 수 있는 청동 곡괭이.",
+		optimalTool = "PICKAXE",
 	},
 	{
-		id = "CAPTURE_SPHERE_ULTRA",
-		name = "마스터 포획구",
+		id = "BRONZE_AXE",
+		name = "청동 도끼",
+		type = "TOOL",
+		rarity = "UNCOMMON",
+		maxStack = 1,
+		durability = 250,
+		damage = 25,
+		description = "벌목 속도가 향상된 청동 도끼.",
+		optimalTool = "AXE",
+	},
+	{
+		id = "BRONZE_SPEAR",
+		name = "청동 창",
+		type = "WEAPON",
+		rarity = "UNCOMMON",
+		maxStack = 1,
+		durability = 250,
+		damage = 75,
+		description = "공격력이 향상된 청동 창.",
+	},
+	{
+		id = "BRONZE_BOW",
+		name = "청동 활",
+		type = "WEAPON",
+		rarity = "UNCOMMON",
+		maxStack = 1,
+		durability = 300,
+		damage = 90,
+		description = "안정적인 사격이 가능한 청동 활.",
+	},
+	{
+		id = "BRONZE_ARROW",
+		name = "청동 화살",
+		type = "AMMO",
+		rarity = "UNCOMMON",
+		maxStack = 100,
+		description = "높은 관통력을 가진 청동 화살.",
+	},
+	{
+		id = "BRONZE_BOLA",
+		name = "청동 볼라",
 		type = "CONSUMABLE",
 		rarity = "RARE",
 		maxStack = 10,
-		description = "최고급 포획구. 거의 확실한 포획이 가능.",
-		captureMultiplier = 2.5,
+		description = "중형 공룡을 제압하는 강력한 투척 도구.",
+		captureMultiplier = 2.0,
+		tier = 3,
+	},
+
+	--========================================
+	-- 4단계 도구 및 무기 (철기 시대)
+	--========================================
+	{
+		id = "IRON_PICKAXE",
+		name = "철 곡괭이",
+		type = "TOOL",
+		rarity = "RARE",
+		maxStack = 1,
+		durability = 500,
+		damage = 50,
+		description = "모든 광석을 캘 수 있는 가장 강력한 곡괭이.",
+		optimalTool = "PICKAXE",
+	},
+	{
+		id = "IRON_AXE",
+		name = "철 도끼",
+		type = "TOOL",
+		rarity = "RARE",
+		maxStack = 1,
+		durability = 500,
+		damage = 50,
+		description = "최고의 벌목 성능을 자랑하는 철 도끼.",
+		optimalTool = "AXE",
+	},
+	{
+		id = "IRON_SPEAR",
+		name = "철 창",
+		type = "WEAPON",
+		rarity = "RARE",
+		maxStack = 1,
+		durability = 500,
+		damage = 130,
+		description = "가장 강력한 위력을 가진 철 창.",
+	},
+	{
+		id = "CROSSBOW",
+		name = "석궁",
+		type = "WEAPON",
+		rarity = "RARE",
+		maxStack = 1,
+		durability = 400,
+		damage = 180,
+		description = "파괴력이 높고 조준이 쉬운 기계식 무기.",
+	},
+	{
+		id = "IRON_BOLT",
+		name = "철제 볼트",
+		type = "AMMO",
+		rarity = "RARE",
+		maxStack = 100,
+		description = "석궁 전용 강력한 탄약.",
+	},
+	{
+		id = "IRON_BOLA",
+		name = "철제 볼라",
+		type = "CONSUMABLE",
+		rarity = "EPIC",
+		maxStack = 10,
+		description = "대형 포식자 공룡을 포획하기 위한 최강의 도구.",
+		captureMultiplier = 3.5,
+	},
+
+	--========================================
+	-- 드롭/기타 자원
+	--========================================
+	{
+		id = "MEAT", name = "생고기", type = "RESOURCE", rarity = "COMMON", maxStack = 99,
+		description = "조리해서 먹을 수 있다.",
+	},
+	{
+		id = "LEATHER", name = "가죽", type = "RESOURCE", rarity = "COMMON", maxStack = 99,
+		description = "방어구 제작에 사용된다.",
+	},
+	{
+		id = "FEATHER", name = "깃털", type = "RESOURCE", rarity = "COMMON", maxStack = 99,
+		description = "화살 제작에 사용된다.",
+	},
+	{
+		id = "BONE", name = "뼈", type = "RESOURCE", rarity = "COMMON", maxStack = 99,
+		description = "강화된 도구와 볼라 제작에 사용된다.",
+	},
+	{
+		id = "HORN", name = "뿔", type = "RESOURCE", rarity = "UNCOMMON", maxStack = 99,
+		description = "강력한 크리처의 뿔. 고급 장비 제작에 사용된다.",
 	},
 }
 

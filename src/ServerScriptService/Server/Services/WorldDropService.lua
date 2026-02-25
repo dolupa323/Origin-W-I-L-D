@@ -63,7 +63,8 @@ end
 --========================================
 local function emitSpawned(drop: any)
 	if NetController then
-		NetController.FireAllClients("WorldDrop.Spawned", {
+		-- 네트워크 최적화: 400 스터드 내 플레이어에게만 전송
+		NetController.FireClientsInRange(drop.pos, 400, "WorldDrop.Spawned", {
 			dropId = drop.dropId,
 			pos = drop.pos,
 			itemId = drop.itemId,
@@ -76,19 +77,25 @@ end
 
 local function emitChanged(dropId: string, count: number)
 	if NetController then
-		NetController.FireAllClients("WorldDrop.Changed", {
-			dropId = dropId,
-			count = count,
-		})
+		local drop = drops[dropId]
+		if drop then
+			NetController.FireClientsInRange(drop.pos, 400, "WorldDrop.Changed", {
+				dropId = dropId,
+				count = count,
+			})
+		end
 	end
 end
 
 local function emitDespawned(dropId: string, reason: string)
 	if NetController then
-		NetController.FireAllClients("WorldDrop.Despawned", {
-			dropId = dropId,
-			reason = reason,
-		})
+		local drop = drops[dropId]
+		if drop then
+			NetController.FireClientsInRange(drop.pos, 400, "WorldDrop.Despawned", {
+				dropId = dropId,
+				reason = reason,
+			})
+		end
 	end
 end
 
@@ -153,9 +160,9 @@ local function pruneOldestDrops()
 		end
 		
 		if oldest then
+			emitDespawned(oldest.dropId, "CAP_PRUNE")
 			drops[oldest.dropId] = nil
 			dropCount = dropCount - 1
-			emitDespawned(oldest.dropId, "CAP_PRUNE")
 		else
 			break
 		end
@@ -184,9 +191,9 @@ local function processTick()
 	for _, item in ipairs(toRemove) do
 		local drop = drops[item.dropId]
 		if drop then
+			emitDespawned(item.dropId, item.reason)
 			drops[item.dropId] = nil
 			dropCount = dropCount - 1
-			emitDespawned(item.dropId, item.reason)
 		end
 	end
 	
@@ -300,9 +307,9 @@ function WorldDropService.loot(player: Player, dropId: string): (boolean, string
 	local added, remaining = InventoryService.addItem(userId, drop.itemId, drop.count)
 	
 	-- 드롭 제거
+	emitDespawned(dropId, "LOOTED_OUT")
 	drops[dropId] = nil
 	dropCount = dropCount - 1
-	emitDespawned(dropId, "LOOTED_OUT")
 	
 	return true, nil, {
 		dropId = dropId,

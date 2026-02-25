@@ -74,6 +74,7 @@ Enums.ErrorCode = {
 	INSUFFICIENT_TECH_POINTS = "INSUFFICIENT_TECH_POINTS", -- 기술 포인트 부족
 	PREREQUISITES_NOT_MET = "PREREQUISITES_NOT_MET", -- 선행 기술 미해금
 	RECIPE_LOCKED = "RECIPE_LOCKED",                 -- 레시피 미해금
+	INSUFFICIENT_STAT_POINTS = "INSUFFICIENT_STAT_POINTS", -- 스탯 포인트 부족
 	
 	-- 수확/노드 관련 (Phase 7)
 	NO_TOOL = "NO_TOOL",                             -- 도구 없음
@@ -98,7 +99,19 @@ Enums.ErrorCode = {
 	ITEM_NOT_IN_SHOP = "ITEM_NOT_IN_SHOP",           -- 상점에 해당 아이템 없음
 	ITEM_NOT_SELLABLE = "ITEM_NOT_SELLABLE",         -- 판매 불가 아이템
 	SHOP_TOO_FAR = "SHOP_TOO_FAR",                   -- 상점 거리 초과
+	LEVEL_NOT_MET = "LEVEL_NOT_MET",                 -- 필요 레벨 미충족
 	GOLD_CAP_REACHED = "GOLD_CAP_REACHED",           -- 골드 한도 도달
+}
+
+--========================================
+-- 플레이어 스탯 ID
+--========================================
+Enums.StatId = {
+	MAX_HEALTH = "MAX_HEALTH",     -- 최대 체력
+	MAX_STAMINA = "MAX_STAMINA",   -- 최대 스태미나
+	WEIGHT = "WEIGHT",             -- 소지 무게
+	WORK_SPEED = "WORK_SPEED",     -- 작업 속도
+	ATTACK = "ATTACK",             -- 공격력
 }
 
 --========================================
@@ -142,9 +155,13 @@ Enums.FacilityType = {
 	CRAFTING = "CRAFTING",     -- 제작 (작업대)
 	RESPAWN = "RESPAWN",       -- 리스폰 (침낭)
 	SMELTING = "SMELTING",     -- 제련 (용광로)
-	FARMING = "FARMING",       -- 농사 (화분)
-	DEFENSE = "DEFENSE",       -- 방어 (벽, 문)
-	GATHERING = "GATHERING",   -- 채집 (자동화) (Phase 7)
+	FARMING = "FARMING",       -- 농사 (화분/농장)
+	DEFENSE = "DEFENSE",       -- 방어 (함정 등)
+	GATHERING = "GATHERING",   -- 채집 (자동화)
+	BASE_CORE = "BASE_CORE",   -- 거점 핵심 (토템)
+	FEEDING = "FEEDING",       -- 먹이 공급
+	RESTING = "RESTING",       -- 휴식 및 회복
+	BUILDING = "BUILDING",     -- 건축용 구조물 (벽, 바닥 등)
 }
 
 --========================================

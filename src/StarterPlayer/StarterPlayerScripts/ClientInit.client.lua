@@ -50,6 +50,10 @@ if success then
 	local ShopController = require(Controllers.ShopController)
 	ShopController.Init()
 	
+	-- TechController 초기화
+	local TechController = require(Controllers.TechController)
+	TechController.Init()
+	
 	-- CombatController 초기화 (공격 시스템)
 	local CombatController = require(Controllers.CombatController)
 	CombatController.Init()
@@ -66,6 +70,10 @@ if success then
 	local ResourceUIController = require(Controllers.ResourceUIController)
 	ResourceUIController.Init()
 	
+	-- VirtualizationController 초기화 (성능 최적화: 가상화)
+	local VirtualizationController = require(Controllers.VirtualizationController)
+	VirtualizationController.Init()
+	
 	-- UIManager 초기화 (UI 생성 - 컨트롤러들 초기화 후)
 	UIManager.Init()
 	
@@ -75,16 +83,20 @@ if success then
 	end)
 	
 	-- 키 바인딩 설정
-	-- E = 장비창 (인벤토리), B = 인벤토리
-	InputManager.bindKey(Enum.KeyCode.E, "ToggleInventoryE", function()
+	-- E = 캐릭터 상태 및 장비창, B = 인벤토리
+	InputManager.bindKey(Enum.KeyCode.E, "ToggleStatus", function()
+		UIManager.toggleStatus()
+	end)
+	InputManager.bindKey(Enum.KeyCode.B, "ToggleInventory", function()
 		UIManager.toggleInventory()
 	end)
-	InputManager.bindKey(Enum.KeyCode.B, "ToggleInventoryB", function()
-		UIManager.toggleInventory()
+	-- C = 건축 (기존 제작 벤치에서 분리)
+	InputManager.bindKey(Enum.KeyCode.C, "ToggleBuilding", function()
+		UIManager.toggleCrafting("BUILDING") -- BUILDING 모드로 고정 호출
 	end)
-	-- C = 제작
-	InputManager.bindKey(Enum.KeyCode.C, "ToggleCrafting", function()
-		UIManager.toggleCrafting()
+	-- K = 기술 트리 (T에서 K로 변경)
+	InputManager.bindKey(Enum.KeyCode.K, "ToggleTechTree", function()
+		UIManager.toggleTechTree()
 	end)
 	-- Z = 상호작용 (줍기, NPC 등)
 	InputManager.bindKey(Enum.KeyCode.Z, "InteractZ", function()
@@ -95,6 +107,7 @@ if success then
 		UIManager.closeInventory()
 		UIManager.closeCrafting()
 		UIManager.closeShop()
+		UIManager.closeTechTree()
 	end)
 end
 

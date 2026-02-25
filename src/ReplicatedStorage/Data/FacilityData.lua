@@ -1,107 +1,259 @@
 -- FacilityData.lua
 -- 시설 데이터 정의
--- 형태: 배열 { {id="...", ...}, ... }
--- DataService에서 Map으로 변환됨
+-- 4단계 문명 발전에 따른 시설 추가
 
 local FacilityData = {
-	-- 기본 시설: 캠프파이어 (연료 기반 요리)
+	--========================================
+	-- 1단계/기초 시설
+	--========================================
 	{
 		id = "CAMPFIRE",
-		name = "캠프파이어",
-		description = "요리와 빛을 제공합니다. 밤에 야생동물을 쫓아냅니다.",
+		name = "모닥불",
+		description = "요리와 빛을 제공하고 체온을 유지합니다.",
 		modelName = "Campfire",
-		requirements = {
-			{ itemId = "WOOD", amount = 5 },
-			{ itemId = "STONE", amount = 2 },
-		},
-		buildTime = 0,
+		requirements = { { itemId = "WOOD", amount = 5 }, { itemId = "STONE", amount = 3 } },
 		maxHealth = 100,
-		interactRange = 5,
+		techLevel = 3,
 		functionType = "COOKING",
-		-- FacilityService 전용 필드
-		fuelConsumption = 1,    -- 초당 연료값 1 소모
-		craftSpeed = 1.0,       -- 제작 속도 배율 (1.0 = 기본)
-		hasInputSlot = true,    -- Input 슬롯 보유
-		hasFuelSlot = true,     -- Fuel 슬롯 보유
-		hasOutputSlot = true,   -- Output 슬롯 보유
+		fuelConsumption = 1,
+		hasFuelSlot = true,
+		hasInputSlot = true,
+		hasOutputSlot = true,
 	},
-	
-	-- 기본 시설: 보관함
 	{
 		id = "STORAGE_BOX",
 		name = "보관함",
-		description = "아이템을 보관할 수 있는 나무 상자입니다.",
+		description = "아이템을 보관할 수 있는 나무 상자.",
 		modelName = "StorageBox",
-		requirements = {
-			{ itemId = "WOOD", amount = 10 },
-			{ itemId = "FIBER", amount = 5 },
-		},
-		buildTime = 0,
+		requirements = { { itemId = "WOOD", amount = 10 }, { itemId = "FIBER", amount = 5 } },
 		maxHealth = 150,
-		interactRange = 3,
+		techLevel = 10,
 		functionType = "STORAGE",
 		storageSlots = 20,
 	},
-	
-	-- 기본 시설: 작업대 (큐 기반 제작, 연료 불필요)
 	{
-		id = "CRAFTING_TABLE",
-		name = "작업대",
-		description = "기본 도구와 장비를 제작할 수 있습니다.",
-		modelName = "CraftingTable",
-		requirements = {
-			{ itemId = "WOOD", amount = 15 },
-			{ itemId = "STONE", amount = 5 },
-			{ itemId = "FLINT", amount = 3 },
-		},
-		buildTime = 0,
+		id = "REPAIR_BENCH",
+		name = "수리 작업대",
+		description = "내구도가 소모된 도구와 장비를 수리합니다.",
+		modelName = "RepairBench",
+		requirements = { { itemId = "WOOD", amount = 10 }, { itemId = "STONE", amount = 10 } },
 		maxHealth = 200,
-		interactRange = 4,
+		techLevel = 8,
+		functionType = "REPAIR",
+	},
+
+	--========================================
+	-- 2단계 시설 (정착과 목조)
+	--========================================
+	{
+		id = "CAMP_TOTEM",
+		name = "거점 토템",
+		description = "해당 지역을 플레이어의 거점으로 선언하고 크리처를 배치합니다.",
+		modelName = "CampTotem",
+		requirements = { { itemId = "WOOD", amount = 20 }, { itemId = "STONE", amount = 10 } },
+		maxHealth = 500,
+		techLevel = 10,
+		functionType = "BASE_CORE",
+	},
+	{
+		id = "PRIMITIVE_WORKBENCH",
+		name = "원시 작업대",
+		description = "2단계 도구와 장비를 제작할 수 있습니다.",
+		modelName = "PrimitiveWorkbench",
+		requirements = { { itemId = "WOOD", amount = 15 }, { itemId = "STONE", amount = 5 } },
+		maxHealth = 200,
+		techLevel = 10,
 		functionType = "CRAFTING",
-		-- FacilityService 전용 필드
-		fuelConsumption = 0,    -- 연료 불필요
-		craftSpeed = 1.0,       -- 제작 속도 배율
-		hasInputSlot = false,   -- 슬롯 없음 (CraftingService 큐 방식)
-		hasFuelSlot = false,
-		hasOutputSlot = false,  -- 결과물은 바닥 드랍
-		queueMax = 10,          -- 제작 대기열 최대 크기
-		recipes = {},
+		craftSpeed = 1.0,
 	},
-	
-	-- 기본 시설: 침낭
 	{
-		id = "SLEEPING_BAG",
-		name = "침낭",
-		description = "밤을 스킵하고 리스폰 위치를 설정합니다.",
-		modelName = "SleepingBag",
-		requirements = {
-			{ itemId = "FIBER", amount = 20 },
-			{ itemId = "WOOD", amount = 5 },
-		},
-		buildTime = 0,
-		maxHealth = 50,
-		interactRange = 2,
-		functionType = "RESPAWN",
+		id = "WOODEN_FOUNDATION",
+		name = "목재 토대",
+		description = "건축의 기초가 되는 목재 바닥.",
+		modelName = "WoodenFoundation",
+		requirements = { { itemId = "WOOD", amount = 10 } },
+		maxHealth = 300,
+		techLevel = 11,
+		functionType = "BUILDING",
 	},
-	
-	-- 채집 기지 (Phase 7)
 	{
-		id = "GATHERING_POST",
-		name = "채집 기지",
-		description = "팰이 주변 자원을 자동으로 수집합니다.",
-		modelName = "GatheringPost",
-		requirements = {
-			{ itemId = "WOOD", amount = 20 },
-			{ itemId = "STONE", amount = 10 },
-		},
-		buildTime = 0,
+		id = "WOODEN_WALL",
+		name = "목재 벽",
+		description = "안전한 구역을 만드는 목재 벽.",
+		modelName = "WoodenWall",
+		requirements = { { itemId = "WOOD", amount = 8 } },
+		maxHealth = 250,
+		techLevel = 11,
+		functionType = "BUILDING",
+	},
+	{
+		id = "WOODEN_ROOF",
+		name = "목재 지붕",
+		description = "비를 피하게 해주는 목재 지붕.",
+		modelName = "WoodenRoof",
+		requirements = { { itemId = "WOOD", amount = 8 } },
 		maxHealth = 200,
-		interactRange = 3,
-		functionType = "GATHERING",
-		gatherRadius = 30,         -- 자원 수집 범위
-		gatherInterval = 10,       -- 수집 간격 (초)
-		hasOutputSlot = true,      -- 수집한 아이템 저장
-		outputSlots = 20,
+		techLevel = 11,
+		functionType = "BUILDING",
+	},
+	{
+		id = "WOODEN_DOOR",
+		name = "목재 문",
+		description = "출입이 가능한 목재 문.",
+		modelName = "WoodenDoor",
+		requirements = { { itemId = "WOOD", amount = 12 } },
+		maxHealth = 200,
+		techLevel = 11,
+		functionType = "BUILDING",
+	},
+
+	--========================================
+	-- 3단계 시설 (청동기 시대)
+	--========================================
+	{
+		id = "STONE_FURNACE",
+		name = "돌 용광로",
+		description = "광석을 주괴로 제련합니다.",
+		modelName = "StoneFurnace",
+		requirements = { { itemId = "STONE", amount = 20 }, { itemId = "WOOD", amount = 10 } },
+		maxHealth = 300,
+		techLevel = 20,
+		functionType = "SMELTING",
+		fuelConsumption = 2,
+		hasFuelSlot = true,
+		hasInputSlot = true,
+		hasOutputSlot = true,
+	},
+	{
+		id = "BRONZE_WORKBENCH",
+		name = "청동기 작업대",
+		description = "청동 장비와 도구를 제작합니다.",
+		modelName = "BronzeWorkbench",
+		requirements = { { itemId = "WOOD", amount = 20 }, { itemId = "BRONZE_INGOT", amount = 5 } },
+		maxHealth = 400,
+		techLevel = 22,
+		functionType = "CRAFTING",
+		craftSpeed = 1.5,
+	},
+	{
+		id = "BERRY_PLANTATION",
+		name = "베리 농장",
+		description = "베리를 자급자족할 수 있는 농지.",
+		modelName = "BerryPlantation",
+		requirements = { { itemId = "WOOD", amount = 15 }, { itemId = "BERRY", amount = 10 }, { itemId = "FIBER", amount = 10 } },
+		maxHealth = 200,
+		techLevel = 17,
+		functionType = "FARMING",
+	},
+	{
+		id = "BEAST_FEEDING_TROUGH",
+		name = "야수 먹이통",
+		description = "거점의 크리처들이 식사하는 곳.",
+		modelName = "FeedingTrough",
+		requirements = { { itemId = "WOOD", amount = 10 } },
+		maxHealth = 150,
+		techLevel = 17,
+		functionType = "FEEDING",
+	},
+	{
+		id = "STRAW_NEST",
+		name = "짚 둥지",
+		description = "크리처들이 휴식하며 피로를 회복하는 장소.",
+		modelName = "StrawNest",
+		requirements = { { itemId = "FIBER", amount = 20 }, { itemId = "WOOD", amount = 5 } },
+		maxHealth = 50,
+		techLevel = 30,
+		functionType = "RESTING",
+	},
+	{
+		id = "LARGE_STORAGE_BOX",
+		name = "대형 보관함",
+		description = "많은 공간을 가진 고정된 보관함.",
+		modelName = "LargeStorageBox",
+		requirements = { { itemId = "WOOD", amount = 30 }, { itemId = "STONE", amount = 10 } },
+		maxHealth = 400,
+		techLevel = 32,
+		functionType = "STORAGE",
+		storageSlots = 40,
+	},
+
+	--========================================
+	-- 4단계 시설 (철기 시대)
+	--========================================
+	{
+		id = "IRON_FURNACE",
+		name = "철 용광로",
+		description = "고열로 철을 제련하는 강화된 용광로.",
+		modelName = "IronFurnace",
+		requirements = { { itemId = "STONE", amount = 30 }, { itemId = "BRONZE_INGOT", amount = 10 } },
+		maxHealth = 500,
+		techLevel = 35,
+		functionType = "SMELTING",
+		fuelConsumption = 4,
+		hasFuelSlot = true,
+		hasInputSlot = true,
+		hasOutputSlot = true,
+	},
+	{
+		id = "IRON_WORKBENCH",
+		name = "철기 작업대",
+		description = "철제 장비와 정밀한 기계 무기를 제작합니다.",
+		modelName = "IronWorkbench",
+		requirements = { { itemId = "BRONZE_INGOT", amount = 15 }, { itemId = "IRON_INGOT", amount = 10 } },
+		maxHealth = 600,
+		techLevel = 38,
+		functionType = "CRAFTING",
+		craftSpeed = 2.0,
+	},
+	{
+		id = "STONE_FOUNDATION",
+		name = "석재 토대",
+		description = "매우 단단한 석재 바닥.",
+		modelName = "StoneFoundation",
+		requirements = { { itemId = "STONE", amount = 15 } },
+		maxHealth = 800,
+		techLevel = 36,
+		functionType = "BUILDING",
+	},
+	{
+		id = "STONE_WALL",
+		name = "석재 벽",
+		description = "요새를 구축하기 위한 강한 벽.",
+		modelName = "StoneWall",
+		requirements = { { itemId = "STONE", amount = 12 } },
+		maxHealth = 700,
+		techLevel = 36,
+		functionType = "BUILDING",
+	},
+	{
+		id = "STONE_ROOF",
+		name = "석재 지붕",
+		description = "매우 견고한 석재 지붕.",
+		modelName = "StoneRoof",
+		requirements = { { itemId = "STONE", amount = 12 } },
+		maxHealth = 700,
+		techLevel = 36,
+		functionType = "BUILDING",
+	},
+	{
+		id = "REINFORCED_GATE",
+		name = "강화 문",
+		description = "쉽게 파괴되지 않는 석굴문.",
+		modelName = "ReinforcedGate",
+		requirements = { { itemId = "STONE", amount = 20 }, { itemId = "IRON_INGOT", amount = 5 } },
+		maxHealth = 1000,
+		techLevel = 50,
+		functionType = "BUILDING",
+	},
+	{
+		id = "LARGE_BEAST_BED",
+		name = "대형 야수 침대",
+		description = "대형 크리처를 위한 안락한 침대.",
+		modelName = "LargeBeastBed",
+		requirements = { { itemId = "WOOD", amount = 20 }, { itemId = "LEATHER", amount = 10 } },
+		maxHealth = 150,
+		techLevel = 47,
+		functionType = "RESTING",
 	},
 }
 

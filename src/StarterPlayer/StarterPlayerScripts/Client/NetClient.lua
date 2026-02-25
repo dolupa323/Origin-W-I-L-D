@@ -42,6 +42,12 @@ function NetClient.Request(command: string, payload: any?): (boolean, any)
 	}
 	
 	local success, response = pcall(function()
+		local compressedPayload = Protocol.Compress(payload or {})
+		local request = {
+			command = command,
+			requestId = requestId,
+			payload = compressedPayload,
+		}
 		return Cmd:InvokeServer(request)
 	end)
 	
@@ -55,7 +61,8 @@ function NetClient.Request(command: string, payload: any?): (boolean, any)
 	end
 	
 	if response.success then
-		return true, response.data
+		local decompressedData = Protocol.Decompress(response.data)
+		return true, decompressedData
 	else
 		return false, response.error
 	end
@@ -97,7 +104,7 @@ local function onClientEvent(data)
 	if type(data) ~= "table" then return end
 	
 	local eventName = data.event
-	local eventData = data.data
+	local eventData = Protocol.Decompress(data.data)
 	
 	local listeners = eventListeners[eventName]
 	if not listeners then return end

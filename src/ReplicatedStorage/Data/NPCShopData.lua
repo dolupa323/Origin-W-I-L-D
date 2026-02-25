@@ -1,5 +1,6 @@
 -- NPCShopData.lua
 -- NPC 상점 데이터 정의 (Phase 9)
+-- 4단계 아이템 체계 반영 및 오타 수정
 
 local NPCShopData = {}
 
@@ -14,11 +15,11 @@ NPCShopData.GENERAL_STORE = {
 	
 	-- 판매 상품 (플레이어가 구매 가능)
 	buyList = {
-		{ itemId = "WOOD", price = 5, stock = -1 },          -- -1 = 무한 재고
+		{ itemId = "WOOD", price = 5, stock = -1 },
 		{ itemId = "STONE", price = 3, stock = -1 },
 		{ itemId = "FIBER", price = 2, stock = -1 },
-		{ itemId = "FLINT", price = 4, stock = -1 },
 		{ itemId = "TORCH", price = 15, stock = 50 },
+		{ itemId = "RESIN", price = 10, stock = -1 },
 	},
 	
 	-- 구매 가격 배율 (플레이어가 판매 시)
@@ -29,9 +30,11 @@ NPCShopData.GENERAL_STORE = {
 		{ itemId = "WOOD", price = 2 },
 		{ itemId = "STONE", price = 1 },
 		{ itemId = "FIBER", price = 1 },
-		{ itemId = "FLINT", price = 2 },
-		{ itemId = "RAW_MEAT", price = 8 },
+		{ itemId = "MEAT", price = 8 },       -- RAW_MEAT -> MEAT 수정
 		{ itemId = "LEATHER", price = 15 },
+		{ itemId = "FEATHER", price = 5 },
+		{ itemId = "BONE", price = 10 },
+		{ itemId = "HORN", price = 25 },
 	},
 }
 
@@ -47,18 +50,20 @@ NPCShopData.TOOL_SHOP = {
 	buyList = {
 		{ itemId = "STONE_PICKAXE", price = 50, stock = -1 },
 		{ itemId = "STONE_AXE", price = 50, stock = -1 },
-		{ itemId = "WOODEN_CLUB", price = 30, stock = -1 },
-		{ itemId = "STONE_SWORD", price = 80, stock = 20 },
-		{ itemId = "TORCH", price = 10, stock = -1 },
+		{ itemId = "STONE_SPEAR", price = 60, stock = -1 },
+		{ itemId = "WOODEN_CLUB", price = 40, stock = -1 },
+		{ itemId = "BRONZE_PICKAXE", price = 250, stock = 10 },
+		{ itemId = "BRONZE_AXE", price = 250, stock = 10 },
 	},
 	
-	sellMultiplier = 0.3,  -- 도구는 30% 가격에 구매
+	sellMultiplier = 0.3,
 	
 	sellList = {
 		{ itemId = "STONE_PICKAXE", price = 15 },
 		{ itemId = "STONE_AXE", price = 15 },
-		{ itemId = "WOODEN_CLUB", price = 9 },
-		{ itemId = "STONE_SWORD", price = 24 },
+		{ itemId = "STONE_SPEAR", price = 18 },
+		{ itemId = "BRONZE_PICKAXE", price = 75 },
+		{ itemId = "IRON_PICKAXE", price = 200 },
 	},
 }
 
@@ -72,18 +77,18 @@ NPCShopData.PAL_SHOP = {
 	npcName = "조련사 미아",
 	
 	buyList = {
-		{ itemId = "PAL_SPHERE", price = 50, stock = 30 },
-		{ itemId = "SUPER_SPHERE", price = 150, stock = 10 },
-		{ itemId = "ULTRA_SPHERE", price = 500, stock = 5 },
-		{ itemId = "PAL_FOOD", price = 20, stock = -1 },
+		{ itemId = "VINE_BOLA", price = 30, stock = 50 },     -- Sphere -> Bola 변경
+		{ itemId = "BONE_BOLA", price = 100, stock = 20 },
+		{ itemId = "BRONZE_BOLA", price = 300, stock = 10 },
 	},
 	
 	sellMultiplier = 0.4,
 	
 	sellList = {
-		{ itemId = "PAL_SPHERE", price = 20 },
-		{ itemId = "SUPER_SPHERE", price = 60 },
-		{ itemId = "PAL_FOOD", price = 8 },
+		{ itemId = "VINE_BOLA", price = 10 },
+		{ itemId = "BONE_BOLA", price = 40 },
+		{ itemId = "BRONZE_BOLA", price = 120 },
+		{ itemId = "IRON_BOLA", price = 300 },
 	},
 }
 
@@ -97,17 +102,13 @@ NPCShopData.FOOD_SHOP = {
 	npcName = "요리사 루시",
 	
 	buyList = {
-		{ itemId = "COOKED_MEAT", price = 25, stock = -1 },
 		{ itemId = "BERRY", price = 5, stock = -1 },
-		{ itemId = "HEALTH_POTION", price = 100, stock = 20 },
-		{ itemId = "STAMINA_POTION", price = 80, stock = 20 },
 	},
 	
 	sellMultiplier = 0.5,
 	
 	sellList = {
-		{ itemId = "RAW_MEAT", price = 10 },
-		{ itemId = "COOKED_MEAT", price = 12 },
+		{ itemId = "MEAT", price = 10 },
 		{ itemId = "BERRY", price = 2 },
 	},
 }
@@ -124,9 +125,7 @@ NPCShopData.BUILDING_SHOP = {
 	buyList = {
 		{ itemId = "WOOD", price = 4, stock = -1 },
 		{ itemId = "STONE", price = 2, stock = -1 },
-		{ itemId = "IRON_INGOT", price = 30, stock = 50 },
-		{ itemId = "NAILS", price = 5, stock = -1 },
-		{ itemId = "ROPE", price = 10, stock = -1 },
+		{ itemId = "FIBER", price = 2, stock = -1 },
 	},
 	
 	sellMultiplier = 0.4,
@@ -134,7 +133,7 @@ NPCShopData.BUILDING_SHOP = {
 	sellList = {
 		{ itemId = "WOOD", price = 1 },
 		{ itemId = "STONE", price = 1 },
-		{ itemId = "IRON_INGOT", price = 12 },
+		{ itemId = "FIBER", price = 1 },
 	},
 }
 

@@ -30,8 +30,13 @@ local AI_UPDATE_INTERVAL = 0.3 -- 0.3초마다 AI 로직 수행 (더 부드러�
 local MIN_SPAWN_DIST = 40
 local MAX_SPAWN_DIST = 80
 local WANDER_RADIUS = 18
-local DESPAWN_DIST = 150
+local DESPAWN_DIST = 300 -- 150 -> 300 (LOD가 있으므로 시야 상향)
 local CREATURE_ATTACK_COOLDOWN = 2 -- 크리처 공격 쿨다운 (초)
+
+-- LOD (Level of Detail) 상수
+local LOD_NEAR_DIST = 60    -- 이내: 0.3s (매 턴)
+local LOD_MID_DIST = 150    -- 이내: 0.9s (매 3턴)
+local LOD_FAR_DIST = 300    -- 이내: 1.5s (매 5턴)
 
 -- 자연스러운 AI 행동 상수
 local IDLE_MIN_TIME = 2.0   -- IDLE 최소 지속시간
@@ -42,12 +47,17 @@ local SPEED_VARIATION = 0.25 -- 속도 변동 범위 (±25%)
 local WANDER_ANGLE_RANGE = 120 -- 배회 방향 변동 범위 (±도)
 
 -- 어그로 시스템 상수
-local AGGRO_TIMEOUT = 3 -- 추격 시간 제한 (초)
-local MAX_CHASE_DISTANCE = 50 -- 어그로 해제 절대 거리 (studs)
+local AGGRO_TIMEOUT = 6 -- 추격 시간 제한 (초) -> 더 부드러운 추격 (너무 짧으면 끊김)
+local MAX_CHASE_DISTANCE = 40 -- 어그로 해제 절대 거리 (studs) -> 도망치기 쉽게 축소 (50->40)
+local AGGRO_COOLDOWN = 5 -- 어그로 다시 끌리기까지의 최소 시간 -> 한번 따돌리면 잠시 안전
 
 -- 물/해수면 상수
 local SEA_LEVEL = 10 -- 해수면 높이 (이 아래는 물로 간주)
 local WATER_CHECK_DISTANCE = 5 -- 이동 전 물 체크 거리
+
+-- Torpor 관련 (Phase 6)
+local TORPOR_DECAY_RATE = 2 -- 초당 Torpor 감소량
+local STUN_RECOVERY_THRESHOLD = 0 -- Torpor가 이 이하로 내려가면 깨어남
 
 local creatureFolder = workspace:FindFirstChild("Creatures") or Instance.new("Folder", workspace)
 creatureFolder.Name = "Creatures"
@@ -406,13 +416,43 @@ function CreatureService.spawn(creatureId, position)
 	local corner2 = corner:Clone()
 	corner2.Parent = healthFill
 	
+	-- Torpor 바 배경
+	local torporBG = Instance.new("Frame")
+	torporBG.Name = "TorporBG"
+	torporBG.Size = UDim2.new(0.8, 0, 0.1, 0)
+	torporBG.Position = UDim2.new(0.5, 0, 0.85, 0)
+	torporBG.AnchorPoint = Vector2.new(0.5, 0)
+	torporBG.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+	torporBG.BackgroundTransparency = 0.5
+	torporBG.BorderSizePixel = 0
+	torporBG.Parent = mainFrame
+	
+	local corner3 = corner:Clone()
+	corner3.Parent = torporBG
+	
+	-- Torpor 바 채우기
+	local torporFill = Instance.new("Frame")
+	torporFill.Name = "TorporFill"
+	torporFill.Size = UDim2.new(0, 0, 1, 0)
+	torporFill.BackgroundColor3 = Color3.fromRGB(160, 60, 220) -- 보라색
+	torporFill.BorderSizePixel = 0
+	torporFill.Visible = false
+	torporFill.Parent = torporBG
+	
+	local corner4 = corner:Clone()
+	corner4.Parent = torporFill
+	
 	model.Parent = creatureFolder
 	
 	local instanceId = game:GetService("HttpService"):GenerateGUID(false)
 	model:SetAttribute("InstanceId", instanceId)
 	
-	print(string.format("[CreatureService] Spawned %s at (%.1f, %.1f, %.1f) [ID:%s]", 
-		creatureId, position.X, position.Y, position.Z, instanceId))
+	-- Collision Group 설정
+	for _, part in ipairs(model:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.CollisionGroup = "Creatures"
+		end
+	end
 	
 	activeCreatures[instanceId] = {
 		id = instanceId,
@@ -423,10 +463,15 @@ function CreatureService.spawn(creatureId, position)
 		data = data,
 		maxHealth = data.maxHealth,
 		currentHealth = data.maxHealth,
+		maxTorpor = data.maxTorpor or 100,
+		currentTorpor = 0,
 		state = "IDLE",
 		targetPosition = nil,
 		lastStateChange = tick(),
+		lastUpdate = tick(),
+		lastUpdateAt = tick(),
 		gui = healthFill, -- HP 바 업데이트용
+		torporGui = torporFill, -- 기절 바 업데이트용
 	}
 	creatureCount = creatureCount + 1
 	
@@ -469,73 +514,73 @@ function CreatureService.removeCreature(instanceId: string)
 	end
 end
 
---- 데미지 적용 및 사망 처리
-function CreatureService.applyDamage(instanceId: string, damage: number, attacker: Player): (boolean, Vector3?)
+--- 공격 처리 (데미지 및 기절 수치 적용)
+function CreatureService.processAttack(instanceId: string, hpDamage: number, torporDamage: number, attacker: Player): (boolean, Vector3?)
 	local creature = activeCreatures[instanceId]
 	if not creature or not creature.humanoid or creature.currentHealth <= 0 then
 		return false, nil
 	end
 	
-	creature.currentHealth = creature.currentHealth - damage
+	-- 1. 데미지 및 기절 수치 적용
+	creature.currentHealth = math.max(0, creature.currentHealth - hpDamage)
+	creature.currentTorpor = math.min(creature.maxTorpor, creature.currentTorpor + torporDamage)
+	
 	creature.humanoid.Health = creature.currentHealth
 	
-	-- 피격 시 상태 변경 (Neutral/Aggressive -> Chase Attacker)
-	if creature.data.behavior ~= "PASSIVE" then
-		creature.state = "CHASE"
-		creature.lastStateChange = tick()
-		creature.chaseStartTime = tick() -- 어그로 시간 추적 시작
-		-- attacker를 target으로 설정해야 하지만, 현재 AI 루프는 "가장 가까운 플레이어"를 쫓음.
-		-- 일단은 상태만 변경해도 가까이 있는 attacker를 쫓게 됨.
-	else
-		-- 도망 (PASSIVE)
-		creature.state = "FLEE" -- (Wander의 빠른 버전으로 구현 필요)
-		creature.humanoid.WalkSpeed = (creature.data.runSpeed or 20) * 1.2
+	-- 2. 상태 변화
+	if creature.currentHealth > 0 then
+		if creature.currentTorpor >= creature.maxTorpor and creature.state ~= "STUNNED" then
+			-- 기절 상태 진입
+			creature.state = "STUNNED"
+			creature.lastStateChange = tick()
+			creature.humanoid.PlatformStand = true -- 넘어짐 효과
+			print(string.format("[CreatureService] %s is STUNNED!", instanceId))
+		elseif creature.state ~= "STUNNED" then
+			-- 피격 시 어그로/도망
+			if creature.data.behavior ~= "PASSIVE" then
+				creature.state = "CHASE"
+				creature.lastStateChange = tick()
+			else
+				creature.state = "FLEE"
+				creature.humanoid.WalkSpeed = (creature.data.runSpeed or 20) * 1.2
+			end
+		end
 	end
 	
-	-- GUI 갱신 (HP 바 크기 조절)
+	-- 3. GUI 갱신
 	if creature.gui then
-		local ratio = math.clamp(creature.currentHealth / creature.maxHealth, 0, 1)
-		creature.gui.Size = UDim2.new(ratio, 0, 1, 0)
+		local hpRatio = math.clamp(creature.currentHealth / creature.maxHealth, 0, 1)
+		creature.gui.Size = UDim2.new(hpRatio, 0, 1, 0)
 		
-		-- 체력에 따른 색상 변화 (옵션: 낮을수록 빨갛게)
-		if ratio > 0.5 then
-			creature.gui.BackgroundColor3 = Color3.fromRGB(60, 220, 60) -- 초록
-		elseif ratio > 0.2 then
-			creature.gui.BackgroundColor3 = Color3.fromRGB(220, 180, 60) -- 노랑
+		-- HP 색상
+		if hpRatio > 0.5 then
+			creature.gui.BackgroundColor3 = Color3.fromRGB(60, 220, 60)
+		elseif hpRatio > 0.2 then
+			creature.gui.BackgroundColor3 = Color3.fromRGB(220, 180, 60)
 		else
-			creature.gui.BackgroundColor3 = Color3.fromRGB(220, 60, 60) -- 빨강
+			creature.gui.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
 		end
 	end
+	
+	-- 기절 바 업데이트 (별도 GUI 레이아웃 필요 시 수정)
+	if creature.torporGui then
+		local torporRatio = math.clamp(creature.currentTorpor / creature.maxTorpor, 0, 1)
+		creature.torporGui.Size = UDim2.new(torporRatio, 0, 1, 0)
+		creature.torporGui.Visible = torporRatio > 0
+	end
 
-	-- 사망 처리
+	-- 4. 사망 처리
 	if creature.currentHealth <= 0 then
-		local attackerName = attacker and attacker.Name or "Unknown/Environment"
-		print(string.format("[CreatureService] %s killed by %s", creature.creatureId, attackerName))
-		
+		local attackerName = attacker and attacker.Name or "Unknown"
 		local deathPos = creature.rootPart.Position
 		
-		-- 1. 드롭 아이템 생성
-		local drops = DropTableData[creature.creatureId]
-		if drops then
-			for _, drop in ipairs(drops) do
-				if math.random() <= drop.chance then
-					local count = math.random(drop.min, drop.max)
-					WorldDropService.spawnDrop(deathPos + Vector3.new(math.random(-2,2), 1, math.random(-2,2)), drop.itemId, count)
-				end
-			end
-		end
-		
-		-- 2. 경험치 보상 (Phase 6)
+		-- 경험치 보상
 		if PlayerStatService and attacker then
-			local xpAmount = Balance.XP_CREATURE_KILL or 25
-			-- 필요 시 크리처 데이터에 정의된 XP 사용
-			if creature.data and creature.data.xpReward then
-				xpAmount = creature.data.xpReward
-			end
+			local xpAmount = creature.data.xpReward or 25
 			PlayerStatService.addXP(attacker.UserId, xpAmount, Enums.XPSource.CREATURE_KILL)
 		end
 		
-		-- 3. 사망 연출 (즉시 투명화 및 제거)
+		-- 리소스 제거 연출
 		if creature.model then
 			for _, part in ipairs(creature.model:GetDescendants()) do
 				if part:IsA("BasePart") then
@@ -544,13 +589,15 @@ function CreatureService.applyDamage(instanceId: string, damage: number, attacke
 				end
 			end
 		end
-		if creature.gui then creature.gui:Destroy() end
+		if creature.model and creature.model:FindFirstChild("HumanoidRootPart") then
+			local labels = creature.model.HumanoidRootPart:FindFirstChild("CreatureLabel")
+			if labels then labels:Destroy() end
+		end
 		
-		-- 3. 데이터 삭제 & 모델 제거
 		activeCreatures[instanceId] = nil 
 		creatureCount = creatureCount - 1
 		
-		task.delay(0.5, function() -- 드롭 생성 시간 정도만 대기 후 제거
+		task.delay(0.5, function()
 			if creature.model then creature.model:Destroy() end
 		end)
 		
@@ -897,9 +944,21 @@ end
 function CreatureService._updateAILoop()
 	local now = tick()
 	
+	-- 0. 플레이어 위치 및 인스턴스 캐싱 (연산 최적화)
+	local playerCache = {}
+	for _, p in ipairs(Players:GetPlayers()) do
+		local char = p.Character
+		if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") then
+			table.insert(playerCache, {
+				root = char.HumanoidRootPart,
+				pos = char.HumanoidRootPart.Position,
+				humanoid = char.Humanoid
+			})
+		end
+	end
+	
 	for id, creature in pairs(activeCreatures) do
 		if not creature.model or not creature.model.Parent then
-			-- 모델이 사라졌으면 정리
 			activeCreatures[id] = nil
 			creatureCount = creatureCount - 1
 			continue
@@ -908,25 +967,71 @@ function CreatureService._updateAILoop()
 		local hrp = creature.rootPart
 		if not hrp then continue end
 		
-		-- 1. 가장 가까운 플레이어 찾기
-		local closestPlayer, minDist = nil, 9999
-		for _, player in ipairs(Players:GetPlayers()) do
-			local char = player.Character
-			if char and char:FindFirstChild("HumanoidRootPart") then
-				local d = (char.HumanoidRootPart.Position - hrp.Position).Magnitude
-				if d < minDist then
-					minDist = d
-					closestPlayer = char.HumanoidRootPart
-				end
+		-- 1. 가장 가까운 플레이어 찾기 (캐싱된 데이터 사용)
+		local minDist = 9999
+		local closestPlayerPos = nil
+		local closestPlayerRoot = nil
+		local closestPlayerHum = nil
+		
+		for _, pData in ipairs(playerCache) do
+			local d = (pData.pos - hrp.Position).Magnitude
+			if d < minDist then
+				minDist = d
+				closestPlayerPos = pData.pos
+				closestPlayerRoot = pData.root
+				closestPlayerHum = pData.humanoid
 			end
 		end
+		
+		-- 1.1 LOD 업데이트 주기 결정
+		local updateInterval = AI_UPDATE_INTERVAL -- 기본 0.3s
+		if minDist > LOD_MID_DIST then
+			updateInterval = 1.5 -- 300m 부근: 매우 느림
+		elseif minDist > LOD_NEAR_DIST then
+			updateInterval = 0.9 -- 150m 부근: 중간 느림
+		end
+		
+		-- 업데이트 타임아웃 체크
+		if creature.lastUpdate and (now - creature.lastUpdate < updateInterval) then
+			-- 이번 턴은 스킵 (연산량 절감)
+			continue
+		end
+		creature.lastUpdate = now
 		
 		-- 2. Despawn Check
 		if minDist > DESPAWN_DIST then
 			creature.model:Destroy()
 			activeCreatures[id] = nil
 			creatureCount = creatureCount - 1
-			print("[CreatureService] Despawned (Too far):", id)
+			continue
+		end
+		
+		-- 2.5 Torpor Decay (Phase 6)
+		local dt = now - creature.lastUpdateAt
+		creature.lastUpdateAt = now
+		
+		if creature.currentTorpor > 0 then
+			creature.currentTorpor = math.max(0, creature.currentTorpor - (TORPOR_DECAY_RATE * dt))
+			
+			-- GUI 갱신
+			if creature.torporGui then
+				local torporRatio = math.clamp(creature.currentTorpor / creature.maxTorpor, 0, 1)
+				creature.torporGui.Size = UDim2.new(torporRatio, 0, 1, 0)
+				creature.torporGui.Visible = torporRatio > 0
+			end
+			
+			-- 기절 회복 체크
+			if creature.state == "STUNNED" and creature.currentTorpor <= STUN_RECOVERY_THRESHOLD then
+				creature.state = "IDLE"
+				creature.lastStateChange = now
+				creature.humanoid.PlatformStand = false
+				print(string.format("[CreatureService] %s recovered from STUN!", id))
+			end
+		end
+
+		-- 기절 상태면 AI 로직 스킵 (이동 전)
+		if creature.state == "STUNNED" then
+			creature.humanoid:MoveTo(hrp.Position) -- 정지
 			continue
 		end
 		
@@ -935,11 +1040,11 @@ function CreatureService._updateAILoop()
 		local detectRange = creature.data.detectRange or 20
 		
 		-- BloodSmell 어그로 배율 적용 (Phase 4-4)
-		if DebuffService and closestPlayer then
+		if DebuffService and closestPlayerPos then
 			local playerUserId = nil
-			for _, player in ipairs(Players:GetPlayers()) do
-				if player.Character and player.Character:FindFirstChild("HumanoidRootPart") == closestPlayer then
-					playerUserId = player.UserId
+			for _, p in ipairs(Players:GetPlayers()) do
+				if p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character.HumanoidRootPart.Position == closestPlayerPos then
+					playerUserId = p.UserId
 					break
 				end
 			end
@@ -962,11 +1067,17 @@ function CreatureService._updateAILoop()
 				if chaseDuration >= AGGRO_TIMEOUT or minDist > MAX_CHASE_DISTANCE then
 					newState = "WANDER"
 					creature.chaseStartTime = nil
+					creature.lostAggroAt = now -- 어그로 상실 시점 기록
 				end
 			elseif minDist <= detectRange then
-				newState = "CHASE"
-				if not creature.chaseStartTime then
-					creature.chaseStartTime = now
+				-- 어그로 쿨다운 체크 (한번 따돌리면 잠시 동안 다시 인식 못하게 함)
+				local isCold = not creature.lostAggroAt or (now - creature.lostAggroAt > AGGRO_COOLDOWN)
+				
+				if isCold then
+					newState = "CHASE"
+					if not creature.chaseStartTime then
+						creature.chaseStartTime = now
+					end
 				end
 			elseif creature.state == "IDLE" and elapsed > creature.stateDuration then
 				newState = "WANDER"
@@ -1036,16 +1147,16 @@ function CreatureService._updateAILoop()
 				hrp.CFrame = hrp.CFrame + Vector3.new(0, 10, 0)
 			end
 			humanoid:MoveTo(hrp.Position) -- 정지
-		elseif creature.state == "CHASE" and closestPlayer then
+		elseif creature.state == "CHASE" and closestPlayerPos then
 			-- 추격: 목표가 물이면 추격 포기
-			if CreatureService._isWaterPosition(closestPlayer.Position) then
+			if CreatureService._isWaterPosition(closestPlayerPos) then
 				creature.state = "WANDER"
 				creature.lastStateChange = now
 				creature.stateDuration = getRandomDuration(WANDER_MIN_TIME, WANDER_MAX_TIME)
 				creature.chaseStartTime = nil
 				humanoid:MoveTo(hrp.Position) -- 정지
 			else
-				local safeTarget = CreatureService._getSafeTarget(hrp.Position, closestPlayer.Position)
+				local safeTarget = CreatureService._getSafeTarget(hrp.Position, closestPlayerPos)
 				humanoid:MoveTo(safeTarget)
 				humanoid.WalkSpeed = creature.data.runSpeed or 20
 			end
@@ -1079,9 +1190,9 @@ function CreatureService._updateAILoop()
 				humanoid.WalkSpeed = getVariedSpeed(creature.data.walkSpeed or 10)
 			end
 			
-		elseif creature.state == "FLEE" and closestPlayer then
+		elseif creature.state == "FLEE" and closestPlayerPos then
 			-- 가장 가까운 플레이어 반대 방향으로 도주
-			local diff = hrp.Position - closestPlayer.Position
+			local diff = hrp.Position - closestPlayerPos
 			local dir
 			if diff.Magnitude > 0.1 then
 				dir = diff.Unit
@@ -1135,7 +1246,7 @@ function CreatureService._updateAILoop()
 		end
 		
 		-- 5. Creature -> Player Damage (Phase 4-1)
-		if creature.state == "CHASE" and closestPlayer then
+		if creature.state == "CHASE" and closestPlayerPos then
 			local attackRange = creature.data.attackRange or 5
 			local dmg = creature.data.damage or 0
 			
@@ -1145,13 +1256,9 @@ function CreatureService._updateAILoop()
 					creature.lastAttackTime = now
 					
 					-- 플레이어 Humanoid에 데미지
-					local targetChar = closestPlayer.Parent -- HumanoidRootPart.Parent = Character
-					if targetChar then
-						local targetHum = targetChar:FindFirstChild("Humanoid")
-						if targetHum and targetHum.Health > 0 then
-							targetHum:TakeDamage(dmg)
-							print(string.format("[CreatureService] %s attacked player for %d dmg", creature.creatureId, dmg))
-						end
+					if closestPlayerHum and closestPlayerHum.Health > 0 then
+						closestPlayerHum:TakeDamage(dmg)
+						print(string.format("[CreatureService] %s attacked player for %d dmg", creature.creatureId, dmg))
 					end
 				end
 			end

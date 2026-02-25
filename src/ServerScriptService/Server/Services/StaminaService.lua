@@ -110,6 +110,23 @@ function StaminaService.Init(_NetController)
 	print("[StaminaService] Initialized")
 end
 
+function StaminaService.setMaxStamina(userId: number, max: number)
+	local data = getStaminaData(userId)
+	local oldMax = data.max
+	data.max = max
+	
+	-- 만약 현재 스태미나가 새로운 최대치를 넘는다면 조정
+	if data.current > max then
+		data.current = max
+	end
+	
+	-- 변경사항 동기화
+	local player = Players:GetPlayerByUserId(userId)
+	if player then
+		syncStaminaToClient(player)
+	end
+end
+
 function StaminaService.GetHandlers()
 	return {}
 end

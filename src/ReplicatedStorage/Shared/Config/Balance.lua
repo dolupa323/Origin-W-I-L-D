@@ -49,10 +49,10 @@ Balance.CREATURE_REPLENISH_INTERVAL = 45 -- 보충 스폰 간격 (초)
 --========================================
 -- 자원 노드 (Resource Nodes)
 --========================================
-Balance.RESOURCE_NODE_CAP = 250    -- 서버 전체 자동 스폰 자원 노드 최대 수
-Balance.NODE_SPAWN_INTERVAL = 20   -- 자원 노드 보충 스폰 간격 (초)
-Balance.NODE_DESPAWN_DIST = 150    -- 자원 노드 디스폰 거리
-Balance.INITIAL_NODE_COUNT = 150   -- 서버 시작 시 초기 스폰 노드 수 (60->150)
+Balance.RESOURCE_NODE_CAP = 600    -- 서버 전체 자원 노드 최대 수
+Balance.NODE_SPAWN_INTERVAL = 5   -- 자원 노드 보충 스폰 간격 (초)
+Balance.NODE_DESPAWN_DIST = 500    -- 자원 노드 디스폰 거리 (멀리서도 유지)
+Balance.INITIAL_NODE_COUNT = 400   -- 서버 시작 시 초기 스폰 노드 수
 
 --========================================
 -- 시설
@@ -90,7 +90,8 @@ Balance.CAPTURE_RANGE = 30             -- 기본 포획 사거리 (스터드)
 Balance.PLAYER_MAX_LEVEL = 50          -- 최대 레벨
 Balance.BASE_XP_PER_LEVEL = 100        -- 레벨 1→2 필요 XP
 Balance.XP_SCALING = 1.2               -- 레벨당 필요 XP 증가율
-Balance.TECH_POINTS_PER_LEVEL = 2      -- 레벨업당 기술 포인트 지급
+Balance.TECH_POINTS_PER_LEVEL = 3      -- 레벨업당 기술 포인트 지급 (2~3)
+Balance.STAT_POINTS_PER_LEVEL = 3      -- 레벨업당 스탯 포인트 지급
 
 --========================================
 -- XP 획득량 (Phase 6)
@@ -103,7 +104,15 @@ Balance.XP_HARVEST_RESOURCE = 2        -- 자원 채집
 --========================================
 -- 플레이어 스탯 보너스 (Phase 6)
 --========================================
-Balance.STAT_BONUS_PER_LEVEL = 0.02    -- 레벨당 스탯 보너스 (2%)
+Balance.HP_PER_POINT = 10              -- 포인트당 체력 증가
+Balance.STAMINA_PER_POINT = 10         -- 포인트당 스태미너 증가
+Balance.WEIGHT_PER_POINT = 50          -- 포인트당 무게 증가
+Balance.BASE_WEIGHT_CAPACITY = 300     -- 기본 소지 무게 (kg)
+Balance.OVERWEIGHT_SPEED_MULT = 0.3    -- 무게 초과 시 이동 속도 배율
+Balance.WORKSPEED_PER_POINT = 10       -- 포인트당 작업 속도 증가
+Balance.ATTACK_PER_POINT = 0.05        -- 포인트당 공격력 증가 (5%)
+
+Balance.STAT_BONUS_PER_LEVEL = 0       -- 레벨당 자동 보너스 (배제됨, 포인트제로 통합)
 
 --========================================
 -- 스태미나 & 이동 시스템 (Phase 10)

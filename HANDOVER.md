@@ -1,8 +1,8 @@
 # DinoTribeSurvival (Origin-WILD) 프로젝트 인수인계 문서
 
-> **작성일**: 2026-02-16  
-> **현재 진행 상태**: Phase 9 완료 (NPC 상점 시스템)  
-> **게임 개요**: 로블록스 기반 공룡+생존 서바이벌 게임
+> **작성일**: 2026-02-25  
+> **현재 진행 상태**: Phase 1-4 GDD 정렬 완료 (전투 밸런스, 테크트리 개편)  
+> **게임 개요**: 로블록스 기반 공룡+생존 서바이벌 게임 (서버 권위 모델)
 
 ---
 
@@ -114,8 +114,14 @@ Balance.DROP_DESPAWN_GATHER = 600  -- 채집 디스폰 (초)
 
 Balance.BUILD_STRUCTURE_CAP = 500  -- 구조물 최대 개수
 Balance.BUILD_RANGE = 20           -- 건축 거리 (스터드)
-Balance.BUILD_MIN_GROUND_DIST = 0.5
-Balance.BUILD_COLLISION_RADIUS = 2
+
+-- 플레이어 스탯 보너스 (Phase 6)
+Balance.HP_PER_POINT = 10              -- 포인트당 체력 증가
+Balance.STAMINA_PER_POINT = 10         -- 포인트당 스태미너 증가
+Balance.WEIGHT_PER_POINT = 50          -- 포인트당 무게 증가
+Balance.BASE_WEIGHT_CAPACITY = 300     -- 기본 소지 무게 (kg)
+Balance.WORKSPEED_PER_POINT = 10       -- 포인트당 작업 속도 증가
+Balance.ATTACK_PER_POINT = 0.05        -- 포인트당 공격력 증가 (5%)
 ```
 
 ### 3.2 Enums.lua (열거형)
@@ -660,6 +666,11 @@ drops[dropId] = {
   - [x] **Phase 9**: NPC 상점 시스템
     - [x] **9-1**: NPCShopData (5개 상점 정의)
     - [x] **9-2**: NPCShopService (골드 관리, 구매/판매 로직)
+    - [x] **Phase 10: GDD 데이터 정령 (Phase 0~4)**
+      - [x] **10-1**: 아이템 데미지 공식 적용 (Stone Spear 25, Wooden Bow 40 등)
+      - [x] **10-2**: 테크트리 단계적 개편 (Phase 0: 맨손, Phase 2: 작업대 Era)
+      - [x] **10-3**: Bola 시스템 명칭 정합 (넝쿨/뼈/청동/철제 볼라)
+      - [x] **10-4**: 둔기(Club) 기절 데미지 50% 적용 로직 완성
     - [x] **9-3**: ShopController (클라이언트 상점 캐시)
     - [x] **9-4**: Enums/Balance/Protocol 확장
 

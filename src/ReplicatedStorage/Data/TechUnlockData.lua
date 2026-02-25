@@ -1,209 +1,254 @@
 -- TechUnlockData.lua
--- 기술 해금 데이터 정의 (Phase 6)
--- 형태: 배열 { { id = "...", unlocks = {...} }, ... }
--- Validator.validateIdTable()로 Map 변환 후 사용
+-- 상세 기술 해금 데이터 정의 (Lv. 1 ~ 50)
+-- 4단계 시대를 유지하되, 세부 기술별 레벨 제한 및 포인트 소모량 적용
 
 local TechUnlockData = {
 	--========================================
-	-- Tier 0: 기초 (시작 시 자동 해금)
+	-- 🪨 1단계: 원시 시대 (Prehistoric Age, Lv. 1 ~ 9)
 	--========================================
 	{
-		id = "TECH_BASICS",
-		name = "기초 지식",
-		description = "생존의 기본을 배웁니다.",
-		techLevel = 0,
-		techPointCost = 0,        -- 무료 (시작 해금)
-		prerequisites = {},
-		unlocks = {
-			recipes = {},         -- 맨손 제작은 기본 가능
-			facilities = {},
-			features = {},
-		},
-		category = "BASICS",
+		id = "TECH_Lv1_BASICS",
+		name = "기초 생존",
+		requireLevel = 1,
+		techPointCost = 0,
+		unlocks = { recipes = { "CRAFT_STONE_PICKAXE", "CRAFT_STONE_AXE" }, facilities = {} },
+		category = "SURVIVAL",
 	},
-	
-	--========================================
-	-- Tier 1: 초급 (레벨 1~5)
-	--========================================
 	{
-		id = "TECH_STONE_TOOLS",
-		name = "석기 도구",
-		description = "돌로 만든 기본 도구를 제작합니다.",
-		techLevel = 1,
+		id = "TECH_Lv2_STONE_TOOLS",
+		name = "목재 가공", -- renamed from Stone Tools as they are now basic
+		requireLevel = 2,
 		techPointCost = 1,
-		prerequisites = { "TECH_BASICS" },
-		unlocks = {
-			recipes = { "CRAFT_STONE_PICKAXE", "CRAFT_STONE_AXE" },
-			facilities = {},
-			features = {},
-		},
+		unlocks = { recipes = { "CRAFT_TORCH" }, facilities = {} },
 		category = "TOOLS",
 	},
 	{
-		id = "TECH_FIBER_CRAFT",
-		name = "섬유 가공",
-		description = "섬유를 활용한 기본 아이템을 제작합니다.",
-		techLevel = 1,
-		techPointCost = 1,
-		prerequisites = { "TECH_BASICS" },
-		unlocks = {
-			recipes = {},  -- CRAFT_ROPE 등 추가 예정
-			facilities = {},
-			features = {},
-		},
-		category = "CRAFTING",
-	},
-	{
-		id = "TECH_CAMPFIRE",
-		name = "캠프파이어",
-		description = "불을 피워 요리하고 따뜻하게 지냅니다.",
-		techLevel = 1,
-		techPointCost = 1,
-		prerequisites = { "TECH_BASICS" },
-		unlocks = {
-			recipes = { "CRAFT_CAMPFIRE_KIT" },
-			facilities = { "CAMPFIRE" },
-			features = {},
-		},
-		category = "STRUCTURES",
-	},
-	
-	--========================================
-	-- Tier 2: 중급 (레벨 5~15)
-	--========================================
-	{
-		id = "TECH_WORKBENCH",
-		name = "작업대",
-		description = "다양한 도구와 장비를 제작할 수 있는 작업대.",
-		techLevel = 2,
+		id = "TECH_Lv3_FIRE",
+		name = "불의 발견",
+		requireLevel = 3,
 		techPointCost = 2,
-		prerequisites = { "TECH_STONE_TOOLS" },
-		unlocks = {
-			recipes = {},  -- CRAFT_WORKBENCH 추가 예정
-			facilities = { "WORKBENCH" },
-			features = {},
-		},
-		category = "STRUCTURES",
+		unlocks = { recipes = {}, facilities = { "CAMPFIRE" } },
+		category = "SURVIVAL",
 	},
 	{
-		id = "TECH_CAPTURE_BASIC",
-		name = "기본 포획술",
-		description = "약해진 크리처를 포획하는 기술.",
-		techLevel = 2,
+		id = "TECH_Lv4_CLUB",
+		name = "나무 몽둥이",
+		requireLevel = 4,
 		techPointCost = 2,
-		prerequisites = { "TECH_FIBER_CRAFT" },
-		unlocks = {
-			recipes = { "CRAFT_CAPTURE_SPHERE_BASIC" },
-			facilities = {},
-			features = { "CAPTURE" },
-		},
+		unlocks = { recipes = { "CRAFT_WOODEN_CLUB" }, facilities = {} },
+		category = "WEAPONS",
+	},
+	{
+		id = "TECH_Lv5_BOLA1",
+		name = "넝쿨 볼라",
+		requireLevel = 5,
+		techPointCost = 2,
+		unlocks = { recipes = { "CRAFT_VINE_BOLA" }, facilities = {} },
 		category = "PAL",
 	},
 	{
-		id = "TECH_STORAGE",
-		name = "보관함 제작",
-		description = "아이템을 안전하게 보관하는 보관함.",
-		techLevel = 2,
+		id = "TECH_Lv6_SPEAR",
+		name = "돌 창",
+		requireLevel = 6,
 		techPointCost = 2,
-		prerequisites = { "TECH_STONE_TOOLS" },
-		unlocks = {
-			recipes = {},  -- CRAFT_STORAGE_BOX 추가 예정
-			facilities = { "STORAGE" },
-			features = {},
-		},
-		category = "STRUCTURES",
+		unlocks = { recipes = { "CRAFT_STONE_SPEAR" }, facilities = {} },
+		category = "WEAPONS",
 	},
-	
+	{
+		id = "TECH_Lv8_REPAIR",
+		name = "수리 기술",
+		requireLevel = 8,
+		techPointCost = 2,
+		unlocks = { recipes = {}, facilities = { "REPAIR_BENCH" } },
+		category = "SURVIVAL",
+	},
+
 	--========================================
-	-- Tier 3: 상급 (레벨 15~30)
+	-- ⛺ 2단계: 목조 정착 시대 (Wood Age, Lv. 10 ~ 19)
 	--========================================
 	{
-		id = "TECH_CAPTURE_MEGA",
-		name = "고급 포획술",
-		description = "더 강력한 포획구로 포획 확률을 높입니다.",
-		techLevel = 3,
+		id = "TECH_Lv10_BASE_TOTEM",
+		name = "거점 토템 및 공방",
+		requireLevel = 10,
+		techPointCost = 2,
+		unlocks = { recipes = {}, facilities = { "CAMP_TOTEM", "STORAGE_BOX", "PRIMITIVE_WORKBENCH" } },
+		category = "SETTLEMENT",
+	},
+	{
+		id = "TECH_Lv11_WOOD_BUILD",
+		name = "목조 건축",
+		requireLevel = 11,
 		techPointCost = 3,
-		prerequisites = { "TECH_CAPTURE_BASIC" },
-		unlocks = {
-			recipes = { "CRAFT_CAPTURE_SPHERE_MEGA" },
-			facilities = {},
-			features = {},
-		},
+		unlocks = { recipes = {}, facilities = { "WOODEN_FOUNDATION", "WOODEN_WALL", "WOODEN_ROOF", "WOODEN_DOOR" } },
+		category = "STRUCTURES",
+	},
+	{
+		id = "TECH_Lv13_BOW",
+		name = "나무 활",
+		requireLevel = 13,
+		techPointCost = 3,
+		unlocks = { recipes = { "CRAFT_WOODEN_BOW", "CRAFT_STONE_ARROW" }, facilities = {} },
+		category = "WEAPONS",
+	},
+	{
+		id = "TECH_Lv14_BOLA2",
+		name = "뼈 볼라",
+		requireLevel = 14,
+		techPointCost = 3,
+		unlocks = { recipes = { "CRAFT_BONE_BOLA" }, facilities = {} },
 		category = "PAL",
 	},
 	{
-		id = "TECH_SMELTING",
-		name = "제련 기술",
-		description = "광석을 녹여 금속을 추출합니다.",
-		techLevel = 3,
+		id = "TECH_Lv15_HOE",
+		name = "돌 괭이",
+		requireLevel = 15,
 		techPointCost = 3,
-		prerequisites = { "TECH_WORKBENCH", "TECH_CAMPFIRE" },
-		unlocks = {
-			recipes = {},  -- CRAFT_FURNACE 추가 예정
-			facilities = { "FURNACE" },
-			features = {},
-		},
-		category = "STRUCTURES",
-	},
-	{
-		id = "TECH_METAL_TOOLS",
-		name = "금속 도구",
-		description = "더 강력하고 내구성 있는 금속 도구.",
-		techLevel = 3,
-		techPointCost = 3,
-		prerequisites = { "TECH_SMELTING" },
-		unlocks = {
-			recipes = {},  -- CRAFT_METAL_PICKAXE 등 추가 예정
-			facilities = {},
-			features = {},
-		},
+		unlocks = { recipes = { "CRAFT_STONE_HOE" }, facilities = {} },
 		category = "TOOLS",
 	},
-	
+	{
+		id = "TECH_Lv17_FARMING",
+		name = "농경 기술",
+		requireLevel = 17,
+		techPointCost = 3,
+		unlocks = { recipes = {}, facilities = { "BERRY_PLANTATION", "BEAST_FEEDING_TROUGH" } },
+		category = "SURVIVAL",
+	},
+
 	--========================================
-	-- Tier 4: 고급 (레벨 30~50)
+	-- 🥉 3단계: 청동기 시대 (Bronze Age, Lv. 20 ~ 34)
 	--========================================
 	{
-		id = "TECH_CAPTURE_ULTRA",
-		name = "최고급 포획술",
-		description = "최강의 포획구로 어떤 크리처도 포획합니다.",
-		techLevel = 4,
-		techPointCost = 4,
-		prerequisites = { "TECH_CAPTURE_MEGA" },
-		unlocks = {
-			recipes = { "CRAFT_CAPTURE_SPHERE_ULTRA" },
-			facilities = {},
-			features = {},
-		},
+		id = "TECH_Lv20_FURNACE1",
+		name = "돌 용광로",
+		requireLevel = 20,
+		techPointCost = 3,
+		unlocks = { recipes = {}, facilities = { "STONE_FURNACE" } },
+		category = "FACILITIES",
+	},
+	{
+		id = "TECH_Lv21_BRONZE_SMELT",
+		name = "청동 제련",
+		requireLevel = 21,
+		techPointCost = 3,
+		unlocks = { recipes = { "SMELT_BRONZE_INGOT" }, facilities = {} },
+		category = "METALLURGY",
+	},
+	{
+		id = "TECH_Lv22_WORKBENCH2",
+		name = "청동기 작업대",
+		requireLevel = 22,
+		techPointCost = 3,
+		unlocks = { recipes = {}, facilities = { "BRONZE_WORKBENCH" } },
+		category = "FACILITIES",
+	},
+	{
+		id = "TECH_Lv23_BRONZE_TOOLS",
+		name = "청동 도구",
+		requireLevel = 23,
+		techPointCost = 3,
+		unlocks = { recipes = { "CRAFT_BRONZE_PICKAXE", "CRAFT_BRONZE_AXE" }, facilities = {} },
+		category = "TOOLS",
+	},
+	{
+		id = "TECH_Lv25_BOLA3",
+		name = "청동 포획구",
+		requireLevel = 25,
+		techPointCost = 3,
+		unlocks = { recipes = { "CRAFT_BRONZE_BOLA" }, facilities = {} },
 		category = "PAL",
 	},
 	{
-		id = "TECH_PAL_RIDING",
-		name = "팰 탑승",
-		description = "팰에 올라타 빠르게 이동합니다.",
-		techLevel = 4,
-		techPointCost = 5,
-		prerequisites = { "TECH_CAPTURE_MEGA" },
-		unlocks = {
-			recipes = {},  -- CRAFT_SADDLE 추가 예정
-			facilities = {},
-			features = { "PAL_RIDING" },
-		},
+		id = "TECH_Lv27_BRONZE_WEAPONS",
+		name = "청동 무기",
+		requireLevel = 27,
+		techPointCost = 3,
+		unlocks = { recipes = { "CRAFT_BRONZE_SPEAR", "CRAFT_BRONZE_BOW", "CRAFT_BRONZE_ARROW" }, facilities = {} },
+		category = "WEAPONS",
+	},
+	{
+		id = "TECH_Lv30_STRAW_NEST",
+		name = "짚 둥지",
+		requireLevel = 30,
+		techPointCost = 3,
+		unlocks = { recipes = {}, facilities = { "STRAW_NEST" } },
 		category = "PAL",
 	},
 	{
-		id = "TECH_PAL_BREEDING",
-		name = "팰 교배",
-		description = "두 팰을 교배하여 새로운 팰을 얻습니다.",
-		techLevel = 4,
+		id = "TECH_Lv32_LARGE_BOX",
+		name = "대형 보관함",
+		requireLevel = 32,
+		techPointCost = 3,
+		unlocks = { recipes = {}, facilities = { "LARGE_STORAGE_BOX" } },
+		category = "SETTLEMENT",
+	},
+
+	--========================================
+	-- ⚔️ 4단계: 철기 시대 (Iron Age, Lv. 35 ~ 50)
+	--========================================
+	{
+		id = "TECH_Lv35_FURNACE2",
+		name = "철 용광로",
+		requireLevel = 35,
 		techPointCost = 5,
-		prerequisites = { "TECH_CAPTURE_ULTRA" },
-		unlocks = {
-			recipes = {},  -- CRAFT_BREEDING_PEN 추가 예정
-			facilities = { "BREEDING_PEN" },
-			features = { "PAL_BREEDING" },
-		},
+		unlocks = { recipes = { "SMELT_IRON_INGOT" }, facilities = { "IRON_FURNACE" } },
+		category = "FACILITIES",
+	},
+	{
+		id = "TECH_Lv36_STONE_BUILD",
+		name = "석조 건축",
+		requireLevel = 36,
+		techPointCost = 5,
+		unlocks = { recipes = {}, facilities = { "STONE_FOUNDATION", "STONE_WALL", "STONE_ROOF" } },
+		category = "STRUCTURES",
+	},
+	{
+		id = "TECH_Lv38_WORKBENCH3",
+		name = "철기 작업대",
+		requireLevel = 38,
+		techPointCost = 5,
+		unlocks = { recipes = {}, facilities = { "IRON_WORKBENCH" } },
+		category = "FACILITIES",
+	},
+	{
+		id = "TECH_Lv40_IRON_TOOLS",
+		name = "철제 도구",
+		requireLevel = 40,
+		techPointCost = 5,
+		unlocks = { recipes = { "CRAFT_IRON_PICKAXE", "CRAFT_IRON_AXE" }, facilities = {} },
+		category = "TOOLS",
+	},
+	{
+		id = "TECH_Lv42_CROSSBOW",
+		name = "석궁 세트",
+		requireLevel = 42,
+		techPointCost = 5,
+		unlocks = { recipes = { "CRAFT_CROSSBOW", "CRAFT_IRON_BOLT" }, facilities = {} },
+		category = "WEAPONS",
+	},
+	{
+		id = "TECH_Lv45_BOLA4",
+		name = "철제 포획구",
+		requireLevel = 45,
+		techPointCost = 5,
+		unlocks = { recipes = { "CRAFT_IRON_BOLA" }, facilities = {} },
 		category = "PAL",
+	},
+	{
+		id = "TECH_Lv47_BEAST_BED",
+		name = "대형 야수 침대",
+		requireLevel = 47,
+		techPointCost = 5,
+		unlocks = { recipes = {}, facilities = { "LARGE_BEAST_BED" } },
+		category = "PAL",
+	},
+	{
+		id = "TECH_Lv50_REINFORCEDG_GATE",
+		name = "강화 성문",
+		requireLevel = 50,
+		techPointCost = 5,
+		unlocks = { recipes = {}, facilities = { "REINFORCED_GATE" } },
+		category = "STRUCTURES",
 	},
 }
 

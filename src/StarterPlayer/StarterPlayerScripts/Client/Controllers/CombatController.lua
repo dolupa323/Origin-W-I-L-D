@@ -5,12 +5,14 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Enums = require(Shared.Enums.Enums)
 local AnimationIds = require(Shared.Config.AnimationIds)
 local Balance = require(Shared.Config.Balance)
 
 local Client = script.Parent.Parent
 local NetClient = require(Client.NetClient)
 local InputManager = require(Client.InputManager)
+local UIManager = require(Client.UIManager)
 
 local CombatController = {}
 
@@ -226,17 +228,20 @@ function CombatController.attack()
 		
 		if targetType == "resource" then
 			-- 자원 채집 처리 (좌클릭 공격으로 수확!)
-			local success, data = NetClient.Request("Harvest.Hit.Request", {
-				nodeUID = targetId
+			local success, result = NetClient.Request("Harvest.Hit.Request", {
+				nodeUID = targetId,
+				toolSlot = UIManager.getSelectedSlot(),
 			})
-			if success then
-				-- 채집 성공 시 별도 피드백 (효과음 등)
+			if not success then
+				if result == Enums.ErrorCode.WRONG_TOOL or result == "WRONG_TOOL" then
+					UIManager.notify("이 자원을 채집하려면 도구가 필요합니다!", Color3.fromRGB(255, 100, 100))
+				end
 			end
 		else
 			-- 크리처 공격 처리
 			local success, data = NetClient.Request("Combat.Hit.Request", {
 				targetInstanceId = targetId,
-				targetPosition = { x = targetPos.X, y = targetPos.Y, z = targetPos.Z },
+				toolSlot = UIManager.getSelectedSlot(),
 			})
 		end
 	else
@@ -256,7 +261,7 @@ function CombatController.Init()
 	end
 	
 	-- 좌클릭 = 공격
-	InputManager.onLeftClick(function(hitPos)
+	InputManager.onLeftClick("CombatAttack", function(hitPos)
 		CombatController.attack()
 	end)
 	

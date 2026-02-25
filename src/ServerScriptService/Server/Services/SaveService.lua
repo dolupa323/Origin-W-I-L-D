@@ -11,6 +11,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Balance = require(Shared.Config.Balance)
 local Enums = require(Shared.Enums.Enums)
+local Serialization = require(Shared.Util.Serialization)
 
 local Server = ServerScriptService:WaitForChild("Server")
 local Persistence = Server:WaitForChild("Persistence")
@@ -57,14 +58,25 @@ local function _getDefaultPlayerSave()
 		-- 외양간 내 크리처
 		barn = {},
 		-- 기술 해금
-		unlockedTech = {},
+		unlockedTech = {["TECH_Lv1_BASICS"] = true},
 		-- 팰 보관함 (Phase 5)
 		palbox = {},
-		-- 통계
+		-- 통계 및 스탯 (Phase 6)
 		stats = {
 			playTime = 0,
 			createdAt = os.time(),
 			lastLogin = os.time(),
+			level = 1,
+			currentXP = 0,
+			totalXP = 0,
+			techPointsSpent = 0,
+			statInvested = {
+				[Enums.StatId.MAX_HEALTH] = 0,
+				[Enums.StatId.MAX_STAMINA] = 0,
+				[Enums.StatId.WEIGHT] = 0,
+				[Enums.StatId.WORK_SPEED] = 0,
+				[Enums.StatId.ATTACK] = 0,
+			}
 		},
 		-- 스냅샷 (롤백용)
 		snapshots = {},
@@ -173,7 +185,8 @@ function SaveService.loadPlayer(userId: number): (boolean, any)
 		-- 신규 플레이어
 		data = _getDefaultPlayerSave()
 	else
-		-- 기존 플레이어
+		-- 기존 플레이어: 데이터 복구(Vector3 등)
+		data = Serialization.deserialize(data)
 		data.stats.lastLogin = os.time()
 	end
 	
@@ -197,7 +210,9 @@ function SaveService.savePlayer(userId: number, snapshot: any?): (boolean, strin
 	state.stats.lastSave = os.time()
 	
 	local key = DataStoreClient.GetPlayerKey(userId)
-	local success, err = DataStoreClient.set(key, state)
+	-- 저장 전 데이터 직렬화 (Vector3 등 변환)
+	local serializedState = Serialization.serialize(state)
+	local success, err = DataStoreClient.set(key, serializedState)
 	
 	if not success then
 		warn(string.format("[SaveService] Failed to save player %d: %s", userId, tostring(err)))
@@ -236,6 +251,9 @@ function SaveService.loadWorld(): (boolean, any)
 	if data == nil then
 		-- 신규 월드
 		data = _getDefaultWorldSave()
+	else
+		-- 기존 월드: 데이터 복구
+		data = Serialization.deserialize(data)
 	end
 	
 	worldState = data
@@ -257,7 +275,9 @@ function SaveService.saveWorld(snapshot: any?): (boolean, string?)
 	state.stats.lastSave = os.time()
 	
 	local key = DataStoreClient.Keys.WORLD_MAIN
-	local success, err = DataStoreClient.set(key, state)
+	-- 저장 전 데이터 직렬화
+	local serializedState = Serialization.serialize(state)
+	local success, err = DataStoreClient.set(key, serializedState)
 	
 	if not success then
 		warn(string.format("[SaveService] Failed to save world: %s", tostring(err)))

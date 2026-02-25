@@ -184,20 +184,24 @@ local function performDodge()
 	local direction = getMoveDirection()
 	
 	-- 서버에 구르기 요청
-	local success, result = NetClient.Request("Movement.Dodge", { direction = direction })
+	isDodging = true -- 즉시 상태 변경 (스프린트 중단용)
 	
-	if success and result and result.success then
-		lastDodgeTime = now
-		isDodging = true
+	task.spawn(function()
+		local success, result = NetClient.Request("Movement.Dodge", { direction = direction })
 		
-		-- 클라이언트 측 애니메이션 즉시 재생
-		playDodgeAnimation()
-		
-		-- 구르기 종료
-		task.delay(Balance.DODGE_DURATION, function()
-			isDodging = false
-		end)
-	end
+		if success and result and result.success then
+			lastDodgeTime = now
+			-- 클라이언트 측 애니메이션 즉시 재생
+			playDodgeAnimation()
+			
+			-- 구르기 종료
+			task.delay(Balance.DODGE_DURATION or 0.5, function()
+				isDodging = false
+			end)
+		else
+			isDodging = false -- 실패 시 복구
+		end
+	end)
 end
 
 --========================================
@@ -216,8 +220,8 @@ local function onInputBegan(input: InputObject, gameProcessed: boolean)
 		updateSprint()
 	end
 	
-	-- Space (또는 Ctrl): 구르기
-	if input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.RightControl then
+	-- LeftControl, Q: 구르기
+	if input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.Q then
 		performDodge()
 	end
 end
@@ -270,6 +274,7 @@ function MovementController.Init()
 	
 	-- 키 바인딩 안내 추가
 	InputManager.bindKey(Enum.KeyCode.LeftControl, "Dodge", performDodge)
+	InputManager.bindKey(Enum.KeyCode.Q, "Dodge", performDodge)
 	
 	-- 프레임 업데이트 (스프린트 상태 체크)
 	RunService.Heartbeat:Connect(function()

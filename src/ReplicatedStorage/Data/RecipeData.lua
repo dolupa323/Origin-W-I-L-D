@@ -1,112 +1,222 @@
 -- RecipeData.lua
 -- 레시피 데이터 정의
--- 형태: 배열 { {id="...", inputs={}, outputs={}, ...}, ... }
--- requiredFacility: nil=맨손제작, "CRAFTING"=작업대 필요 (Enums.FacilityType 기준)
+-- 4단계 문명 발전에 따른 제작 레시피 추가
 
 local RecipeData = {
-	-- 돌 곡괭이 제작 (작업대 필요)
+	--========================================
+	-- 1단계: 인벤토리 제작 (Hand Craft)
+	--========================================
 	{
 		id = "CRAFT_STONE_PICKAXE",
-		name = "돌 곡괭이 제작",
+		name = "돌 곡괭이",
 		category = "TOOL",
-		requiredFacility = "CRAFTING",  -- FacilityType
-		craftTime = 3,                   -- 기본 제작 소요 시간 (초)
-		techLevel = 0,                   -- 필요 테크 레벨 (0=기본 해금)
-		inputs = {
-			{ itemId = "STONE", count = 3 },
-			{ itemId = "WOOD", count = 2 },
-			{ itemId = "FIBER", count = 5 },
-		},
-		outputs = {
-			{ itemId = "STONE_PICKAXE", count = 1 },
-		},
-	},
-	-- 돌 도끼 제작 (작업대 필요)
-	{
-		id = "CRAFT_STONE_AXE",
-		name = "돌 도끼 제작",
-		category = "TOOL",
-		requiredFacility = "CRAFTING",
+		requiredFacility = nil,
 		craftTime = 3,
 		techLevel = 0,
-		inputs = {
-			{ itemId = "STONE", count = 2 },
-			{ itemId = "WOOD", count = 3 },
-			{ itemId = "FIBER", count = 5 },
-		},
-		outputs = {
-			{ itemId = "STONE_AXE", count = 1 },
-		},
+		inputs = { { itemId = "STONE", count = 2 }, { itemId = "WOOD", count = 2 } },
+		outputs = { { itemId = "STONE_PICKAXE", count = 1 } },
 	},
-	-- 캠프파이어 키트 (맨손 제작 가능)
 	{
-		id = "CRAFT_CAMPFIRE_KIT",
-		name = "캠프파이어 키트 제작",
-		category = "PLACEABLE",
-		requiredFacility = nil,  -- 맨손 제작 가능
-		craftTime = 0,           -- 즉시 제작
+		id = "CRAFT_STONE_AXE",
+		name = "돌 도끼",
+		category = "TOOL",
+		requiredFacility = nil,
+		craftTime = 3,
 		techLevel = 0,
-		inputs = {
-			{ itemId = "WOOD", count = 5 },
-			{ itemId = "STONE", count = 2 },
-		},
-		outputs = {
-			{ itemId = "WOOD", count = 3 },  -- 임시: 캠프파이어 아이템 미구현으로 wood 반환
-		},
+		inputs = { { itemId = "STONE", count = 2 }, { itemId = "WOOD", count = 2 } },
+		outputs = { { itemId = "STONE_AXE", count = 1 } },
 	},
-	-- 기본 포획구 제작 (Phase 5)
 	{
-		id = "CRAFT_CAPTURE_SPHERE_BASIC",
-		name = "기본 포획구 제작",
+		id = "CRAFT_STONE_SPEAR",
+		name = "돌 창",
+		category = "WEAPON",
+		requiredFacility = nil,
+		craftTime = 5,
+		techLevel = 1,
+		inputs = { { itemId = "STONE", count = 2 }, { itemId = "WOOD", count = 3 }, { itemId = "FIBER", count = 2 } },
+		outputs = { { itemId = "STONE_SPEAR", count = 1 } },
+	},
+	{
+		id = "CRAFT_TORCH",
+		name = "횃불",
+		category = "TOOL",
+		requiredFacility = nil,
+		craftTime = 2,
+		techLevel = 1,
+		inputs = { { itemId = "WOOD", count = 1 }, { itemId = "FIBER", count = 2 } },
+		outputs = { { itemId = "TORCH", count = 1 } },
+	},
+	{
+		id = "CRAFT_WOODEN_CLUB",
+		name = "나무 몽둥이",
+		category = "WEAPON",
+		requiredFacility = nil,
+		craftTime = 4,
+		techLevel = 1,
+		inputs = { { itemId = "WOOD", count = 5 } },
+		outputs = { { itemId = "WOODEN_CLUB", count = 1 } },
+	},
+	{
+		id = "CRAFT_VINE_BOLA",
+		name = "넝쿨 볼라",
 		category = "CONSUMABLE",
+		requiredFacility = nil,
+		craftTime = 4,
+		techLevel = 1,
+		inputs = { { itemId = "WOOD", count = 1 }, { itemId = "FIBER", count = 5 } },
+		outputs = { { itemId = "VINE_BOLA", count = 3 } },
+	},
+
+	--========================================
+	-- 2단계: 원시 작업대 제작 (PRIMITIVE_WORKBENCH)
+	--========================================
+	{
+		id = "CRAFT_WOODEN_BOW",
+		name = "나무 활",
+		category = "WEAPON",
+		requiredFacility = "CRAFTING",
+		craftTime = 8,
+		techLevel = 2,
+		inputs = { { itemId = "WOOD", count = 10 }, { itemId = "FIBER", amount = 10 } },
+		outputs = { { itemId = "WOODEN_BOW", count = 1 } },
+	},
+	{
+		id = "CRAFT_STONE_ARROW",
+		name = "돌 화살",
+		category = "AMMO",
+		requiredFacility = "CRAFTING",
+		craftTime = 2,
+		techLevel = 2,
+		inputs = { { itemId = "WOOD", count = 1 }, { itemId = "STONE", count = 1 }, { itemId = "FEATHER", count = 1 } },
+		outputs = { { itemId = "STONE_ARROW", count = 10 } },
+	},
+	{
+		id = "CRAFT_STONE_HOE",
+		name = "돌 괭이",
+		category = "TOOL",
 		requiredFacility = "CRAFTING",
 		craftTime = 5,
-		techLevel = 0,
-		inputs = {
-			{ itemId = "STONE", count = 5 },
-			{ itemId = "WOOD", count = 3 },
-			{ itemId = "FIBER", count = 10 },
-		},
-		outputs = {
-			{ itemId = "CAPTURE_SPHERE_BASIC", count = 3 },
-		},
+		techLevel = 2,
+		inputs = { { itemId = "WOOD", count = 5 }, { itemId = "STONE", count = 5 } },
+		outputs = { { itemId = "STONE_HOE", count = 1 } },
 	},
-	-- 고급 포획구 제작 (Phase 5)
 	{
-		id = "CRAFT_CAPTURE_SPHERE_MEGA",
-		name = "고급 포획구 제작",
+		id = "CRAFT_BONE_BOLA",
+		name = "뼈 볼라",
 		category = "CONSUMABLE",
+		requiredFacility = "CRAFTING",
+		craftTime = 6,
+		techLevel = 2,
+		inputs = { { itemId = "BONE", count = 3 }, { itemId = "STONE", count = 2 }, { itemId = "FIBER", count = 5 } },
+		outputs = { { itemId = "BONE_BOLA", count = 3 } },
+	},
+
+	--========================================
+	-- 3단계: 제련 및 청동기 작업대 (SMELTING / CRAFTING)
+	--========================================
+	{
+		id = "SMELT_BRONZE_INGOT",
+		name = "청동 주괴 제련",
+		category = "RESOURCE",
+		requiredFacility = "SMELTING",
+		craftTime = 15,
+		techLevel = 3,
+		inputs = { { itemId = "COPPER_ORE", count = 2 }, { itemId = "TIN_ORE", count = 1 } },
+		outputs = { { itemId = "BRONZE_INGOT", count = 1 } },
+	},
+	{
+		id = "CRAFT_BRONZE_PICKAXE",
+		name = "청동 곡괭이",
+		category = "TOOL",
 		requiredFacility = "CRAFTING",
 		craftTime = 10,
-		techLevel = 1,
-		inputs = {
-			{ itemId = "STONE", count = 10 },
-			{ itemId = "WOOD", count = 5 },
-			{ itemId = "FIBER", count = 15 },
-			{ itemId = "HORN", count = 1 },
-		},
-		outputs = {
-			{ itemId = "CAPTURE_SPHERE_MEGA", count = 2 },
-		},
+		techLevel = 3,
+		inputs = { { itemId = "BRONZE_INGOT", count = 5 }, { itemId = "WOOD", count = 3 } },
+		outputs = { { itemId = "BRONZE_PICKAXE", count = 1 } },
 	},
-	-- 마스터 포획구 제작 (Phase 5)
 	{
-		id = "CRAFT_CAPTURE_SPHERE_ULTRA",
-		name = "마스터 포획구 제작",
+		id = "CRAFT_BRONZE_AXE",
+		name = "청동 도끼",
+		category = "TOOL",
+		requiredFacility = "CRAFTING",
+		craftTime = 10,
+		techLevel = 3,
+		inputs = { { itemId = "BRONZE_INGOT", count = 5 }, { itemId = "WOOD", count = 3 } },
+		outputs = { { itemId = "BRONZE_AXE", count = 1 } },
+	},
+	{
+		id = "CRAFT_BRONZE_SPEAR",
+		name = "청동 창",
+		category = "WEAPON",
+		requiredFacility = "CRAFTING",
+		craftTime = 15,
+		techLevel = 3,
+		inputs = { { itemId = "BRONZE_INGOT", count = 8 }, { itemId = "WOOD", count = 5 } },
+		outputs = { { itemId = "BRONZE_SPEAR", count = 1 } },
+	},
+	{
+		id = "CRAFT_BRONZE_BOLA",
+		name = "청동 볼라",
 		category = "CONSUMABLE",
 		requiredFacility = "CRAFTING",
+		craftTime = 8,
+		techLevel = 3,
+		inputs = { { itemId = "BRONZE_INGOT", count = 3 }, { itemId = "LEATHER", count = 2 }, { itemId = "FIBER", count = 5 } },
+		outputs = { { itemId = "BRONZE_BOLA", count = 2 } },
+	},
+
+	--========================================
+	-- 4단계: 철기 제련 및 철기 작업대 (SMELTING / CRAFTING)
+	--========================================
+	{
+		id = "SMELT_IRON_INGOT",
+		name = "철 주괴 제련",
+		category = "RESOURCE",
+		requiredFacility = "SMELTING",
 		craftTime = 20,
-		techLevel = 2,
-		inputs = {
-			{ itemId = "STONE", count = 15 },
-			{ itemId = "WOOD", count = 10 },
-			{ itemId = "FIBER", count = 20 },
-			{ itemId = "HORN", count = 3 },
-			{ itemId = "LEATHER", count = 5 },
-		},
-		outputs = {
-			{ itemId = "CAPTURE_SPHERE_ULTRA", count = 1 },
-		},
+		techLevel = 4,
+		inputs = { { itemId = "IRON_ORE", count = 3 } },
+		outputs = { { itemId = "IRON_INGOT", count = 1 } },
+	},
+	{
+		id = "CRAFT_IRON_PICKAXE",
+		name = "철 곡괭이",
+		category = "TOOL",
+		requiredFacility = "CRAFTING",
+		craftTime = 15,
+		techLevel = 4,
+		inputs = { { itemId = "IRON_INGOT", count = 10 }, { itemId = "WOOD", count = 5 } },
+		outputs = { { itemId = "IRON_PICKAXE", count = 1 } },
+	},
+	{
+		id = "CRAFT_CROSSBOW",
+		name = "석궁",
+		category = "WEAPON",
+		requiredFacility = "CRAFTING",
+		craftTime = 25,
+		techLevel = 4,
+		inputs = { { itemId = "IRON_INGOT", count = 15 }, { itemId = "WOOD", count = 10 }, { itemId = "FIBER", count = 10 } },
+		outputs = { { itemId = "CROSSBOW", count = 1 } },
+	},
+	{
+		id = "CRAFT_IRON_BOLT",
+		name = "철제 볼트",
+		category = "AMMO",
+		requiredFacility = "CRAFTING",
+		craftTime = 4,
+		techLevel = 4,
+		inputs = { { itemId = "IRON_INGOT", count = 2 }, { itemId = "WOOD", count = 1 } },
+		outputs = { { itemId = "IRON_BOLT", count = 10 } },
+	},
+	{
+		id = "CRAFT_IRON_BOLA",
+		name = "철제 볼라",
+		category = "CONSUMABLE",
+		requiredFacility = "CRAFTING",
+		craftTime = 12,
+		techLevel = 4,
+		inputs = { { itemId = "IRON_INGOT", count = 5 }, { itemId = "STONE", count = 5 }, { itemId = "FIBER", count = 10 } },
+		outputs = { { itemId = "IRON_BOLA", count = 1 } },
 	},
 }
 

@@ -1,7 +1,7 @@
 # API & Protocol 레퍼런스
 
 > **프로젝트**: DinoTribeSurvival (Origin-WILD)  
-> **현재 버전**: Phase 9 완료
+> **현재 버전**: Phase 1-4 GDD 정렬 완료 (2026-02-25)
 
 ---
 
@@ -263,7 +263,15 @@ NetClient.Request(command, payload, callback)
 
 | 명령어                 | 설명      | Payload | Response                              |
 | ---------------------- | --------- | ------- | ------------------------------------- |
-| `Player.Stats.Request` | 스탯 조회 | `{}`    | `{ level, xp, xpToNext, techPoints }` |
+| `Player.Stats.Request` | 스탯 조회 | `{}` | `{ level, currentXP, requiredXP, statPointsAvailable, statInvested, calculated }` |
+| `Player.Stats.Upgrade.Request` | 스탯 포인트 투자 | `{ statId }` | `{ success }` |
+
+#### 이벤트:
+
+```lua
+"Player.Stats.Changed" → { level, currentXP, requiredXP, leveledUp, statPointsAvailable, ... }
+"Player.Stats.Upgraded" → { statId, newValue, pointsRemaining }
+```
 
 #### 이벤트:
 

@@ -126,6 +126,13 @@ function TechService.unlock(userId: number, techId: string): (boolean, string?)
 		return false, Enums.ErrorCode.PREREQUISITES_NOT_MET
 	end
 	
+	-- 레벨 제한 확인
+	local reqLevel = tech.requireLevel or 1
+	local playerLevel = PlayerStatService.getLevel(userId)
+	if playerLevel < reqLevel then
+		return false, Enums.ErrorCode.LEVEL_NOT_MET
+	end
+
 	-- 기술 포인트 확인 및 소모
 	local cost = tech.techPointCost or 0
 	if cost > 0 then
@@ -201,7 +208,7 @@ function TechService.getAvailableTech(userId: number): { [string]: any }
 					id = tech.id,
 					name = tech.name,
 					description = tech.description,
-					techLevel = tech.techLevel,
+					requireLevel = tech.requireLevel,
 					techPointCost = tech.techPointCost,
 					prerequisites = tech.prerequisites,
 					unlocks = tech.unlocks,
@@ -343,11 +350,10 @@ local function handleTree(player: Player, payload: any)
 			id = tech.id,
 			name = tech.name,
 			description = tech.description,
-			techLevel = tech.techLevel,
+			requireLevel = tech.requireLevel,
 			techPointCost = tech.techPointCost,
 			prerequisites = tech.prerequisites,
 			category = tech.category,
-			-- unlocks는 보안상 제외하거나 포함 (선택)
 			unlocks = tech.unlocks,
 		}
 	end

@@ -113,35 +113,28 @@ CreatureService는 다음 순서로 모델을 찾습니다:
 모델이 없으면 임시 플레이스홀더(2x2x2 랜덤색상 박스)가 생성됩니다.
 Output에서 `[CreatureService] Model 'X' not found` 경고를 확인하세요.
 
-#### CreatureData.lua 참조 스탯:
+#### CreatureData.lua 참조 스탯 (권장):
 
 ```lua
+DODO = {
+    maxHealth = 30,
+    maxTorpor = 20,
+    damage = 0,
+    behavior = "PASSIVE"
+}
+
 RAPTOR = {
-    maxHealth = 100,
-    walkSpeed = 16,
-    runSpeed = 24,
-    damage = 10,
-    attackRange = 5,
-    detectRange = 30,
+    maxHealth = 150,
+    maxTorpor = 120,
+    damage = 15,
     behavior = "AGGRESSIVE"
 }
 
 TRICERATOPS = {
-    maxHealth = 300,
-    walkSpeed = 12,
-    runSpeed = 20,
-    damage = 25,
-    attackRange = 8,
-    detectRange = 20,
+    maxHealth = 1200,
+    maxTorpor = 1000,
+    damage = 40,
     behavior = "NEUTRAL"
-}
-
-DODO = {
-    maxHealth = 20,
-    walkSpeed = 8,
-    runSpeed = 12,
-    damage = 0,
-    behavior = "PASSIVE"
 }
 ```
 
@@ -153,7 +146,7 @@ DODO = {
 | ---------------- | ---------- | -------------------- | -------------------- |
 | `CAMPFIRE`       | 캠프파이어 | 요리, 밤 안전지대    | `Campfire.rbxm`      |
 | `STORAGE_BOX`    | 보관함     | 아이템 저장 (20슬롯) | `StorageBox.rbxm`    |
-| `CRAFTING_TABLE` | 작업대     | 도구/장비 제작       | `CraftingTable.rbxm` |
+| `PRIMITIVE_WORKBENCH` | 원시 작업대 | 도구/장비 제작       | `PrimitiveWorkbench.rbxm` |
 | `SLEEPING_BAG`   | 침낭       | 리스폰 설정          | `SleepingBag.rbxm`   |
 | `GATHERING_POST` | 채집 기지  | 자동 자원 수집       | `GatheringPost.rbxm` |
 
@@ -196,12 +189,14 @@ CAMPFIRE = {
 
 STORAGE_BOX = {
     requirements = { WOOD x10, FIBER x5 },
-    storageSlots = 20
+    storageSlots = 20,
+    techLevel = 10
 }
 
-CRAFTING_TABLE = {
-    requirements = { WOOD x15, STONE x5, FLINT x3 },
-    queueMax = 10
+PRIMITIVE_WORKBENCH = {
+    requirements = { WOOD x15, STONE x5 },
+    queueMax = 10,
+    techLevel = 10
 }
 ```
 
@@ -216,7 +211,7 @@ CRAFTING_TABLE = {
 | `TREE_OAK`    | 참나무      | 도끼      | 나무 3-5개       | `OakTree`        |
 | `TREE_PINE`   | 소나무      | 도끼      | 나무 4-6개, 수지 | `PineTree`       |
 | `ROCK_NORMAL` | 바위        | 곡괭이    | 돌 2-4개, 부싯돌 | `Rock`           |
-| `ROCK_IRON`   | 철광석 바위 | 곡괭이    | 철광석 1-3개     | `IronRock`       |
+| `ORE_IRON`    | 철 광맥     | 곡괭이    | 철광석 4-8개     | `IronOre`        |
 | `BUSH_BERRY`  | 베리 덤불   | 맨손      | 베리 2-5개       | `BerryBush`      |
 | `FIBER_GRASS` | 풀          | 맨손      | 섬유 2-4개       | `Grass`          |
 | `ORE_COAL`    | 석탄 광맥   | 곡괭이    | 석탄 2-4개       | `CoalOre`        |
@@ -276,18 +271,18 @@ HarvestService가 자동으로 처리하는 것들:
 }
 
 {
-    id = "ROCK_IRON",
-    name = "철광석 바위",
-    modelName = "IronRock",  -- Assets/ResourceNodeModels/IronRock
-    nodeType = "ROCK",
+    id = "ORE_IRON",
+    name = "철 광맥",
+    modelName = "IronOre",  -- Assets/ResourceNodeModels/IronOre
+    nodeType = "ORE",
     optimalTool = "PICKAXE",
     resources = {
-        { itemId = "STONE", min = 1, max = 2, weight = 0.5 },
-        { itemId = "IRON_ORE", min = 1, max = 3, weight = 1.0 },
+        { itemId = "IRON_ORE", min = 4, max = 8, weight = 1.0 },
+        { itemId = "COAL", min = 1, max = 2, weight = 0.3 },
     },
-    maxHits = 6,
-    respawnTime = 480,  -- 8분
-    xpPerHit = 4,
+    maxHits = 8,
+    respawnTime = 600,
+    xpPerHit = 6,
 }
 ```
 
@@ -391,9 +386,10 @@ HarvestService와 InteractController는 판정 파트를 우선 탐색하며, �
 | `HORN`                 | 뿔            | 자원 (희귀) | 뾰족한 뿔        |
 | `STONE_PICKAXE`        | 돌 곡괭이     | 도구        | 곡괭이 모양      |
 | `STONE_AXE`            | 돌 도끼       | 도구        | 도끼 모양        |
-| `CAPTURE_SPHERE_BASIC` | 기본 포획구   | 소모품      | 구형             |
-| `CAPTURE_SPHERE_MEGA`  | 고급 포획구   | 소모품      | 구형 (색상 다름) |
-| `CAPTURE_SPHERE_ULTRA` | 마스터 포획구 | 소모품      | 구형 (고급 색상) |
+| `VINE_BOLA`            | 넝쿨 볼라     | 소모품      | 투척용 볼라      |
+| `BONE_BOLA`            | 뼈 볼라       | 소모품      | 투척용 볼라      |
+| `BRONZE_BOLA`          | 청동 볼라     | 소모품      | 포획용 볼라      |
+| `IRON_BOLA`            | 철제 볼라     | 소모품      | 포획용 볼라      |
 
 #### 아이템 모델 필수 구조:
 
@@ -522,11 +518,12 @@ GOLD_CAP = 999999
 - HP가 낮을수록 포획 확률 증가
 - 포획구 등급에 따라 배율 적용
 
-| 포획구 | 배율 |
+| 볼라 티어 | 배율 |
 | ------ | ---- |
-| 기본   | 1.0x |
-| 고급   | 1.5x |
-| 마스터 | 2.5x |
+| 1단 (넝쿨) | 1.0x |
+| 2단 (뼈)   | 1.5x |
+| 3단 (청동) | 2.0x |
+| 4단 (철제) | 3.5x |
 
 ---
 

@@ -1,20 +1,77 @@
 -- BuildController.lua
 -- 클라이언트 건설 컨트롤러
--- 서버 Build 이벤트 수신 및 로컬 캐시 관리
+-- 서버 Build 이벤트 수신 및 로컬 캐시 관리 + 건축 배치(Ghost) 로직
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+
 local NetClient = require(script.Parent.Parent.NetClient)
+local InputManager = require(script.Parent.Parent.InputManager)
+local DataHelper = require(ReplicatedStorage.Shared.Util.DataHelper)
 
 local BuildController = {}
 
 --========================================
 -- Private State
 --========================================
+local player = Players.LocalPlayer
 local initialized = false
 
 -- 로컬 구조물 캐시 [structureId] = { id, facilityId, position, rotation, health, ownerId }
 local structuresCache = {}
 local structureCount = 0
+
+-- Placement Mode State
+local isPlacing = false
+local currentFacilityId = nil
+local currentGhost = nil
+local currentRotation = 0 -- Degree
+local heartbeatConn = nil
+
+--========================================
+-- Helpers
+--========================================
+
+local function createGhost(facilityId)
+	local facilityData = DataHelper.GetData("FacilityData", facilityId)
+	if not facilityData then return nil end
+
+	-- ReplicatedStorage/Assets/FacilityModels 에서 모델 복사 시도
+	local models = ReplicatedStorage:FindFirstChild("Assets") and ReplicatedStorage.Assets:FindFirstChild("FacilityModels")
+	local sourceModel = models and models:FindFirstChild(facilityData.modelName)
+	
+	local ghost
+	if sourceModel then
+		ghost = sourceModel:Clone()
+	else
+		-- 모델이 없으면 임시 박스 생성
+		ghost = Instance.new("Model")
+		local part = Instance.new("Part")
+		part.Size = Vector3.new(4, 4, 4)
+		part.Color = Color3.fromRGB(0, 255, 0)
+		part.Parent = ghost
+		ghost.PrimaryPart = part
+	end
+
+	-- Ghost 효과 (반투명 녹색)
+	for _, p in ipairs(ghost:GetDescendants()) do
+		if p:IsA("BasePart") then
+			p.Transparency = 0.5
+			p.Color = Color3.fromRGB(100, 255, 100)
+			p.CanCollide = false
+			p.CanQuery = false
+			p.CanTouch = false
+		elseif p:IsA("Script") or p:IsA("LocalScript") then
+			p:Destroy()
+		end
+	end
+	
+	ghost.Name = "BUILD_GHOST"
+	ghost.Parent = workspace
+	return ghost
+end
 
 --========================================
 -- Public API: Cache Access
@@ -33,13 +90,81 @@ function BuildController.getStructureCount(): number
 end
 
 --========================================
--- Public API: Build Requests
+-- Public API: Build Requests & Placement
 --========================================
+
+--- 건설 배치 모드 시작
+function BuildController.startPlacement(facilityId: string)
+	if isPlacing then BuildController.cancelPlacement() end
+	
+	local facilityData = DataHelper.GetData("FacilityData", facilityId)
+	if not facilityData then return end
+	
+	currentFacilityId = facilityId
+	currentGhost = createGhost(facilityId)
+	if not currentGhost then return end
+	
+	isPlacing = true
+	currentRotation = 0
+	
+	-- 매 프레임 위치 업데이트
+	heartbeatConn = RunService.Heartbeat:Connect(function()
+		if not currentGhost then return end
+		
+		-- 마우스가 가리키는 지면 찾기
+		local _, hitPos, hitNormal = InputManager.raycastFromMouse({currentGhost, player.Character}, 50)
+		
+		if hitPos then
+			local finalRotation = CFrame.Angles(0, math.rad(currentRotation), 0)
+			if hitNormal then
+				-- 지면 법선에 맞게 회전 시도 (옵션: 현재는 단순히 Y축 회전만 적용)
+				currentGhost:SetPrimaryPartCFrame(CFrame.new(hitPos) * finalRotation)
+			end
+		end
+	end)
+	
+	-- 키 입력 바인딩 (R: 회전, X: 취소)
+	InputManager.bindKey(Enum.KeyCode.R, "BuildRotate", function()
+		currentRotation = (currentRotation + 45) % 360
+	end)
+	
+	InputManager.bindKey(Enum.KeyCode.X, "BuildCancel", function()
+		BuildController.cancelPlacement()
+	end)
+	
+	-- 좌클릭: 배치 확정
+	InputManager.onLeftClick("BuildPlace", function(targetPos)
+		if isPlacing and currentGhost then
+			local pos = currentGhost.PrimaryPart.Position
+			local rot = Vector3.new(0, currentRotation, 0)
+			BuildController.requestPlace(currentFacilityId, pos, rot)
+		end
+	end)
+
+    -- UI 가이드 표시 (UIManager 연동은 UIManager에서 처리하거나 여기서 호출)
+    local UIManager = require(script.Parent.Parent.UIManager)
+    UIManager.showBuildPrompt(true)
+end
+
+--- 건설 배치 취소
+function BuildController.cancelPlacement()
+	if heartbeatConn then heartbeatConn:Disconnect(); heartbeatConn = nil end
+	if currentGhost then currentGhost:Destroy(); currentGhost = nil end
+	
+	InputManager.unbindKey(Enum.KeyCode.R)
+	InputManager.unbindKey(Enum.KeyCode.X)
+	InputManager.unbindLeftClick("BuildPlace")
+	
+	isPlacing = false
+	currentFacilityId = nil
+	
+    local UIManager = require(script.Parent.Parent.UIManager)
+    UIManager.showBuildPrompt(false)
+end
 
 --- 건설 요청 (시설물 배치)
 function BuildController.requestPlace(facilityId: string, position: Vector3, rotation: Vector3?): (boolean, any)
-	print(string.format("[BuildController] Requesting build: %s at (%.1f, %.1f, %.1f)", 
-		facilityId, position.X, position.Y, position.Z))
+	print(string.format("[BuildController] Requesting build: %s", facilityId))
 	
 	local success, data = NetClient.Request("Build.Place.Request", {
 		facilityId = facilityId,
@@ -47,10 +172,13 @@ function BuildController.requestPlace(facilityId: string, position: Vector3, rot
 		rotation = rotation or Vector3.new(0, 0, 0),
 	})
 	
-	if not success then
-		warn("[BuildController] Build request failed:", data)
+	if success then
+		print("[BuildController] Build success")
+		BuildController.cancelPlacement()
 	else
-		print("[BuildController] Build request success:", data)
+		warn("[BuildController] Build failed:", data)
+		local UIManager = require(script.Parent.Parent.UIManager)
+		UIManager.notify("건설 실패: " .. tostring(data), Color3.fromRGB(255, 100, 100))
 	end
 	
 	return success, data
@@ -58,16 +186,9 @@ end
 
 --- 해체 요청 (시설물 제거)
 function BuildController.requestRemove(structureId: string): (boolean, any)
-	print(string.format("[BuildController] Requesting remove: %s", structureId))
-	
 	local success, data = NetClient.Request("Build.Remove.Request", {
 		structureId = structureId,
 	})
-	
-	if not success then
-		warn("[BuildController] Remove request failed:", data)
-	end
-	
 	return success, data
 end
 
@@ -76,14 +197,12 @@ function BuildController.requestGetAll(): (boolean, any)
 	local success, data = NetClient.Request("Build.GetAll.Request", {})
 	
 	if success and data and data.structures then
-		-- 캐시 동기화
 		structuresCache = {}
 		structureCount = 0
 		for _, struct in ipairs(data.structures) do
 			structuresCache[struct.id] = struct
 			structureCount = structureCount + 1
 		end
-		print(string.format("[BuildController] Synced %d structures", structureCount))
 	end
 	
 	return success, data
@@ -105,38 +224,26 @@ local function onPlaced(data)
 		ownerId = data.ownerId,
 	}
 	structureCount = structureCount + 1
-	
-	-- 디버그 로그
-	print(string.format("[BuildController] Placed: %s (%s)", data.id, data.facilityId))
 end
 
 local function onRemoved(data)
 	if not data or not data.id then return end
-	
-	local structure = structuresCache[data.id]
-	if structure then
+	if structuresCache[data.id] then
 		structuresCache[data.id] = nil
 		structureCount = structureCount - 1
-		
-		print(string.format("[BuildController] Removed: %s (reason: %s)", data.id, data.reason or "unknown"))
 	end
 end
 
 local function onChanged(data)
 	if not data or not data.id then return end
-	
 	local structure = structuresCache[data.id]
 	if not structure then return end
 	
-	-- 변경 사항 적용
 	if data.changes then
 		for key, value in pairs(data.changes) do
 			structure[key] = value
 		end
 	end
-	
-	-- 디버그 로그 (주석 처리)
-	-- print(string.format("[BuildController] Changed: %s", data.id))
 end
 
 --========================================
@@ -146,7 +253,6 @@ end
 function BuildController.Init()
 	if initialized then return end
 	
-	-- 이벤트 리스너 등록
 	NetClient.On("Build.Placed", onPlaced)
 	NetClient.On("Build.Removed", onRemoved)
 	NetClient.On("Build.Changed", onChanged)

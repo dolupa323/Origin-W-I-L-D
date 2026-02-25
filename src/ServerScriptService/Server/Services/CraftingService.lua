@@ -539,16 +539,23 @@ processTick = function()
 			if entry.state == Enums.CraftState.CRAFTING and now >= entry.completesAt then
 				entry.state = Enums.CraftState.COMPLETED
 				
-				-- 플레이어에게 완료 알림
 				local player = Players:GetPlayerByUserId(userId)
 				if player then
-					emitCraftEvent("Craft.Ready", player, {
-						craftId = craftId,
-						recipeId = entry.recipeId,
-					})
+					-- [NEW] 맨손 제작(Hand Craft)인 경우 즉시 자동 수거
+					if not entry.structureId then
+						task.spawn(function()
+							CraftingService.collect(player, craftId)
+						end)
+						print(string.format("[CraftingService] Auto-collected personal craft %s for userId %d", craftId, userId))
+					else
+						-- 시설 제작인 경우 '수거 대기' 알림만 발송
+						emitCraftEvent("Craft.Ready", player, {
+							craftId = craftId,
+							recipeId = entry.recipeId,
+						})
+						print(string.format("[CraftingService] Craft %s ready at facility for userId %d", craftId, userId))
+					end
 				end
-				
-				print(string.format("[CraftingService] Craft %s completed for userId %d", craftId, userId))
 			end
 		end
 	end

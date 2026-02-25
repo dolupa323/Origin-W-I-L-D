@@ -12,6 +12,7 @@ local Balance = require(Shared.Config.Balance)
 local Client = script.Parent.Parent
 local NetClient = require(Client.NetClient)
 local InputManager = require(Client.InputManager)
+local DataHelper = require(ReplicatedStorage.Shared.Util.DataHelper)
 
 local InteractController = {}
 
@@ -360,6 +361,8 @@ local function completeHarvest()
 	
 	local success, data = NetClient.Request("Harvest.Hit.Request", {
 		nodeUID = nodeUID,
+		toolSlot = UIManager.getSelectedSlot(),
+		hitCount = 99, -- 전량 채집
 	})
 	if success then
 		print("[InteractController] Harvest success!")
@@ -475,11 +478,29 @@ end
 
 --- 시설 상호작용
 local function interactFacility(target: Instance)
-	local facilityId = target:GetAttribute("FacilityId") or target.Name
+	local facilityId = target:GetAttribute("FacilityId")
+	local structureId = target:GetAttribute("StructureId") or target:GetAttribute("id") or target.Name
 	
-	print("[InteractController] Interacting with facility:", facilityId)
+	print("[InteractController] Interacting with facility:", facilityId, "(ID:", structureId .. ")")
 	
-	-- TODO: 시설 UI 열기
+	if not facilityId then return end
+	
+	local facilityData = DataHelper.GetData("FacilityData", facilityId)
+	if not facilityData then return end
+	
+	if facilityData.functionType == "CRAFTING" or facilityData.functionType == "COOKING" then
+		-- 제작/작업대 UI 열기
+		if UIManager then
+			UIManager.openWorkbench(structureId, facilityId)
+		end
+	elseif facilityData.functionType == "STORAGE" then
+		-- 보관함 UI 열기 (별도 구현 필요)
+		print("[InteractController] Storage UI not implemented yet")
+	elseif facilityData.functionType == "RESPAWN" then
+		-- 리스폰 위치 설정
+		print("[InteractController] Respawn point set")
+		UIManager.notify("부활 지점이 설정되었습니다.")
+	end
 end
 
 --========================================

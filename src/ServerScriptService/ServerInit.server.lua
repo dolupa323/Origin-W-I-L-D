@@ -8,6 +8,26 @@ local Server = ServerScriptService:WaitForChild("Server")
 local Controllers = Server:WaitForChild("Controllers")
 local Services = Server:WaitForChild("Services")
 
+local PhysicsService = game:GetService("PhysicsService")
+
+--========================================
+-- Collision Groups 초기화 (성능 최적화)
+--========================================
+local function initCollisionGroups()
+	-- 그룹 생성
+	local groups = {"Players", "Creatures", "Structures", "Resources"}
+	for _, group in ipairs(groups) do
+		pcall(function() PhysicsService:RegisterCollisionGroup(group) end)
+	end
+	
+	-- 크리처끼리는 충돌하지 않도록 설정 (Physics 부하 절감)
+	PhysicsService:CollisionGroupSetCollidable("Creatures", "Creatures", false)
+	
+	print("[ServerInit] Collision groups initialized (Creatures vs Creatures = false)")
+end
+
+initCollisionGroups()
+
 -- DataService 초기화 (가장 먼저 - 데이터 검증 실패 시 부팅 중단)
 local DataService = require(Services.DataService)
 DataService.Init()
@@ -43,9 +63,8 @@ for command, handler in pairs(SaveService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)
 end
 
--- InventoryService 초기화
+-- InventoryService (Init은 나중에 수행)
 local InventoryService = require(Services.InventoryService)
-InventoryService.Init(NetController, DataService)
 
 -- InventoryService 핸들러 등록
 for command, handler in pairs(InventoryService.GetHandlers()) do
@@ -107,9 +126,20 @@ local function handleInventoryDropWithWorldDrop(player, payload)
 end
 NetController.RegisterHandler("Inventory.Drop.Request", handleInventoryDropWithWorldDrop)
 
+-- StaminaService 초기화 (Phase 10: 스프린트/구르기) - PlayerStatService 연동을 위해 일찍 초기화
+local StaminaService = require(Services.StaminaService)
+StaminaService.Init(NetController)
+
 -- PlayerStatService 초기화 (Phase 6) - 다른 서비스에서 XP 보상을 위해 일찍 초기화
 local PlayerStatService = require(Services.PlayerStatService)
-PlayerStatService.Init(NetController, SaveService, DataService)
+PlayerStatService.Init(NetController, SaveService, DataService, StaminaService)
+
+-- EquipService 초기화
+local EquipService = require(Services.EquipService)
+EquipService.Init(DataService)
+
+-- InventoryService 초기화 (SaveService, PlayerStatService, EquipService 주입)
+InventoryService.Init(NetController, DataService, SaveService, PlayerStatService, EquipService)
 
 -- PlayerStatService 핸들러 등록
 for command, handler in pairs(PlayerStatService.GetHandlers()) do
@@ -186,7 +216,7 @@ end
 
 -- CombatService 초기화 (Phase 3-3, + DebuffService 연동)
 local CombatService = require(Services.CombatService)
-CombatService.Init(NetController, DataService, CreatureService, InventoryService, DurabilityService, DebuffService)
+CombatService.Init(NetController, DataService, CreatureService, InventoryService, DurabilityService, DebuffService, WorldDropService, PlayerStatService)
 
 -- CombatService 핸들러 등록
 for command, handler in pairs(CombatService.GetHandlers()) do
@@ -272,11 +302,7 @@ for command, handler in pairs(NPCShopService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)
 end
 
--- StaminaService 초기화 (Phase 10: 스프린트/구르기)
-local StaminaService = require(Services.StaminaService)
-StaminaService.Init(NetController)
-
--- StaminaService 핸들러 등록
+-- StaminaService 핸들러 등록 (이미 초기화됨)
 for command, handler in pairs(StaminaService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)
 end

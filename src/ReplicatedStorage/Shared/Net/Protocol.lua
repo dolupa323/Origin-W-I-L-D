@@ -32,6 +32,8 @@ Protocol.Commands = {
 	["Inventory.Split.Request"] = true,
 	["Inventory.Drop.Request"] = true,
 	["Inventory.Get.Request"] = true,      -- 전체 인벤 조회
+	["Inventory.ActiveSlot.Request"] = true, -- 활성 슬롯 변경
+	["Inventory.Use.Request"] = true,        -- 아이템 사용/장착
 	["Inventory.GiveItem"] = true,         -- 디버그용
 	
 	-- WorldDrop 명령어
@@ -60,6 +62,7 @@ Protocol.Commands = {
 	["Facility.CollectOutput.Request"] = true, -- 산출물 수거 (Output 슬롯)
 	["Facility.AssignPal.Request"] = true,     -- 팰 작업 배치 (Phase 5-5)
 	["Facility.UnassignPal.Request"] = true,   -- 팰 작업 해제 (Phase 5-5)
+	["Facility.List.Request"] = true,         -- 건설 가능한 시설 목록 조회
 	
 	-- Recipe 명령어
 	["Recipe.GetInfo.Request"] = true,         -- 레시피 정보 조회 (효율 보정 포함)
@@ -85,6 +88,7 @@ Protocol.Commands = {
 	
 	-- Player Stats 명령어 (Phase 6)
 	["Player.Stats.Request"] = true,           -- 레벨/XP/포인트 조회
+	["Player.Stats.Upgrade.Request"] = true,   -- 스탯 업그레이드 요청
 	
 	-- Tech 명령어 (Phase 6)
 	["Tech.Unlock.Request"] = true,            -- 기술 해금 요청
@@ -122,5 +126,74 @@ Protocol.Commands = {
 
 -- 에러 코드는 Enums.ErrorCode 사용
 Protocol.Errors = Enums.ErrorCode
+
+--========================================
+-- 패킷 압축 맵 (Bandwidth 최적화)
+--========================================
+Protocol.KeyMap = {
+	-- Common
+	["nodeUID"] = "u",
+	["nodeId"] = "ni",
+	["position"] = "p",
+	["rotation"] = "r",
+	["count"] = "c",
+	["itemId"] = "iid",
+	["remainingHits"] = "h",
+	["maxHits"] = "m",
+	["health"] = "hp",
+	["ownerId"] = "o",
+	["dropId"] = "did",
+	["despawnAt"] = "t",
+	["reason"] = "re",
+	-- Build/Structure
+	["id"] = "uid",
+	["facilityId"] = "fi",
+	["changes"] = "ch",
+	-- Crafting / Shop
+	["recipeId"] = "rid",
+	["craftId"] = "ci",
+	["completesAt"] = "ct",
+	["gold"] = "g",
+	["price"] = "pr",
+	["slot"] = "sl",
+}
+
+-- 역방향 맵 생성
+Protocol.ReverseKeyMap = {}
+for k, v in pairs(Protocol.KeyMap) do
+	Protocol.ReverseKeyMap[v] = k
+end
+
+--- 데이터 테이블 압축 (Short key로 변환)
+function Protocol.Compress(data: any): any
+	if type(data) ~= "table" then return data end
+	
+	local compressed = {}
+	for k, v in pairs(data) do
+		local shortKey = Protocol.KeyMap[k] or k
+		if type(v) == "table" then
+			compressed[shortKey] = Protocol.Compress(v)
+		else
+			compressed[shortKey] = v
+		end
+	end
+	return compressed
+end
+
+--- 데이터 테이블 압축 해제 (Original key로 복구)
+function Protocol.Decompress(data: any): any
+	if type(data) ~= "table" then return data end
+	
+	local original = {}
+	for k, v in pairs(data) do
+		local longKey = Protocol.ReverseKeyMap[k] or k
+		if type(v) == "table" then
+			original[longKey] = Protocol.Decompress(v)
+		else
+			original[longKey] = v
+		end
+	end
+	return original
+end
 
 return Protocol

@@ -18,9 +18,11 @@ local player = Players.LocalPlayer
 local keyCallbacks = {}  -- [keyCode] = { callback, name }
 local keyHoldCallbacks = {}  -- [keyCode] = { onPress, onRelease, name }
 local mouseCallbacks = {
-	leftClick = nil,
-	rightClick = nil,
+	leftClick = {},  -- { [name] = callback }
+	rightClick = {}, -- { [name] = callback }
 }
+local leftClickOrder = {} -- 리스트로 순서 관리
+local rightClickOrder = {}
 
 -- 현재 누르고 있는 키 상태
 local heldKeys = {}  -- [keyCode] = true/false
@@ -80,14 +82,61 @@ end
 -- Public API: Mouse Binding
 --========================================
 
---- 좌클릭 콜백 등록
-function InputManager.onLeftClick(callback: (Vector3?) -> ())
-	mouseCallbacks.leftClick = callback
+--- 좌클릭 콜백 등록 (레이어드 지원)
+function InputManager.onLeftClick(name: string, callback: (Vector3?) -> ())
+	if not callback then
+		InputManager.unbindLeftClick(name)
+		return
+	end
+	
+	mouseCallbacks.leftClick[name] = callback
+	
+	-- 순서 관리 (이미 있으면 제거 후 끝으로)
+	for i, n in ipairs(leftClickOrder) do
+		if n == name then
+			table.remove(leftClickOrder, i)
+			break
+		end
+	end
+	table.insert(leftClickOrder, name)
+end
+
+function InputManager.unbindLeftClick(name: string)
+	mouseCallbacks.leftClick[name] = nil
+	for i, n in ipairs(leftClickOrder) do
+		if n == name then
+			table.remove(leftClickOrder, i)
+			break
+		end
+	end
 end
 
 --- 우클릭 콜백 등록
-function InputManager.onRightClick(callback: (Vector3?) -> ())
-	mouseCallbacks.rightClick = callback
+function InputManager.onRightClick(name: string, callback: (Vector3?) -> ())
+	if not callback then
+		InputManager.unbindRightClick(name)
+		return
+	end
+	
+	mouseCallbacks.rightClick[name] = callback
+	
+	for i, n in ipairs(rightClickOrder) do
+		if n == name then
+			table.remove(rightClickOrder, i)
+			break
+		end
+	end
+	table.insert(rightClickOrder, name)
+end
+
+function InputManager.unbindRightClick(name: string)
+	mouseCallbacks.rightClick[name] = nil
+	for i, n in ipairs(rightClickOrder) do
+		if n == name then
+			table.remove(rightClickOrder, i)
+			break
+		end
+	end
 end
 
 --========================================
@@ -117,19 +166,34 @@ local function onInputBegan(input: InputObject, gameProcessed: boolean)
 	
 	-- 마우스 입력 (gameProcessed 무시 - 기본 클릭도 처리)
 	if not isUIOpen then
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			-- 좌클릭
-			if mouseCallbacks.leftClick then
-				local mouse = player:GetMouse()
-				local hitPos = mouse.Hit and mouse.Hit.Position
-				mouseCallbacks.leftClick(hitPos)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			-- 좌클릭/터치 (최신/가장 높은 레이어부터 호출)
+			if #leftClickOrder > 0 then
+				local name = leftClickOrder[#leftClickOrder]
+				local callback = mouseCallbacks.leftClick[name]
+				if callback then
+					-- 터치 시에도 히트 위치 계산 (Raycast 유틸 활용 가능)
+					local hitPos = nil
+					if input.UserInputType == Enum.UserInputType.Touch then
+						local pos = input.Position
+						hitPos = InputManager.getTouchWorldPosition(pos.X, pos.Y)
+					else
+						local mouse = player:GetMouse()
+						hitPos = mouse.Hit and mouse.Hit.Position
+					end
+					callback(hitPos)
+				end
 			end
 		elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
 			-- 우클릭
-			if mouseCallbacks.rightClick then
-				local mouse = player:GetMouse()
-				local hitPos = mouse.Hit and mouse.Hit.Position
-				mouseCallbacks.rightClick(hitPos)
+			if #rightClickOrder > 0 then
+				local name = rightClickOrder[#rightClickOrder]
+				local callback = mouseCallbacks.rightClick[name]
+				if callback then
+					local mouse = player:GetMouse()
+					local hitPos = mouse.Hit and mouse.Hit.Position
+					callback(hitPos)
+				end
 			end
 		end
 	end
@@ -180,6 +244,20 @@ end
 function InputManager.getMouseTarget(): Instance?
 	local mouse = player:GetMouse()
 	return mouse.Target
+end
+
+--- 터치 위치의 월드 좌표 가져오기
+function InputManager.getTouchWorldPosition(x: number, y: number): Vector3?
+	local camera = workspace.CurrentCamera
+	if not camera then return nil end
+	
+	local ray = camera:ViewportPointToRay(x, y)
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { player.Character }
+	
+	local result = workspace:Raycast(ray.Origin, ray.Direction * 1000, params)
+	return result and result.Position or (ray.Origin + ray.Direction * 10)
 end
 
 --========================================

@@ -125,7 +125,8 @@ end
 --========================================
 local function emitPlaced(structure: any)
 	if NetController then
-		NetController.FireAllClients("Build.Placed", {
+		-- 네트워크 최적화: 600 스터드 내 플레이어에게만 전송
+		NetController.FireClientsInRange(structure.position, 600, "Build.Placed", {
 			id = structure.id,
 			facilityId = structure.facilityId,
 			position = structure.position,
@@ -138,19 +139,25 @@ end
 
 local function emitRemoved(structureId: string, reason: string)
 	if NetController then
-		NetController.FireAllClients("Build.Removed", {
-			id = structureId,
-			reason = reason,
-		})
+		local struct = structures[structureId]
+		if struct then
+			NetController.FireClientsInRange(struct.position, 600, "Build.Removed", {
+				id = structureId,
+				reason = reason,
+			})
+		end
 	end
 end
 
 local function emitChanged(structureId: string, changes: any)
 	if NetController then
-		NetController.FireAllClients("Build.Changed", {
-			id = structureId,
-			changes = changes,
-		})
+		local struct = structures[structureId]
+		if struct then
+			NetController.FireClientsInRange(struct.position, 600, "Build.Changed", {
+				id = structureId,
+				changes = changes,
+			})
+		end
 	end
 end
 
@@ -222,6 +229,14 @@ end
 function BuildService.place(player: Player, facilityId: string, position: Vector3, rotation: Vector3?): (boolean, string?, any?)
 	local userId = player.UserId
 	local character = player.Character
+	
+	-- Vector3 type safety (in case called from other server scripts)
+	if type(position) == "table" then
+		position = Vector3.new(position.X or position.x or 0, position.Y or position.y or 0, position.Z or position.z or 0)
+	end
+	if rotation and type(rotation) == "table" then
+		rotation = Vector3.new(rotation.X or rotation.x or 0, rotation.Y or rotation.y or 0, rotation.Z or rotation.z or 0)
+	end
 	
 	-- 1. 시설 데이터 검증
 	local facilityData = DataService.getFacility(facilityId)
@@ -389,6 +404,9 @@ function BuildService.removeStructure(structureId: string, reason: string)
 	-- Workspace에서 제거
 	despawnFacilityModel(structureId)
 	
+	-- 이벤트 발행 (데이터 제거 전에 수행하여 위치 정보 확보)
+	emitRemoved(structureId, reason)
+	
 	-- 데이터 제거
 	structures[structureId] = nil
 	structureCount = structureCount - 1
@@ -402,9 +420,6 @@ function BuildService.removeStructure(structureId: string, reason: string)
 			return state
 		end)
 	end
-	
-	-- 이벤트 발행
-	emitRemoved(structureId, reason)
 end
 
 --========================================
@@ -478,6 +493,28 @@ end
 local function handleGetAll(player: Player, payload: any)
 	local all = BuildService.getAll()
 	return { success = true, data = { structures = all } }
+end
+
+local function handleListFacilities(player: Player, payload: any)
+	local allFacilities = DataService.get("FacilityData")
+	if not allFacilities then
+		return { success = true, data = { facilities = {} } }
+	end
+	
+	local result = {}
+	for facilityId, facility in pairs(allFacilities) do
+		table.insert(result, {
+			id = facility.id or facilityId,
+			name = facility.name,
+			description = facility.description,
+			techLevel = facility.techLevel or 0,
+			inputs = facility.requirements or {}, -- UIManager uses 'inputs'
+			buildTime = facility.buildTime or 0,
+			maxHealth = facility.maxHealth or 100,
+		})
+	end
+	
+	return { success = true, data = { facilities = result } }
 end
 
 --========================================
@@ -559,6 +596,7 @@ function BuildService.GetHandlers()
 		["Build.Place.Request"] = handlePlace,
 		["Build.Remove.Request"] = handleRemove,
 		["Build.GetAll.Request"] = handleGetAll,
+		["Facility.List.Request"] = handleListFacilities,
 	}
 end
 
