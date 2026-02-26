@@ -13,7 +13,7 @@ local ItemData = {
 		rarity = "COMMON",
 		maxStack = 99,
 		weight = 1.0,
-		icon = "rbxassetid://123456789", -- 아이템 아이콘 이미지 (예시 ID)
+		icon = "rbxassetid://15573752528", -- Stone icon
 		description = "가장 기본적인 자원. 도구와 건물에 사용된다.",
 		dropDespawn = "GATHER",
 	},

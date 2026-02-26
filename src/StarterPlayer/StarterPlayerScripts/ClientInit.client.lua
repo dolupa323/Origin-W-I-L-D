@@ -83,9 +83,9 @@ if success then
 	end)
 	
 	-- 키 바인딩 설정
-	-- E = 캐릭터 상태 및 장비창, B = 인벤토리
-	InputManager.bindKey(Enum.KeyCode.E, "ToggleStatus", function()
-		UIManager.toggleStatus()
+	-- E = 장비창, B = 인벤토리
+	InputManager.bindKey(Enum.KeyCode.E, "ToggleEquipment", function()
+		UIManager.toggleEquipment()
 	end)
 	InputManager.bindKey(Enum.KeyCode.B, "ToggleInventory", function()
 		UIManager.toggleInventory()

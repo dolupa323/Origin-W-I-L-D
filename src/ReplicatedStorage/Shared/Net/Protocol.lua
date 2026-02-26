@@ -34,6 +34,7 @@ Protocol.Commands = {
 	["Inventory.Get.Request"] = true,      -- 전체 인벤 조회
 	["Inventory.ActiveSlot.Request"] = true, -- 활성 슬롯 변경
 	["Inventory.Use.Request"] = true,        -- 아이템 사용/장착
+	["Inventory.Sort.Request"] = true,       -- 인벤토리 자동 정렬
 	["Inventory.GiveItem"] = true,         -- 디버그용
 	
 	-- WorldDrop 명령어

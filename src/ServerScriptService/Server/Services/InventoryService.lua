@@ -1,6 +1,6 @@
 -- InventoryService.lua
 -- 인벤토리 서비스 (서버 권위, SSOT)
--- 슬롯 수: Balance.INV_SLOTS (20)
+-- 슬롯 수: Balance.INV_SLOTS (40)
 -- 최대 스택: Balance.MAX_STACK (99)
 
 local Players = game:GetService("Players")
@@ -614,6 +614,8 @@ function InventoryService.addItem(userId: number, itemId: string, count: number)
 		return 0, count
 	end
 	
+	local player = Players:GetPlayerByUserId(userId)
+	
 	local remaining = count
 	local added = 0
 	local changedSlots = {}
@@ -673,8 +675,6 @@ function InventoryService.addItem(userId: number, itemId: string, count: number)
 		end
 	end
 	
-	-- 이벤트 발생
-	local player = Players:GetPlayerByUserId(userId)
 	if player then
 		local changes = {}
 		for slot, _ in pairs(changedSlots) do
@@ -683,7 +683,64 @@ function InventoryService.addItem(userId: number, itemId: string, count: number)
 		_emitChanged(player, changes)
 	end
 	
+	-- [FIX] Ensure items are always packed (Left-to-Right, Top-to-Bottom)
+	InventoryService.sort(userId)
+	
 	return added, remaining
+end
+
+--- 인벤토리 정렬 (빈 슬롯 채우기)
+function InventoryService.sort(userId: number)
+	local inv = playerInventories[userId]
+	if not inv then return end
+	
+	local items = {}
+	for slot = 1, Balance.INV_SLOTS do
+		if inv.slots[slot] then
+			table.insert(items, inv.slots[slot])
+			inv.slots[slot] = nil
+		end
+	end
+	
+	-- 아이템 압축 (같은 아이템 합치기)
+	local compressed = {}
+	for _, item in ipairs(items) do
+		local remaining = item.count
+		
+		for _, comp in ipairs(compressed) do
+			if remaining <= 0 then break end
+			if comp.itemId == item.itemId and comp.count < Balance.MAX_STACK then
+				local space = Balance.MAX_STACK - comp.count
+				local amount = math.min(remaining, space)
+				comp.count = comp.count + amount
+				remaining = remaining - amount
+			end
+		end
+		
+		if remaining > 0 then
+			table.insert(compressed, {
+				itemId = item.itemId,
+				count = remaining,
+				durability = item.durability
+			})
+		end
+	end
+	
+	local player = Players:GetPlayerByUserId(userId)
+	local changes = {}
+	
+	for i, item in ipairs(compressed) do
+		inv.slots[i] = item
+	end
+	
+	-- 모든 슬롯 델타 생성 (전량 전송)
+	for slot = 1, Balance.INV_SLOTS do
+		table.insert(changes, _makeChange(inv, slot))
+	end
+	
+	if player then
+		_emitChanged(player, changes)
+	end
 end
 
 --- 빈 슬롯 개수
@@ -1074,6 +1131,10 @@ function InventoryService.GetHandlers()
 		["Inventory.Get.Request"] = handleGetInventory,
 		["Inventory.ActiveSlot.Request"] = handleActiveSlot,
 		["Inventory.Use.Request"] = handleUse,
+		["Inventory.Sort.Request"] = function(player, payload)
+			InventoryService.sort(player.UserId)
+			return { success = true }
+		end,
 		["Inventory.GiveItem"] = handleGiveItem,
 	}
 end

@@ -78,6 +78,26 @@ function InputManager.isKeyHeld(keyCode: Enum.KeyCode): boolean
 	return heldKeys[keyCode] == true
 end
 
+--- 액션 바인딩 (ContextActionService 기반)
+function InputManager.bindAction(name: string, callback: (string, Enum.UserInputState, InputObject) -> (), touchBtn: boolean, display: string?, ...: Enum.KeyCode | Enum.UserInputType)
+	local function handler(actionName, inputState, inputObj)
+		if inputState == Enum.UserInputState.Begin then
+			callback(actionName, inputState, inputObj)
+			return Enum.ContextActionResult.Sink
+		end
+		return Enum.ContextActionResult.Pass
+	end
+	
+	ContextActionService:BindAction(name, handler, touchBtn, ...)
+	if display and touchBtn then
+		ContextActionService:SetTitle(name, display)
+	end
+end
+
+function InputManager.unbindAction(name: string)
+	ContextActionService:UnbindAction(name)
+end
+
 --========================================
 -- Public API: Mouse Binding
 --========================================

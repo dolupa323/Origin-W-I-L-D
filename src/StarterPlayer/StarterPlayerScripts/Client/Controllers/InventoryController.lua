@@ -51,6 +51,55 @@ function InventoryController.getItemCounts()
 	return counts
 end
 
+--- 아이템 슬롯 변경 (드래그 앤 드롭용)
+function InventoryController.swapSlots(fromSlot: number, toSlot: number)
+	if fromSlot == toSlot then return end
+	
+	task.spawn(function()
+		local ok, data = NetClient.Request("Inventory.Move.Request", {
+			fromSlot = fromSlot,
+			toSlot = toSlot
+		})
+		
+		if ok then
+			-- 서버에서 Inventory.Changed 이벤트를 보내므로 로컬 캐시는 자동으로 업데이트됨
+			print("[InventoryController] Swapped slots:", fromSlot, "->", toSlot)
+		else
+			warn("[InventoryController] Failed to swap slots:", data)
+		end
+	end)
+end
+
+function InventoryController.requestDrop(slot: number, count: number)
+	task.spawn(function()
+		local ok, data = NetClient.Request("Inventory.Drop.Request", {
+			slot = slot,
+			count = count
+		})
+		if not ok then
+			warn("[InventoryController] Drop failed:", data)
+		end
+	end)
+end
+
+function InventoryController.requestUse(slot: number)
+	task.spawn(function()
+		local ok, data = NetClient.Request("Inventory.Use.Request", {
+			slot = slot
+		})
+		if not ok then
+			warn("[InventoryController] Use failed:", data)
+		end
+	end)
+end
+
+function InventoryController.requestSort()
+	task.spawn(function()
+		NetClient.Request("Inventory.Sort.Request", {})
+	end)
+end
+
+
 --========================================
 -- Public API: Event Listeners
 --========================================
@@ -117,6 +166,9 @@ function InventoryController.Init()
 			totalWeight = data.totalWeight or 0
 			maxWeight = data.maxWeight or 300
 			fireChangeListeners()
+			
+			-- 초기 정렬 (Auto-stacking on first load)
+			InventoryController.requestSort()
 		end
 	end)
 

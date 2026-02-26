@@ -547,6 +547,8 @@ local function onHeartbeat()
 		if UIManager then
 			if target then
 				local promptText = "[Z] "
+				local targetName = target:GetAttribute("DisplayName") or target:GetAttribute("Name") or target.Name
+				
 				if targetType == "resource" then
 					promptText = "" -- 안내문 삭제 (HP바로 대체)
 				elseif targetType == "drop" then
@@ -560,7 +562,7 @@ local function onHeartbeat()
 				end
 				
 				if promptText ~= "" then
-					UIManager.showInteractPrompt(promptText)
+					UIManager.showInteractPrompt(promptText, targetName)
 				else
 					UIManager.hideInteractPrompt()
 				end
