@@ -13,7 +13,10 @@ StatusUI.Refs = {
 	Frame = nil,
 	StatPoints = nil,
 	StatLines = {}, -- id -> {val, btn}
+	ActionFrame = nil,
 }
+
+StatusUI.PendingStats = {}
 
 function StatusUI.SetVisible(visible)
 	if StatusUI.Refs.Frame then
@@ -21,11 +24,11 @@ function StatusUI.SetVisible(visible)
 	end
 end
 
-function StatusUI.Refresh(cachedStats, Enums)
+function StatusUI.Refresh(cachedStats, Enums, totalPending)
 	local refs = StatusUI.Refs
 	if not refs.Frame or not refs.Frame.Visible then return end
 	
-	local available = cachedStats.statPointsAvailable or 0
+	local available = (cachedStats.statPointsAvailable or 0) - (totalPending or 0)
 	if refs.StatPoints then
 		refs.StatPoints.Text = "남은 강화 포인트: "..available
 	end
@@ -35,21 +38,39 @@ function StatusUI.Refresh(cachedStats, Enums)
 	
 	for statId, line in pairs(refs.StatLines) do
 		local valText = ""
+		local baseValue = 0
 		if statId == Enums.StatId.MAX_HEALTH then
-			valText = string.format("%d HP", calc.maxHealth or 100)
+			baseValue = calc.maxHealth or 100
+			valText = string.format("%d HP", baseValue)
 		elseif statId == Enums.StatId.MAX_STAMINA then
-			valText = string.format("%d STA", calc.maxStamina or 100)
+			baseValue = calc.maxStamina or 100
+			valText = string.format("%d STA", baseValue)
 		elseif statId == Enums.StatId.WEIGHT then
-			valText = string.format("%.1f kg", calc.maxWeight or 300)
+			baseValue = calc.maxWeight or 300
+			valText = string.format("%.1f kg", baseValue)
 		elseif statId == Enums.StatId.WORK_SPEED then
-			valText = string.format("%d%%", calc.workSpeed or 100)
+			baseValue = calc.workSpeed or 100
+			valText = string.format("%d%%", baseValue)
 		elseif statId == Enums.StatId.ATTACK then
-			valText = string.format("%.0f%%", (calc.attackMult or 1.0) * 100)
+			baseValue = (calc.attackMult or 1.0) * 100
+			valText = string.format("%.0f%%", baseValue)
 		end
 		
-		line.val.Text = string.format("%s (Lv.%d)", valText, invested[statId] or 0)
+		local added = StatusUI.PendingStats[statId] or 0
+		if added > 0 then
+			line.val.Text = string.format("%s (Lv.%d) <font color='#4CAF50'>+%d</font>", valText, invested[statId] or 0, added)
+			line.val.RichText = true
+		else
+			line.val.Text = string.format("%s (Lv.%d)", valText, invested[statId] or 0)
+			line.val.RichText = false
+		end
+		
 		line.btn.Visible = (available > 0)
 	end
+	
+	local hasPending = false
+	for _, v in pairs(StatusUI.PendingStats) do if v > 0 then hasPending = true break end end
+	refs.ActionFrame.Visible = hasPending
 end
 
 function StatusUI.Init(parent, UIManager, NetClient, Enums)
@@ -134,12 +155,40 @@ function StatusUI.Init(parent, UIManager, NetClient, Enums)
 			r = "full",
 			ts = 18,
 			vis = false,
-			fn = function() NetClient.Request("Player.Stats.Upgrade.Request", {statId = s.id}) end,
+			fn = function() 
+				local UIManager = require(script.Parent.Parent.UIManager)
+				UIManager.addPendingStat(s.id)
+			end,
 			parent = line
 		})
 		
 		StatusUI.Refs.StatLines[s.id] = {val = val, btn = btn}
 	end
+	
+	-- Action Frame (Apply/Cancel)
+	local actionFrame = Utils.mkFrame({
+		size = UDim2.new(1, -40, 0, 50),
+		pos = UDim2.new(0, 20, 1, -20),
+		anchor = Vector2.new(0, 1),
+		bgT = 1,
+		vis = false,
+		parent = StatusUI.Refs.Frame
+	})
+	StatusUI.Refs.ActionFrame = actionFrame
+	
+	local aList = Instance.new("UIListLayout")
+	aList.FillDirection = Enum.FillDirection.Horizontal
+	aList.Padding = UDim.new(0, 10)
+	aList.Parent = actionFrame
+	
+	Utils.mkBtn({
+		text = "적용", size = UDim2.new(0.48, 0, 1, 0), bg = C.GREEN, color = C.BG_PANEL, bold = true, r = 6, 
+		fn = function() require(script.Parent.Parent.UIManager).confirmPendingStats() end, parent = actionFrame
+	})
+	Utils.mkBtn({
+		text = "초기화", size = UDim2.new(0.48, 0, 1, 0), bg = C.BTN, r = 6, 
+		fn = function() require(script.Parent.Parent.UIManager).cancelPendingStats() end, parent = actionFrame
+	})
 end
 
 return StatusUI

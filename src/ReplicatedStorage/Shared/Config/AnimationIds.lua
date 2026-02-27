@@ -41,6 +41,10 @@ AnimationIds.ATTACK_CLUB = {
 	SWING = "AttackClub_Swing",
 }
 
+AnimationIds.BOLA = {
+	THROW = "AttackBola_Throw",
+}
+
 --========================================
 -- 채집 애니메이션
 --========================================

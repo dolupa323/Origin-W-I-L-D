@@ -182,12 +182,28 @@ local function setupModelForNode(model: Model, position: Vector3, nodeData: any)
 	
 	-- 위치 설정 (기존 모델 방향 유지, Y축만 랜덤 회전 추가)
 	if primaryPart then
-		-- 모델 하단이 지면에 닿도록 조정
-		local _, modelSize = model:GetBoundingBox()
-		local yOffset = modelSize.Y / 2
+		-- 모델 하단이 지면에 닿도록 조정 (모든 파트 중 가장 낮은 Y값 추적)
+		local minY = math.huge
+		for _, p in ipairs(model:GetDescendants()) do
+			if p:IsA("BasePart") then
+				-- 특정 이름의 파트(예: 원점에서 멀리 떨어진 헬퍼 가시 등)는 제외할 수 있으나 기본은 전체 포함
+				local pMinY = p.Position.Y - (p.Size.Y / 2)
+				if pMinY < minY then minY = pMinY end
+			end
+		end
+		
+		if minY == math.huge then
+			local modelCF, modelSize = model:GetBoundingBox()
+			minY = modelCF.Position.Y - (modelSize.Y / 2)
+		end
+		
+		local currentPivot = model:GetPivot()
+		local pivotOffset = currentPivot.Position.Y - minY
+		
 		-- Y축 랜덤 회전 (자연스러운 배치)
 		local randomYRot = math.rad(math.random(0, 359))
-		local targetCF = CFrame.new(position + Vector3.new(0, yOffset, 0)) * CFrame.Angles(0, randomYRot, 0)
+		-- 지면(position)에서 pivotOffset만큼 위로 띄워야 하단이 지면에 맞음
+		local targetCF = CFrame.new(position) * CFrame.Angles(0, randomYRot, 0) * CFrame.new(0, pivotOffset, 0)
 		model:PivotTo(targetCF)
 	else
 		-- PrimaryPart가 없으면 모든 파트 이동
@@ -244,6 +260,14 @@ function HarvestService.spawnNodeModel(nodeId: string, position: Vector3, nodeUI
 		return nil
 	end
 	
+	-- ResourceNodes 폴더 확보
+	local nodeFolder = workspace:FindFirstChild("ResourceNodes")
+	if not nodeFolder then
+		nodeFolder = Instance.new("Folder")
+		nodeFolder.Name = "ResourceNodes"
+		nodeFolder.Parent = workspace
+	end
+	
 	-- Assets/ResourceNodeModels 폴더 찾기
 	local modelsFolder = ReplicatedStorage:FindFirstChild("Assets")
 	if modelsFolder then
@@ -258,6 +282,7 @@ function HarvestService.spawnNodeModel(nodeId: string, position: Vector3, nodeUI
 		-- 실제 모델 복제
 		model = template:Clone()
 		model.Name = nodeId
+		model.Parent = nodeFolder -- Parent early to avoid joint warnings
 		model = setupModelForNode(model, position, nodeData)
 		print(string.format("[HarvestService] Loaded model '%s' for %s", template.Name, nodeId))
 	else
@@ -266,6 +291,7 @@ function HarvestService.spawnNodeModel(nodeId: string, position: Vector3, nodeUI
 		
 		model = Instance.new("Model")
 		model.Name = nodeId
+		model.Parent = nodeFolder -- Parent early
 		
 		local part = Instance.new("Part")
 		part.Name = "MainPart"
@@ -313,15 +339,6 @@ function HarvestService.spawnNodeModel(nodeId: string, position: Vector3, nodeUI
 	model:SetAttribute("OptimalTool", nodeData.optimalTool or "")
 	model:SetAttribute("Depleted", false)
 	
-	-- workspace.ResourceNodes에 배치
-	local nodeFolder = workspace:FindFirstChild("ResourceNodes")
-	if not nodeFolder then
-		nodeFolder = Instance.new("Folder")
-		nodeFolder.Name = "ResourceNodes"
-		nodeFolder.Parent = workspace
-	end
-	model.Parent = nodeFolder
-	
 	return model
 end
 
@@ -362,7 +379,8 @@ local function isCompatible(toolType: string?, optimalType: string?): boolean
 	
 	local t = toolType:upper()
 	local o = optimalType:upper()
-	return t:find(o) ~= nil or o:find(t) ~= nil
+	-- "PICKAXE"가 "AXE"를 포함하므로 정확한 비교 사용
+	return t == o
 end
 
 local function validateTool(player: Player, nodeData: any, toolSlot: number?): (boolean, string?)

@@ -162,6 +162,7 @@ local ItemData = {
 		durability = 100,
 		damage = 25,
 		description = "기초 근접 무기.",
+		optimalTool = "SPEAR",
 	},
 	{
 		id = "TORCH",
@@ -183,6 +184,7 @@ local ItemData = {
 		damage = 15,
 		isBlunt = true,  -- 기절 수치 적용용
 		description = "야수를 때려서 기절시키거나 체력을 깎는 둔기.",
+		optimalTool = "CLUB",
 	},
 	{
 		id = "VINE_BOLA",
@@ -193,6 +195,7 @@ local ItemData = {
 		description = "소형 크리처에게 던져 묶고 길들이는 기초 투척 도구.",
 		captureMultiplier = 1.0,
 		tier = 1,
+		optimalTool = "BOLA",
 	},
 
 	--========================================
@@ -235,6 +238,7 @@ local ItemData = {
 		description = "포획 확률을 높인 강화된 투척 도구.",
 		captureMultiplier = 1.5,
 		tier = 2,
+		optimalTool = "BOLA",
 	},
 
 	--========================================
@@ -299,6 +303,7 @@ local ItemData = {
 		description = "중형 공룡을 제압하는 강력한 투척 도구.",
 		captureMultiplier = 2.0,
 		tier = 3,
+		optimalTool = "BOLA",
 	},
 
 	--========================================
@@ -362,6 +367,7 @@ local ItemData = {
 		maxStack = 10,
 		description = "대형 포식자 공룡을 포획하기 위한 최강의 도구.",
 		captureMultiplier = 3.5,
+		optimalTool = "BOLA",
 	},
 
 	--========================================
@@ -374,10 +380,6 @@ local ItemData = {
 	{
 		id = "LEATHER", name = "가죽", type = "RESOURCE", rarity = "COMMON", maxStack = 99,
 		description = "방어구 제작에 사용된다.",
-	},
-	{
-		id = "FEATHER", name = "깃털", type = "RESOURCE", rarity = "COMMON", maxStack = 99,
-		description = "화살 제작에 사용된다.",
 	},
 	{
 		id = "BONE", name = "뼈", type = "RESOURCE", rarity = "COMMON", maxStack = 99,

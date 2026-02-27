@@ -1,5 +1,5 @@
 -- UIUtils.lua
--- UI 생성 및 레이아웃 자동화를 위한 유틸리티 클래스 (Original Design Support)
+-- UI 레이아웃, 액션 버튼 (Hexagon 등), 비율 유지 유틸리티
 
 local TweenService = game:GetService("TweenService")
 local Theme = require(script.Parent.UITheme)
@@ -9,7 +9,15 @@ local T = Theme.Transp
 
 local UIUtils = {}
 
---- 기본 프레임 생성 (반응형 + 오리지널 스타일)
+--- 비율 고정된 최상위 윈도우 랩퍼
+function UIUtils.mkWindow(p)
+	local win = UIUtils.mkFrame(p)
+	local ratio = Instance.new("UIAspectRatioConstraint")
+	ratio.AspectRatio = p.ratio or 1.5 -- 가로 세로 비율
+	ratio.Parent = win
+	return win
+end
+
 function UIUtils.mkFrame(p)
 	local f = Instance.new("Frame")
 	f.Name = p.name or "Frame"
@@ -24,46 +32,29 @@ function UIUtils.mkFrame(p)
 	f.ClipsDescendants = p.clips or false
 	f.Parent = p.parent
 	
-	-- 원형 또는 라운드 처리
 	if p.r then
 		local c = Instance.new("UICorner")
 		c.CornerRadius = (p.r == "full") and UDim.new(1, 0) or UDim.new(0, p.r)
 		c.Parent = f
 	end
 	
-	-- 테두리 (Original: Thin White Border)
 	if p.stroke or p.strokeC then
 		local s = Instance.new("UIStroke")
 		s.Thickness = p.stroke or 1
 		s.Color = p.strokeC or C.BORDER
 		s.Transparency = p.strokeT or 0.2
-		s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		s.Parent = f
 	end
 	
-	-- Constraints
 	if p.maxSize then
 		local c = Instance.new("UISizeConstraint")
 		c.MaxSize = p.maxSize
-		c.Parent = f
-	end
-	if p.aspect then
-		local c = Instance.new("UIAspectRatioConstraint")
-		c.AspectRatio = p.aspect
 		c.Parent = f
 	end
 	
 	return f
 end
 
---- 원형 프레임 헬퍼
-function UIUtils.mkCircle(p)
-	p.r = "full"
-	p.aspect = 1
-	return UIUtils.mkFrame(p)
-end
-
---- 텍스트 라벨 생성
 function UIUtils.mkLabel(p)
 	local l = Instance.new("TextLabel")
 	l.Name = p.name or "Label"
@@ -78,20 +69,16 @@ function UIUtils.mkLabel(p)
 	l.TextXAlignment = p.ax or Enum.TextXAlignment.Center
 	l.TextYAlignment = p.ay or Enum.TextYAlignment.Center
 	l.TextStrokeTransparency = p.st or 0.7
-	l.TextStrokeColor3 = Color3.new(0, 0, 0)
 	l.TextWrapped = p.wrap or false
+	l.RichText = p.rich or false
 	l.ZIndex = p.z or 1
 	l.Parent = p.parent
 	
-	if p.autoSize then
-		l.AutomaticSize = Enum.AutomaticSize.XY
-	end
+	if p.autoSize then l.AutomaticSize = Enum.AutomaticSize.XY end
 	if p.bold then l.Font = F.TITLE end
-	
 	return l
 end
 
---- 버튼 생성 (애니메이션 개선)
 function UIUtils.mkBtn(p)
 	local b = Instance.new("TextButton")
 	b.Name = p.name or "Button"
@@ -117,8 +104,8 @@ function UIUtils.mkBtn(p)
 	
 	if p.stroke then
 		local s = Instance.new("UIStroke")
-		s.Thickness = 1.5
-		s.Color = C.BORDER
+		s.Thickness = p.stroke == true and 1.5 or p.stroke
+		s.Color = p.strokeC or C.BORDER
 		s.Parent = b
 	end
 	
@@ -134,15 +121,48 @@ function UIUtils.mkBtn(p)
 	return b
 end
 
---- 오리지널 스타일 슬롯 (Diamond/Circle 지원)
+function UIUtils.mkHexBtn(p)
+	-- Hexagon-styled button with dummy image
+	local b = Instance.new("ImageButton")
+	b.Name = p.name or "HexButton"
+	b.Size = p.size or UDim2.new(0, 80, 0, 80)
+	b.Position = p.pos or UDim2.new(0, 0, 0, 0)
+	b.AnchorPoint = p.anchor or Vector2.zero
+	b.BackgroundTransparency = 1
+	b.Image = "rbxassetid://3192468761"
+	b.ImageColor3 = p.bg or C.BG_PANEL
+	b.ImageTransparency = p.bgT or 0.4
+	b.ZIndex = p.z or 1
+	b.Parent = p.parent
+	
+	local aspect = Instance.new("UIAspectRatioConstraint")
+	aspect.AspectRatio = 1
+	aspect.Parent = b
+	
+	if p.stroke then
+		local s = Instance.new("ImageLabel")
+		s.Size = UDim2.new(1.1, 0, 1.1, 0)
+		s.Position = UDim2.new(0.5, 0, 0.5, 0)
+		s.AnchorPoint = Vector2.new(0.5, 0.5)
+		s.BackgroundTransparency = 1
+		s.Image = "rbxassetid://3192468761"
+		s.ImageColor3 = p.strokeC or C.WHITE
+		s.ZIndex = b.ZIndex - 1
+		s.Parent = b
+	end
+	
+	if p.fn then b.MouseButton1Click:Connect(p.fn) end
+	return b
+end
+
+--- 비율 고정된 슬롯 (찌그러짐 방지)
 function UIUtils.mkSlot(p)
 	local slot = UIUtils.mkFrame({
 		name = p.name or "Slot",
-		size = p.size or UDim2.new(0, 64, 0, 64),
-		pos = p.pos,
+		size = p.size or UDim2.new(1, 0, 1, 0), -- Grid Layout에서 제어됨
 		bg = p.bg or C.BG_SLOT,
 		bgT = p.bgT or T.SLOT,
-		r = p.r or 8,
+		r = p.r or 0, -- 듀랑고는 각진 사각형
 		stroke = p.stroke or 1,
 		strokeC = p.strokeC or C.BORDER_DIM,
 		z = p.z or 1,
@@ -151,38 +171,33 @@ function UIUtils.mkSlot(p)
 	
 	local aspect = Instance.new("UIAspectRatioConstraint")
 	aspect.AspectRatio = 1
+	aspect.AspectType = Enum.AspectType.FitWithinMaxSize
+	aspect.DominantAxis = Enum.DominantAxis.Width
 	aspect.Parent = slot
-	
-	-- Diamond 효과 (Rotation)
-	if p.diamond then
-		slot.Rotation = 45
-	end
 	
 	local icon = Instance.new("ImageLabel")
 	icon.Name = "Icon"
-	icon.Size = UDim2.new(0.75, 0, 0.75, 0)
+	icon.Size = UDim2.new(0.8, 0, 0.8, 0)
 	icon.Position = UDim2.new(0.5, 0, 0.5, 0)
 	icon.AnchorPoint = Vector2.new(0.5, 0.5)
 	icon.BackgroundTransparency = 1
 	icon.ScaleType = Enum.ScaleType.Fit
 	icon.ZIndex = slot.ZIndex + 1
-	icon.Rotation = p.diamond and -45 or 0 -- 아이콘은 정방향
 	icon.Parent = slot
 	
 	local count = UIUtils.mkLabel({
 		name = "Count",
-		size = UDim2.new(1, -5, 0, 15),
+		size = UDim2.new(1, -4, 0, 15),
 		pos = UDim2.new(0, 0, 1, -2),
 		anchor = Vector2.new(0, 1),
 		text = "",
-		ts = 12,
+		ts = 13,
 		font = F.NUM,
 		color = C.WHITE,
 		ax = Enum.TextXAlignment.Right,
 		z = slot.ZIndex + 2,
 		parent = slot
 	})
-	if p.diamond then count.Rotation = -45 end
 
 	local click = Instance.new("TextButton")
 	click.Name = "Click"
@@ -200,18 +215,14 @@ function UIUtils.mkSlot(p)
 	}
 end
 
---- 진행도 바 (Thin/Circular/Standard)
 function UIUtils.mkBar(p)
 	local container = UIUtils.mkFrame({
 		name = p.name or "Bar",
 		size = p.size,
 		pos = p.pos,
-		bg = p.bgC or C.BG_BAR,
-		bgT = p.bgT or 0.5,
-		r = p.r or 2,
-		stroke = p.stroke,
-		strokeC = p.strokeC,
-		z = p.z or 1,
+		bg = p.bg or Color3.fromRGB(40, 40, 40),
+		bgT = p.bgT or 0.4,
+		r = p.r or 0,
 		parent = p.parent
 	})
 	
@@ -220,17 +231,16 @@ function UIUtils.mkBar(p)
 		size = UDim2.new(1, 0, 1, 0),
 		bg = p.fillC or C.HP,
 		bgT = 0,
-		r = p.r or 2,
-		z = container.ZIndex,
+		r = p.r or 0,
 		parent = container
 	})
 	
 	local label = UIUtils.mkLabel({
 		name = "Value",
 		text = p.text or "",
-		ts = p.ts or 10,
+		ts = p.ts or 12,
 		font = F.NUM,
-		z = container.ZIndex + 1,
+		z = 10,
 		parent = container
 	})
 	

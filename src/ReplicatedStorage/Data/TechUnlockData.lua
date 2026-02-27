@@ -11,16 +11,15 @@ local TechUnlockData = {
 		name = "기초 생존",
 		requireLevel = 1,
 		techPointCost = 0,
-		unlocks = { recipes = { "CRAFT_STONE_PICKAXE", "CRAFT_STONE_AXE" }, facilities = {} },
+		unlocks = { 
+			recipes = { 
+				"CRAFT_STONE_PICKAXE", "CRAFT_STONE_AXE", 
+				"CRAFT_STONE_SPEAR", "CRAFT_WOODEN_CLUB", 
+				"CRAFT_VINE_BOLA", "CRAFT_TORCH" 
+			}, 
+			facilities = {} 
+		},
 		category = "SURVIVAL",
-	},
-	{
-		id = "TECH_Lv2_STONE_TOOLS",
-		name = "목재 가공", -- renamed from Stone Tools as they are now basic
-		requireLevel = 2,
-		techPointCost = 1,
-		unlocks = { recipes = { "CRAFT_TORCH" }, facilities = {} },
-		category = "TOOLS",
 	},
 	{
 		id = "TECH_Lv3_FIRE",
@@ -29,30 +28,6 @@ local TechUnlockData = {
 		techPointCost = 2,
 		unlocks = { recipes = {}, facilities = { "CAMPFIRE" } },
 		category = "SURVIVAL",
-	},
-	{
-		id = "TECH_Lv4_CLUB",
-		name = "나무 몽둥이",
-		requireLevel = 4,
-		techPointCost = 2,
-		unlocks = { recipes = { "CRAFT_WOODEN_CLUB" }, facilities = {} },
-		category = "WEAPONS",
-	},
-	{
-		id = "TECH_Lv5_BOLA1",
-		name = "넝쿨 볼라",
-		requireLevel = 5,
-		techPointCost = 2,
-		unlocks = { recipes = { "CRAFT_VINE_BOLA" }, facilities = {} },
-		category = "PAL",
-	},
-	{
-		id = "TECH_Lv6_SPEAR",
-		name = "돌 창",
-		requireLevel = 6,
-		techPointCost = 2,
-		unlocks = { recipes = { "CRAFT_STONE_SPEAR" }, facilities = {} },
-		category = "WEAPONS",
 	},
 	{
 		id = "TECH_Lv8_REPAIR",

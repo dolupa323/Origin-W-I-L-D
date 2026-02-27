@@ -67,31 +67,114 @@ local function getItemDisplayName(itemId: string): string
 	return itemId
 end
 
+local function findLootModel(itemId: string): Instance?
+	local assets = ReplicatedStorage:FindFirstChild("Assets")
+	if not assets then return nil end
+	local lootModels = assets:FindFirstChild("LootModels")
+	if not lootModels then return nil end
+	
+	-- 1. Exact match
+	local template = lootModels:FindFirstChild(itemId)
+	if template then return template end
+	
+	-- 2. Case-insensitive match
+	local lowerId = itemId:lower()
+	for _, child in ipairs(lootModels:GetChildren()) do
+		if child.Name:lower() == lowerId then
+			return child
+		end
+	end
+	
+	return nil
+end
+
 local function createDropModel(dropData)
 	if not dropData or not dropData.pos then return nil end
 	
-	-- 메인 파트 생성
-	local part = Instance.new("Part")
-	part.Name = "DropPart"
-	part.Size = DROP_SIZE
-	part.Shape = Enum.PartType.Ball
-	part.Color = getDropColor(dropData.itemId)
-	part.Material = Enum.Material.SmoothPlastic
-	part.Position = dropData.pos
-	part.Anchored = true
-	part.CanCollide = false
-	part.CanQuery = true
-	part.CanTouch = true
+	local template = findLootModel(dropData.itemId)
+	local mainObject
+	local isModel = false
 	
+	if template then
+		mainObject = template:Clone()
+		mainObject.Name = dropData.dropId
+		mainObject.Parent = dropFolder -- Parent early to avoid warnings
+		isModel = true
+		
+		-- Setup model
+		if mainObject:IsA("Model") then
+			if not mainObject.PrimaryPart then
+				local p = mainObject:FindFirstChildWhichIsA("BasePart", true)
+				if p then mainObject.PrimaryPart = p end
+			end
+			mainObject:PivotTo(CFrame.new(dropData.pos))
+		elseif mainObject:IsA("BasePart") then
+			mainObject.Position = dropData.pos
+		end
+		
+		-- Make non-collidable and anchored
+		for _, p in ipairs(mainObject:GetDescendants()) do
+			if p:IsA("BasePart") then
+				p.Anchored = true
+				p.CanCollide = false
+				p.CanQuery = true
+				p.CanTouch = true
+			end
+		end
+		if mainObject:IsA("BasePart") then
+			mainObject.Anchored = true
+			mainObject.CanCollide = false
+		end
+	else
+		-- Fallback to sphere
+		mainObject = Instance.new("Part")
+		mainObject.Name = dropData.dropId
+		mainObject.Parent = dropFolder -- Parent early
+		mainObject.Size = DROP_SIZE
+		mainObject.Shape = Enum.PartType.Ball
+		mainObject.Color = getDropColor(dropData.itemId)
+		mainObject.Material = Enum.Material.SmoothPlastic
+		mainObject.Position = dropData.pos
+		mainObject.Anchored = true
+		mainObject.CanCollide = false
+		mainObject.CanQuery = true
+		mainObject.CanTouch = true
+	end
+	
+	-- Common setup
+	local attachmentPoint = mainObject
+	if mainObject:IsA("Model") then
+		attachmentPoint = mainObject.PrimaryPart or mainObject:FindFirstChildWhichIsA("BasePart", true)
+	end
+	
+	if not attachmentPoint then
+		-- Fallback if model has no parts
+		attachmentPoint = Instance.new("Part")
+		attachmentPoint.Name = "AnchorPoint"
+		attachmentPoint.Size = Vector3.new(0.1, 0.1, 0.1)
+		attachmentPoint.Transparency = 1
+		attachmentPoint.Anchored = true
+		attachmentPoint.CanCollide = false
+		attachmentPoint.Position = dropData.pos
+		attachmentPoint.Parent = mainObject
+	end
+
 	-- 속성 설정 (InteractController 인식용)
-	part:SetAttribute("DropId", dropData.dropId)
-	part:SetAttribute("ItemId", dropData.itemId)
+	mainObject:SetAttribute("DropId", dropData.dropId)
+	mainObject:SetAttribute("ItemId", dropData.itemId)
+	
+	-- attachmentPoint에도 호환성을 위해 유지
+	if isModel then
+		attachmentPoint:SetAttribute("DropId", dropData.dropId)
+		attachmentPoint:SetAttribute("ItemId", dropData.itemId)
+	end
+	
 	local highlight = Instance.new("Highlight")
-	highlight.FillColor = part.Color
+	highlight.FillColor = template and Color3.new(1,1,1) or attachmentPoint.Color
 	highlight.FillTransparency = 0.7
 	highlight.OutlineColor = Color3.new(1, 1, 1)
 	highlight.OutlineTransparency = 0.5
-	highlight.Parent = part
+	highlight.Parent = mainObject
 	
 	-- 빌보드 GUI (아이템 이름 + 개수)
 	local billboard = Instance.new("BillboardGui")
@@ -100,7 +183,7 @@ local function createDropModel(dropData)
 	billboard.StudsOffset = BILLBOARD_OFFSET
 	billboard.AlwaysOnTop = true
 	billboard.MaxDistance = 30
-	billboard.Parent = part
+	billboard.Parent = attachmentPoint
 	
 	-- 배경 프레임
 	local frame = Instance.new("Frame")
@@ -144,10 +227,11 @@ local function createDropModel(dropData)
 	prompt.Name = "PickupPrompt"
 	prompt.ActionText = "줍기"
 	prompt.ObjectText = getItemDisplayName(dropData.itemId)
-	prompt.MaxActivationDistance = 8  -- 6 -> 8 로 상향
+	prompt.MaxActivationDistance = 8
 	prompt.HoldDuration = 0
 	prompt.KeyboardKeyCode = Enum.KeyCode.Z
-	prompt.Parent = part
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = attachmentPoint
 	
 	-- 줍기 이벤트
 	prompt.Triggered:Connect(function(player)
@@ -162,19 +246,22 @@ local function createDropModel(dropData)
 	task.spawn(function()
 		local startY = dropData.pos.Y
 		local t = 0
-		while part and part.Parent do
+		while mainObject and mainObject.Parent do
 			t = t + 0.05
 			local newY = startY + math.sin(t * 2) * 0.3
-			part.Position = Vector3.new(dropData.pos.X, newY, dropData.pos.Z)
 			
-			-- 회전 효과
-			part.CFrame = part.CFrame * CFrame.Angles(0, math.rad(1), 0)
+			if mainObject:IsA("Model") then
+				mainObject:PivotTo(CFrame.new(dropData.pos.X, newY, dropData.pos.Z) * CFrame.Angles(0, t, 0))
+			else
+				mainObject.Position = Vector3.new(dropData.pos.X, newY, dropData.pos.Z)
+				mainObject.CFrame = mainObject.CFrame * CFrame.Angles(0, math.rad(1), 0)
+			end
 			
 			task.wait(0.03)
 		end
 	end)
 	
-	return part
+	return mainObject
 end
 
 local function updateDropModel(dropId, newCount)
@@ -202,16 +289,23 @@ end
 local function removeDropModel(dropId)
 	local model = dropModels[dropId]
 	if model then
-		-- 페이드아웃 효과
-		local tween = TweenService:Create(model, TweenInfo.new(0.3), {
-			Transparency = 1
-		})
-		tween:Play()
-		tween.Completed:Connect(function()
-			model:Destroy()
-		end)
-		
 		dropModels[dropId] = nil
+		
+		if model:IsA("BasePart") then
+			local tween = TweenService:Create(model, TweenInfo.new(0.2), { Transparency = 1 })
+			tween:Play()
+			tween.Completed:Connect(function() model:Destroy() end)
+		else
+			-- For Models, fade out all parts
+			for _, p in ipairs(model:GetDescendants()) do
+				if p:IsA("BasePart") then
+					TweenService:Create(p, TweenInfo.new(0.2), { Transparency = 1 }):Play()
+				end
+			end
+			task.delay(0.25, function()
+				model:Destroy()
+			end)
+		end
 	end
 end
 
@@ -251,7 +345,6 @@ local function onSpawned(data)
 	-- 3D 모델 생성
 	local model = createDropModel(dropsCache[data.dropId])
 	if model then
-		model.Parent = dropFolder
 		dropModels[data.dropId] = model
 	end
 	

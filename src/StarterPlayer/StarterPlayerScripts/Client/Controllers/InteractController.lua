@@ -547,12 +547,24 @@ local function onHeartbeat()
 		if UIManager then
 			if target then
 				local promptText = "[Z] "
-				local targetName = target:GetAttribute("DisplayName") or target:GetAttribute("Name") or target.Name
+				local rawName = target:GetAttribute("DisplayName") or target:GetAttribute("Name") or target.Name
+				local targetName = rawName
 				
 				if targetType == "resource" then
 					promptText = "" -- 안내문 삭제 (HP바로 대체)
 				elseif targetType == "drop" then
 					promptText = promptText .. "줍기"
+					
+					-- 만약 이름이 구별 기호(Drop_)로 남아있다면 한국어로 아이템이라고 처리
+					local dropId = target:GetAttribute("DropId")
+					if dropId then
+						local itemData = DataHelper.GetData("ItemData", dropId)
+						if itemData then targetName = itemData.name end
+					end
+					
+					if type(targetName) == "string" and (targetName:lower():find("^drop_") or targetName:find("Drop")) then
+						targetName = "아이템"
+					end
 				elseif targetType == "npc" then
 					promptText = promptText .. "대화"
 				elseif targetType == "facility" then

@@ -121,6 +121,12 @@ end
 local function onInventoryChanged(data)
 	if not data then return end
 	
+	-- Store old cache to calc diff for notifications
+	local oldTotals = {}
+	for k, v in pairs(inventoryCache) do
+		if v.itemId then oldTotals[v.itemId] = (oldTotals[v.itemId] or 0) + v.count end
+	end
+	
 	if data.changes then
 		for _, change in ipairs(data.changes) do
 			local slot = change.slot
@@ -137,6 +143,32 @@ local function onInventoryChanged(data)
 
 	if data.totalWeight then totalWeight = data.totalWeight end
 	if data.maxWeight then maxWeight = data.maxWeight end
+	
+	-- Toast UI Notification check (Only run if actual item count increased)
+	local UIManager = require(script.Parent.Parent.UIManager)
+	if data.changes and UIManager and UIManager.notify then
+		local newTotals = {}
+		for k, v in pairs(inventoryCache) do
+			if v.itemId then newTotals[v.itemId] = (newTotals[v.itemId] or 0) + v.count end
+		end
+		
+		local notified = {}
+		for _, change in ipairs(data.changes) do
+			if not change.empty and change.count and change.itemId then
+				local itemId = change.itemId
+				if not notified[itemId] then
+					notified[itemId] = true
+					local diff = (newTotals[itemId] or 0) - (oldTotals[itemId] or 0)
+					if diff > 0 then
+						local DataHelper = require(ReplicatedStorage.Shared.Util.DataHelper)
+						local itemData = DataHelper.GetData("ItemData", itemId)
+						local name = itemData and itemData.name or itemId
+						UIManager.notify(string.format("획득: %s x%d", name, diff), Color3.fromRGB(150, 255, 150))
+					end
+				end
+			end
+		end
+	end
 	
 	-- 콜백 호출
 	fireChangeListeners()

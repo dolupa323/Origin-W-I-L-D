@@ -43,7 +43,6 @@ local Theme = require(UI.UITheme)
 local Utils = require(UI.UIUtils)
 local HUDUI = require(UI.HUDUI)
 local InventoryUI = require(UI.InventoryUI)
-local StatusUI = require(UI.StatusUI)
 local CraftingUI = require(UI.CraftingUI)
 local ShopUI = require(UI.ShopUI)
 local TechUI = require(UI.TechUI)
@@ -68,17 +67,30 @@ local selectedSlot = 1
 local inventoryFrame, statusFrame, craftingOverlay, shopFrame, techOverlay, interactPrompt
 local actionContainer, hotbarFrame -- Store refs for visibility control
 local craftDetailPanel, progFill, craftSpinner
-local isInvOpen, isStatusOpen, isCraftOpen, isShopOpen, isTechOpen = false, false, false, false, false
+local isInvOpen, isStatusOpen, isCraftOpen, isShopOpen, isTechOpen, isBuildOpen, isEquipmentOpen = false, false, false, false, false, false, false
+local cachedStats = {}
+local pendingStats = {}
 
 -- 0. UI 관리 헬퍼
+local function isAnyWindowOpen()
+	return isInvOpen or isCraftOpen or isShopOpen or isTechOpen or isBuildOpen or isEquipmentOpen or isStatusOpen
+end
+
+local function updateUIMode()
+	local anyOpen = isAnyWindowOpen()
+	InputManager.setUIOpen(anyOpen)
+	UIManager._setMainHUDVisible(not anyOpen)
+end
+
 local function closeAllWindows(except)
 	if isInvOpen and except ~= "INV" then UIManager.closeInventory() end
-	if isStatusOpen and except ~= "STATUS" then UIManager.closeStatus() end
 	if isCraftOpen and except ~= "CRAFT" then UIManager.closeCrafting() end
 	if isShopOpen and except ~= "SHOP" then UIManager.closeShop() end
 	if isTechOpen and except ~= "TECH" then UIManager.closeTechTree() end
 	if isBuildOpen and except ~= "BUILD" then UIManager.closeBuild() end
 	if isEquipmentOpen and except ~= "EQUIP" then UIManager.closeEquipment() end
+end
+
 ----------------------------------------------------------------
 -- Public API: Tech (K키)
 ----------------------------------------------------------------
@@ -86,6 +98,12 @@ function UIManager.openTechTree()
 	if isTechOpen then return end
 	closeAllWindows("TECH")
 	isTechOpen = true
+	
+	-- Blur
+	if not blurEffect then
+		blurEffect = Instance.new("BlurEffect"); blurEffect.Size = 15; blurEffect.Parent = Lighting
+	end
+	
 	TechUI.SetVisible(true)
 	InputManager.setUIOpen(true)
 	UIManager._setMainHUDVisible(false)
@@ -93,17 +111,14 @@ end
 
 function UIManager.closeTechTree()
 	if not isTechOpen then return end
+	if blurEffect then blurEffect:Destroy(); blurEffect = nil end
 	isTechOpen = false
 	TechUI.SetVisible(false)
-	if not isInvOpen and not isShopOpen and not isCraftOpen and not isStatusOpen and not isBuildOpen and not isEquipmentOpen then
-		InputManager.setUIOpen(false)
-		UIManager._setMainHUDVisible(true)
-	end
+	updateUIMode()
 end
 
 function UIManager.toggleTechTree()
 	if isTechOpen then UIManager.closeTechTree() else UIManager.openTechTree() end
-end
 end
 
 function UIManager._setMainHUDVisible(visible)
@@ -123,10 +138,51 @@ local categoryButtons = {}
 local craftNodes = {}
 local selectedRecipeId = nil
 local craftDetailPanel
-local buildUIFrame
-local isBuildOpen = false
 local equipmentUIFrame
-local isEquipmentOpen = false
+
+function UIManager.updateHealth(cur, max) HUDUI.UpdateHealth(cur, max) end
+function UIManager.updateStamina(cur, max) HUDUI.UpdateStamina(cur, max) end
+function UIManager.updateXP(cur, max) HUDUI.UpdateXP(cur, max) end
+function UIManager.updateLevel(lvl) HUDUI.UpdateLevel(lvl) end
+function UIManager.updateStatPoints(pts) HUDUI.UpdateStatPoints(pts) end
+
+function UIManager.getPendingStatCount(statId)
+	return pendingStats[statId] or 0
+end
+
+function UIManager.addPendingStat(statId)
+	local available = (cachedStats.statPointsAvailable or 0)
+	local currentTotalPending = 0
+	for _, v in pairs(pendingStats) do currentTotalPending = currentTotalPending + v end
+	
+	if currentTotalPending < available then
+		pendingStats[statId] = (pendingStats[statId] or 0) + 1
+		UIManager.refreshStats()
+	else
+		UIManager.notify("강화 포인트가 부족합니다.", C.RED)
+	end
+end
+
+function UIManager.cancelPendingStats()
+	pendingStats = {}
+	UIManager.refreshStats()
+end
+
+function UIManager.confirmPendingStats()
+	local total = 0
+	for _, v in pairs(pendingStats) do total = total + v end
+	if total <= 0 then return end
+	
+	task.spawn(function()
+		local ok, data = NetClient.Request("Player.Stats.Upgrade", {stats = pendingStats})
+		if ok then
+			pendingStats = {}
+			-- cachedStats는 Player.Stats.Changed 이벤트로 업데이트됨
+		else
+			UIManager.notify("강화 실패: " .. tostring(data), C.RED)
+		end
+	end)
+end
 ----------------------------------------------------------------
 -- Public API: Equipment (장비창)
 ----------------------------------------------------------------
@@ -134,27 +190,26 @@ function UIManager.openEquipment()
 	if isEquipmentOpen then return end
 	closeAllWindows("EQUIP")
 	isEquipmentOpen = true
-	if not equipmentUIFrame then
-		EquipmentUI.Init(playerGui, UIManager)
-		equipmentUIFrame = EquipmentUI.Refs.Frame
-	end
-	-- 실제 장비/스탯 데이터 연동
-	local equipmentData = InventoryController.getEquipment() -- 예시: {Head=..., Body=..., ...}
-	local statData = InventoryController.getStats() -- 예시: {strength=..., ...}
-	EquipmentUI.Refresh(equipmentData, statData, getItemIcon)
+	
+	-- UI 상태 즉시 반영
 	EquipmentUI.SetVisible(true)
-	InputManager.setUIOpen(true)
-	UIManager._setMainHUDVisible(false)
+	updateUIMode()
+	
+	-- 데이터 최신화 요청 (백그라운드)
+	task.spawn(function()
+		local ok, d = NetClient.Request("Player.Stats.Request", {})
+		if ok and d then cachedStats = d end
+		
+		local equipmentData = InventoryController.getEquipment and InventoryController.getEquipment() or {}
+		UIManager.refreshStats() 
+	end)
 end
 
 function UIManager.closeEquipment()
 	if not isEquipmentOpen then return end
 	isEquipmentOpen = false
 	EquipmentUI.SetVisible(false)
-	if not isInvOpen and not isShopOpen and not isCraftOpen and not isStatusOpen and not isTechOpen and not isBuildOpen then
-		InputManager.setUIOpen(false)
-		UIManager._setMainHUDVisible(true)
-	end
+	updateUIMode()
 end
 
 function UIManager.toggleEquipment()
@@ -180,10 +235,7 @@ function UIManager.closeBuild()
 	if not isBuildOpen then return end
 	isBuildOpen = false
 	BuildUI.SetVisible(false)
-	if not isInvOpen and not isShopOpen and not isCraftOpen and not isStatusOpen and not isTechOpen then
-		InputManager.setUIOpen(false)
-		UIManager._setMainHUDVisible(true)
-	end
+	updateUIMode()
 end
 
 function UIManager.toggleBuild()
@@ -249,18 +301,116 @@ function UIManager.updateLevel(lv)
 	HUDUI.UpdateLevel(lv)
 end
 
+function UIManager.notify(msg, color)
+	local maxToasts = 5
+	color = color or C.WHITE
+	
+	table.insert(notifyQueue, {text = msg, color = color})
+	
+	if not notifyConn then
+		notifyConn = true
+		task.spawn(function()
+			while #notifyQueue > 0 do
+				local toast = table.remove(notifyQueue, 1)
+				UIManager._showToast(toast.text, toast.color)
+				task.wait(0.5)
+			end
+			notifyConn = false
+		end)
+	end
+end
+
+function UIManager._showToast(text, color)
+	-- simple toast anchored to bottom right
+	local t = mkLabel({text = text, size = UDim2.new(0, 200, 0, 40), ts = 14, color = color, wrap = true, parent = mainGui})
+	t.AnchorPoint = Vector2.new(1, 1)
+	t.Position = UDim2.new(1, -20, 1, -150)
+	t.TextXAlignment = Enum.TextXAlignment.Right
+	t.TextStrokeTransparency = 0.5
+	
+	local uiList = mainGui:FindFirstChild("ToastUIList")
+	if not uiList then
+		local frame = Instance.new("Frame")
+		frame.Name = "ToastUIList"
+		frame.Size = UDim2.new(0, 250, 0, 300)
+		frame.Position = UDim2.new(1, -20, 1, -20)
+		frame.AnchorPoint = Vector2.new(1, 1)
+		frame.BackgroundTransparency = 1
+		frame.Parent = mainGui
+		local listLayout = Instance.new("UIListLayout")
+		listLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+		listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+		listLayout.Padding = UDim.new(0, 5)
+		listLayout.Parent = frame
+		uiList = frame
+	end
+	
+	t.Position = UDim2.new(1, 0, 1, 0)
+	t.Parent = uiList
+	
+	TweenService:Create(t, TweenInfo.new(3), {TextTransparency = 1, TextStrokeTransparency = 1}):Play()
+	game.Debris:AddItem(t, 3.1)
+end
+
 function UIManager.upgradeStat(statId)
+	UIManager.addPendingStat(statId)
+end
+
+local pendingStats = {}
+
+function UIManager.getPendingStatCount(statId)
+	return pendingStats[statId] or 0
+end
+
+function UIManager.addPendingStat(statId)
+	local currentPoints = (cachedStats and cachedStats.statPointsAvailable) or 0
+	local totalPending = 0
+	for _, v in pairs(pendingStats) do totalPending = totalPending + v end
+	
+	if currentPoints - totalPending > 0 then
+		pendingStats[statId] = (pendingStats[statId] or 0) + 1
+		UIManager.refreshStats()
+	else
+		UIManager.notify("보유 포인트가 부족합니다.", C.RED)
+	end
+end
+
+function UIManager.cancelPendingStats()
+	pendingStats = {}
+	UIManager.refreshStats()
+end
+
+function UIManager.confirmPendingStats()
+	local toUpgrade = {}
+	for statId, amount in pairs(pendingStats) do
+		if amount > 0 then
+			for i=1, amount do
+				table.insert(toUpgrade, statId)
+			end
+		end
+	end
+	
+	if #toUpgrade == 0 then return end
+	
 	task.spawn(function()
-		local ok, d = NetClient.Request("Player.Stats.Upgrade.Request", {statId = statId})
-		if ok then
+		local allOk = true
+		for _, statId in ipairs(toUpgrade) do
+			local ok, d = NetClient.Request("Player.Stats.Upgrade.Request", {statId = statId})
+			if not ok then allOk = false break end
+		end
+		
+		if allOk then
 			local ok2, stats = NetClient.Request("Player.Stats.Request", {})
 			if ok2 and stats then
 				cachedStats = stats
+				pendingStats = {}
 				UIManager.refreshStats()
 			end
 			UIManager.notify("추가 완료!", C.GOLD)
 		else
-			UIManager.notify("포인트가 부족합니다.", C.RED)
+			pendingStats = {}
+			UIManager.refreshStats()
+			UIManager.notify("일부 적용에 실패했습니다.", C.RED)
 		end
 	end)
 end
@@ -335,7 +485,7 @@ end
 function UIManager.refreshHotbar()
 	local items = InventoryController.getItems()
 	for i=1,8 do
-		local s = hotbarSlots[i]
+		local s = hotbarSlots and hotbarSlots[i]
 		if s then
 			local item = items[i]
 			if item and item.itemId then
@@ -368,41 +518,11 @@ function UIManager.closeInventory()
 	if not isInvOpen then return end
 	isInvOpen = false
 	InventoryUI.SetVisible(false)
-	if not isShopOpen and not isCraftOpen and not isStatusOpen and not isTechOpen then 
-		InputManager.setUIOpen(false) 
-		UIManager._setMainHUDVisible(true)
-	end
+	updateUIMode()
 end
 
 function UIManager.toggleInventory()
 	if isInvOpen then UIManager.closeInventory() else UIManager.openInventory() end
-end
-
-----------------------------------------------------------------
--- Public API: Status / Stats
-----------------------------------------------------------------
-function UIManager.openStatus()
-	if isStatusOpen then return end
-	closeAllWindows("STATUS")
-	isStatusOpen = true
-	StatusUI.SetVisible(true)
-	InputManager.setUIOpen(true)
-	UIManager._setMainHUDVisible(false)
-	UIManager.refreshStats()
-end
-
-function UIManager.closeStatus()
-	if not isStatusOpen then return end
-	isStatusOpen = false
-	StatusUI.SetVisible(false)
-	if not isInvOpen and not isShopOpen and not isCraftOpen and not isTechOpen then 
-		InputManager.setUIOpen(false) 
-		UIManager._setMainHUDVisible(true)
-	end
-end
-
-function UIManager.toggleStatus()
-	if isStatusOpen then UIManager.closeStatus() else UIManager.openStatus() end
 end
 
 function UIManager.refreshInventory()
@@ -416,7 +536,13 @@ function UIManager.refreshInventory()
 end
 
 function UIManager.refreshStats()
-	StatusUI.Refresh(cachedStats, Enums)
+	local totalPending = 0
+	for _, v in pairs(pendingStats) do totalPending = totalPending + v end
+	
+	if isEquipmentOpen then
+		local equipmentData = InventoryController.getEquipment and InventoryController.getEquipment() or {}
+		EquipmentUI.Refresh(cachedStats, totalPending, equipmentData, getItemIcon, Enums)
+	end
 end
 
 ----------------------------------------------------------------
@@ -530,12 +656,80 @@ function UIManager.handleDragEnd(input)
 	pendingDragIdx = nil
 end
 
+local modalActionType = "DROP" -- DROP or SPLIT
+
+function UIManager.openDropModal()
+	if not selectedInvSlot then return end
+	local item = InventoryController.getSlot(selectedInvSlot)
+	if not item then return end
+	
+	modalActionType = "DROP"
+	
+	local m = InventoryUI.Refs.DropModal
+	m.Frame.Visible = true
+	m.Input.Text = tostring(item.count or 1)
+	m.MaxLabel.Text = "(최대: " .. (item.count or 1) .. ")"
+end
+
+function UIManager.openSplitModal()
+	if not selectedInvSlot then return end
+	local item = InventoryController.getSlot(selectedInvSlot)
+	if not item or not item.count or item.count <= 1 then return end
+	
+	modalActionType = "SPLIT"
+	
+	local m = InventoryUI.Refs.DropModal
+	m.Frame.Visible = true
+	m.Input.Text = tostring(math.floor(item.count / 2))
+	m.MaxLabel.Text = "(최대: " .. (item.count - 1) .. ")"
+end
+
+function UIManager.getSelectedInvSlot()
+	return selectedInvSlot
+end
+
+function UIManager.confirmModalAction(count)
+	if not selectedInvSlot then return end
+	local item = InventoryController.getSlot(selectedInvSlot)
+	if not item then return end
+	
+	if modalActionType == "DROP" then
+		local maxCount = item.count or 1
+		local validCount = math.max(1, math.min(count, maxCount))
+		InventoryController.requestDrop(selectedInvSlot, validCount)
+	elseif modalActionType == "SPLIT" then
+		local maxCount = (item.count or 1) - 1
+		if maxCount >= 1 then
+			local validCount = math.max(1, math.min(count, maxCount))
+			-- Find empty slot
+			local emptySlot = nil
+			local items = InventoryController.getItems()
+			for i=1, Balance.INV_SLOTS do
+				if not items[i] then emptySlot = i; break end
+			end
+			if emptySlot then
+				task.spawn(function()
+					NetClient.Request("Inventory.Split.Request", {
+						fromSlot = selectedInvSlot,
+						toSlot = emptySlot,
+						count = validCount
+					})
+				end)
+			else
+				UIManager.notify("빈 슬롯이 없습니다.", C.RED)
+			end
+		end
+	end
+	
+	InventoryUI.Refs.DropModal.Frame.Visible = false
+end
+
 function UIManager._onInvSlotClick(idx)
 	selectedInvSlot = idx
-	
 	local items = InventoryController.getItems()
 	local data = items[idx]
 	InventoryUI.UpdateDetail(data, getItemIcon, Enums, DataHelper)
+	InventoryUI.UpdateSlotSelectionHighlight(idx)
 end
 
 function UIManager.onInventorySlotClick(idx)
@@ -545,33 +739,6 @@ end
 function UIManager.onUseItem()
 	if not selectedInvSlot then return end
 	InventoryController.requestUse(selectedInvSlot)
-end
-
-function UIManager.openDropModal()
-	if not selectedInvSlot then return end
-	local item = InventoryController.getSlot(selectedInvSlot)
-	if not item then return end
-	
-	local m = InventoryUI.Refs.DropModal
-	m.Frame.Visible = true
-	m.Input.Text = tostring(item.count or 1)
-	m.MaxLabel.Text = "(최대: " .. (item.count or 1) .. ")"
-end
-
-function UIManager.getSelectedInvSlot()
-	return selectedInvSlot
-end
-
-function UIManager.confirmDrop(count)
-	if not selectedInvSlot then return end
-	local item = InventoryController.getSlot(selectedInvSlot)
-	if not item then return end
-	
-	local maxCount = item.count or 1
-	local validCount = math.max(1, math.min(count, maxCount))
-	
-	InventoryController.requestDrop(selectedInvSlot, validCount)
-	InventoryUI.Refs.DropModal.Frame.Visible = false
 end
 
 ----------------------------------------------------------------
@@ -619,10 +786,7 @@ function UIManager.closeCrafting()
 	isCraftOpen = false
 	CraftingUI.SetVisible(false)
 	selectedRecipeId = nil
-	if not isInvOpen and not isShopOpen and not isStatusOpen and not isTechOpen then 
-		InputManager.setUIOpen(false) 
-		UIManager._setMainHUDVisible(true)
-	end
+	updateUIMode()
 end
 
 function UIManager.toggleCrafting()
@@ -652,7 +816,7 @@ function UIManager.refreshCrafting()
 		end)
 
 		local playerItemCounts = InventoryController.getItemCounts()
-		CraftingUI.Refresh(itemsToShow, playerItemCounts, getItemIcon, menuMode)
+		CraftingUI.Refresh(itemsToShow, playerItemCounts, getItemIcon, menuMode, UIManager)
 	end)
 end
 
@@ -669,7 +833,7 @@ function UIManager._onCraftSlotClick(item, mode)
 	local isLocked = item.isLocked
 	local canMake, _ = UIManager.checkMaterials(item, playerItemCounts)
 	
-	CraftingUI.UpdateDetail(item, mode, isLocked, canMake, playerItemCounts)
+	CraftingUI.UpdateDetail(item, mode, isLocked, canMake, playerItemCounts, DataHelper)
 end
 
 -- 재료 체크 헬퍼
@@ -831,15 +995,26 @@ function UIManager._updatePersonalCraftDetail(recipe)
 	-- For now, let's just manually update InventoryUI.Refs.Detail components.
 	local d = InventoryUI.Refs.Detail
 	if d.Frame then
-		d.Name.Text = (isLocked and "🔒 " or "") .. (recipe.name or recipe.id)
-		d.PreviewIcon.Image = getItemIcon(recipe.outputs and recipe.outputs[1] and recipe.outputs[1].itemId or recipe.id)
-		d.Weight.Text = "제작 소요: " .. (recipe.craftTime or 0) .. "초"
+		d.Name.Text = recipe.name or recipe.id
+		local outItem = recipe.outputs and recipe.outputs[1] and recipe.outputs[1].itemId or recipe.id
+		d.PreviewIcon.Image = getItemIcon(outItem)
+		d.PreviewIcon.Visible = true
+		
+		local DataHelper = require(ReplicatedStorage.Shared.Util.DataHelper)
+		local itemData = DataHelper.GetData("ItemData", outItem)
+		d.Desc.Text = ""
+		
+		d.Stats.Visible = false
+		d.Weight.Text = ""
 		
 		local matsText = ""
 		for _, inp in ipairs(recipe.inputs or {}) do
 			local have = playerItemCounts[inp.itemId or inp.id] or 0
 			local req = inp.count or 0
-			matsText = matsText .. string.format("%s %d/%d\n", inp.itemId, have, req)
+			local matId = inp.itemId or inp.id
+			local matData = DataHelper.GetData("ItemData", matId)
+			local matName = matData and matData.name or matId
+			matsText = matsText .. string.format("%s %d/%d\n", matName, have, req)
 		end
 		d.Mats.Text = "필요 재료:\n" .. matsText
 		d.BtnUse.Text = "제작하기"
@@ -858,36 +1033,12 @@ local spinnerConn = nil
 function UIManager.showCraftingProgress(duration)
 	if isCrafting then return end
 	isCrafting = true
-	
-	if craftSpinner then
-		craftSpinner.Visible = true
-		if spinnerConn then spinnerConn:Disconnect() end
-		spinnerConn = RunService.RenderStepped:Connect(function(dt)
-			craftSpinner.Rotation = craftSpinner.Rotation + 180 * dt
-		end)
-	end
-	
-	if progFill then
-		progFill.Size = UDim2.new(0,0,1,0)
-		craftTween = TweenService:Create(progFill, TweenInfo.new(duration, Enum.EasingStyle.Linear), {Size = UDim2.new(1,0,1,0)})
-		craftTween:Play()
-	end
-	
-	-- 버튼 텍스트 변경
-	local craftLabel = craftingOverlay:FindFirstChild("CraftLabel", true)
-	if craftLabel then craftLabel.Text = "제작 중..." end
+	HUDUI.ShowHarvestProgress(duration, "제작 중...")
 end
 
 function UIManager.stopCraftingProgress()
 	isCrafting = false
-	if spinnerConn then spinnerConn:Disconnect(); spinnerConn = nil end
-	if craftSpinner then craftSpinner.Visible = false end
-	if craftTween then craftTween:Cancel(); craftTween = nil end
-	
-	local craftLabel = craftingOverlay:FindFirstChild("CraftLabel", true)
-	if craftLabel then craftLabel.Text = "제작" end
-	
-	if progFill then progFill.Size = UDim2.new(0,0,1,0) end
+	HUDUI.HideHarvestProgress()
 end
 function UIManager._doCraft()
 	-- 1. 인벤토리 내 개인 제작 처리
@@ -1073,10 +1224,7 @@ function UIManager.closeShop()
 	if not isShopOpen then return end
 	isShopOpen = false
 	ShopUI.SetVisible(false)
-	if not isInvOpen and not isCraftOpen and not isTechOpen then 
-		InputManager.setUIOpen(false) 
-		UIManager._setMainHUDVisible(true)
-	end
+	updateUIMode()
 end
 
 function UIManager.refreshShop(shopId)
@@ -1110,26 +1258,6 @@ function UIManager.requestSell(slotIdx)
 	end)
 end
 
-function UIManager.closeStatus()
-	if not isStatusOpen then return end
-	isStatusOpen = false
-	StatusUI.SetVisible(false)
-	if not isInvOpen and not isShopOpen and not isCraftOpen and not isTechOpen then 
-		InputManager.setUIOpen(false) 
-		UIManager._setMainHUDVisible(true)
-	end
-end
-
-function UIManager.closeShop()
-	if not isShopOpen then return end
-	isShopOpen = false
-	ShopUI.SetVisible(false)
-	if not isInvOpen and not isStatusOpen and not isCraftOpen and not isTechOpen then 
-		InputManager.setUIOpen(false) 
-		UIManager._setMainHUDVisible(true)
-	end
-end
-
 ----------------------------------------------------------------
 -- Public API: Interact / Harvest
 ----------------------------------------------------------------
@@ -1147,10 +1275,6 @@ end
 
 function UIManager.showHarvestProgress(totalTime, targetName)
 	HUDUI.ShowHarvestProgress(totalTime, targetName)
-end
-
-function UIManager.updateHarvestProgress(pct)
-	HUDUI.UpdateHarvestProgress(pct)
 end
 
 function UIManager.hideHarvestProgress()
@@ -1229,6 +1353,27 @@ local function setupEventListeners()
 		InputManager.bindKey(hotbarKeys[i], "HB"..i, function() UIManager.selectHotbarSlot(i) end)
 	end
 
+	-- Mouse Wheel (Hotbar scroll) - DISABLED as per user request to allow zoom only
+	-- UserInputService.InputChanged:Connect(function(input, processed)
+	-- 	if processed or isUIOpen or isCraftOpen or isShopOpen or isTechOpen then return end
+	-- 	if input.UserInputType == Enum.UserInputType.MouseWheel then
+	-- 		local delta = input.Position.Z
+	-- 		local newSlot = selectedSlot
+	-- 		if delta > 0 then
+	-- 			newSlot = selectedSlot - 1
+	-- 		else
+	-- 			newSlot = selectedSlot + 1
+	-- 		end
+	-- 		
+	-- 		if newSlot < 1 then newSlot = 8 end
+	-- 		if newSlot > 8 then newSlot = 1 end
+	-- 		
+	-- 		if newSlot ~= selectedSlot then
+	-- 			UIManager.selectHotbarSlot(newSlot)
+	-- 		end
+	-- 	end
+	-- end)
+
 	-- Stats event
 	if NetClient.On then
 		NetClient.On("Player.Stats.Changed", function(d)
@@ -1240,7 +1385,7 @@ local function setupEventListeners()
 					UIManager.notify(" 레벨업! Lv. "..d.level, C.GOLD)
 				end
 				if d.statPointsAvailable ~= nil then UIManager.updateStatPoints(d.statPointsAvailable) end
-				if isStatusOpen then UIManager.refreshStats() end
+				if isEquipmentOpen then UIManager.refreshStats() end
 			end
 		end)
 		
@@ -1321,14 +1466,18 @@ function UIManager.Init()
 	mainGui.IgnoreGuiInset = false
 	mainGui.Parent = playerGui
 
+	-- [수정] 기본 로블록스 가방/도구 이름 UI 비활성화
+	game:GetService("StarterGui"):SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
+
 	-- 신규 모듈형 UI 초기화
 	HUDUI.Init(mainGui, UIManager, InputManager)
 	InventoryUI.Init(mainGui, UIManager)
-	StatusUI.Init(mainGui, UIManager, NetClient, Enums)
 	CraftingUI.Init(mainGui, UIManager)
 	ShopUI.Init(mainGui, UIManager)
 	TechUI.Init(mainGui, UIManager)
 	InteractUI.Init(mainGui)
+	EquipmentUI.Init(mainGui, UIManager, Enums)
+	equipmentUIFrame = EquipmentUI.Refs.Frame
 
 	-- 슬롯 참조만 유지 (드래그 앤 드롭 및 리프레시 로직용)
 	hotbarSlots = HUDUI.Refs.hotbarSlots

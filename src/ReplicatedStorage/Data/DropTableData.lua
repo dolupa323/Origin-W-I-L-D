@@ -8,7 +8,6 @@ local DropTableData = {
 	--========================================
 	["DODO"] = {
 		{ itemId = "MEAT", chance = 1.0, min = 1, max = 1 },
-		{ itemId = "FEATHER", chance = 0.7, min = 1, max = 3 },
 	},
 	["COMPY"] = {
 		{ itemId = "MEAT", chance = 0.8, min = 1, max = 1 },

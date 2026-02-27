@@ -69,14 +69,19 @@ local function playAttackAnimation(isHit: boolean)
 	local toolType = getEquippedToolType()
 	local animNames
 	
-	if toolType == "AXE" or toolType == "PICKAXE" then
-		animNames = AnimationIds.COMBO_TOOL
+	if toolType == "AXE" then
+		animNames = { AnimationIds.ATTACK_SPEAR.SWING }
+	elseif toolType == "PICKAXE" then
+		animNames = { "AttackTool_Mine" }
 	elseif toolType == "SPEAR" then
 		animNames = { AnimationIds.ATTACK_SPEAR.THRUST, AnimationIds.ATTACK_SPEAR.SWING }
-	elseif toolType == "CLUB" then
-		animNames = { AnimationIds.ATTACK_CLUB.SMASH, AnimationIds.ATTACK_CLUB.SWING }
+	elseif toolType == "BOLA" then
+		animNames = { AnimationIds.BOLA.THROW }
+	elseif toolType == "CLUB" or toolType == "TORCH" then
+		-- 나무 몽둥이와 횃불은 맨손 1, 2타만 사용 (3타 제외)
+		animNames = { AnimationIds.COMBO_UNARMED[1], AnimationIds.COMBO_UNARMED[2] }
 	else
-		-- 맨손 공격
+		-- 맨손 공격 (1, 2, 3타 모두 사용)
 		animNames = AnimationIds.COMBO_UNARMED
 	end
 	

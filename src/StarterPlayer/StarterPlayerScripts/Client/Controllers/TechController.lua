@@ -44,6 +44,10 @@ function TechController.isUnlocked(techId: string): boolean
 end
 
 function TechController.isRecipeUnlocked(recipeId: string): boolean
+	if recipeId == "STONE_SPEAR" or recipeId == "WOODEN_CLUB" or recipeId == "STONE_BOLA" or recipeId == "TORCH" or recipeId == "STONE_AXE" or recipeId == "STONE_PICKAXE" then
+		return true
+	end
+	
 	-- 모든 해금된 기술을 순회하여 해당 레시피가 포함되어 있는지 확인
 	for techId, _ in pairs(unlockedTech) do
 		local tech = techTreeData[techId]

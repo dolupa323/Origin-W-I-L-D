@@ -200,6 +200,20 @@ local function _emitChanged(player: Player, changes: {{slot: number, itemId: str
 		end)
 	end
 
+	-- 현재 활성 슬롯(1~8)의 아이템이 변경되었다면 장착 모델 업데이트
+	local active = playerActiveSlots[userId]
+	local activeSlotChanged = false
+	for _, ch in ipairs(changes) do
+		if ch.slot == active then
+			activeSlotChanged = true
+			break
+		end
+	end
+	if activeSlotChanged and EquipService then
+		local item = inv.slots[active]
+		EquipService.equipItem(player, item and item.itemId)
+	end
+
 	if NetController and #changes > 0 then
 		local totalWeight = _getTotalWeight(inv)
 		local maxWeight = _getMaxWeight(userId)
@@ -267,6 +281,8 @@ end
 --- 활성 슬롯 설정
 function InventoryService.setActiveSlot(userId: number, slot: number)
 	if slot < 1 or slot > 8 then return end -- 핫바 범위만
+	if playerActiveSlots[userId] == slot then return end -- 이미 활성 슬롯이면 무시
+	
 	playerActiveSlots[userId] = slot
 	
 	-- 시각적 장착 업데이트
@@ -276,6 +292,12 @@ function InventoryService.setActiveSlot(userId: number, slot: number)
 			local item = InventoryService.getSlot(userId, slot)
 			EquipService.equipItem(player, item and item.itemId)
 		end
+	end
+	
+	-- 클라이언트에 알림
+	local player = Players:GetPlayerByUserId(userId)
+	if player then
+		NetController.FireClient(player, "Inventory.ActiveSlot.Changed", { slot = slot })
 	end
 end
 

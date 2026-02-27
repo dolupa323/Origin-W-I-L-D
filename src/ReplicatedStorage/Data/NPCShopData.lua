@@ -32,7 +32,6 @@ NPCShopData.GENERAL_STORE = {
 		{ itemId = "FIBER", price = 1 },
 		{ itemId = "MEAT", price = 8 },       -- RAW_MEAT -> MEAT 수정
 		{ itemId = "LEATHER", price = 15 },
-		{ itemId = "FEATHER", price = 5 },
 		{ itemId = "BONE", price = 10 },
 		{ itemId = "HORN", price = 25 },
 	},
