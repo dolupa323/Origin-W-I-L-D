@@ -19,7 +19,7 @@ function UIUtils.mkWindow(p)
 end
 
 function UIUtils.mkFrame(p)
-	local f = Instance.new("Frame")
+	local f = p.useCanvas and Instance.new("CanvasGroup") or Instance.new("Frame")
 	f.Name = p.name or "Frame"
 	f.Size = p.size or UDim2.new(1, 0, 1, 0)
 	f.Position = p.pos or UDim2.new(0, 0, 0, 0)
@@ -199,6 +199,28 @@ function UIUtils.mkSlot(p)
 		parent = slot
 	})
 
+	local durBg = UIUtils.mkFrame({
+		name = "DurabilityBG",
+		size = UDim2.new(0.8, 0, 0, 4),
+		pos = UDim2.new(0.5, 0, 1, -4),
+		anchor = Vector2.new(0.5, 1),
+		bg = Color3.fromRGB(50, 50, 50),
+		bgT = 0,
+		vis = false,
+		z = slot.ZIndex + 3,
+		parent = slot
+	})
+	
+	local durFill = UIUtils.mkFrame({
+		name = "Fill",
+		size = UDim2.new(1, 0, 1, 0),
+		pos = UDim2.new(0, 0, 0, 0),
+		bg = Color3.fromRGB(150, 255, 150),
+		bgT = 0,
+		z = slot.ZIndex + 4,
+		parent = durBg
+	})
+
 	local click = Instance.new("TextButton")
 	click.Name = "Click"
 	click.Size = UDim2.new(1, 0, 1, 0)
@@ -211,7 +233,9 @@ function UIUtils.mkSlot(p)
 		frame = slot,
 		icon = icon,
 		countLabel = count,
-		click = click
+		click = click,
+		durBg = durBg,
+		durFill = durFill
 	}
 end
 
@@ -249,6 +273,29 @@ function UIUtils.mkBar(p)
 		fill = fill,
 		label = label
 	}
+end
+
+--- UI 선 그리기 (두 점 사이 연결)
+function UIUtils.mkLine(p)
+	local line = UIUtils.mkFrame({
+		name = p.name or "Line",
+		bg = p.color or C.BORDER_DIM,
+		bgT = p.bgT or 0.4,
+		parent = p.parent
+	})
+	
+	-- 두 포인트(Vector2) 사이의 거리와 회전 계산
+	local p1, p2 = p.p1, p.p2
+	local diff = p2 - p1
+	local dist = diff.Magnitude
+	local ang = math.deg(math.atan2(diff.Y, diff.X))
+	
+	line.Size = UDim2.new(0, dist, 0, p.thick or 2)
+	line.Position = UDim2.new(0, p1.X, 0, p1.Y)
+	line.AnchorPoint = Vector2.new(0, 0.5)
+	line.Rotation = ang
+	
+	return line
 end
 
 return UIUtils

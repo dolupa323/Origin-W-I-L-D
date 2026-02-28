@@ -14,8 +14,7 @@ local ResourceUIController = {}
 --========================================
 -- Constants
 --========================================
-local UI_OFFSET = Vector3.new(0, 3, 0) -- 위치 하향 (5 -> 3)
-local BAR_SIZE = UDim2.new(0, 90, 0, 10) -- 크기 소폭 축소
+local BAR_SIZE = UDim2.new(0, 90, 0, 4) -- HP바를 아주 얇은 선 형태로 축소 (10 -> 4)
 
 --========================================
 -- Internal State
@@ -34,25 +33,62 @@ local function createHPBar(nodeModel, nodeUID, maxHits)
 	local primary = nodeModel.PrimaryPart or nodeModel:FindFirstChildWhichIsA("BasePart")
 	if not primary then return nil end
 	
-	-- BillboardGui 생성
+	-- 나무처럼 위치가 높은 오브젝트에 대한 확실한 높이 고정 로직 (바운딩 박스 최하단 기준 + 3~4 떨어짐)
 	local bg = Instance.new("BillboardGui")
 	bg.Name = "ResourceHPBar"
 	bg.Size = UDim2.new(0, 120, 0, 40)
 	bg.Adornee = primary
-	bg.StudsOffset = UI_OFFSET
-	bg.AlwaysOnTop = false
+	
+	-- 전체 모델의 바운딩 크기를 기반으로 하단부터 계산하여 눈높이로 강제 고정
+	local cframe, size = nodeModel:GetBoundingBox()
+	local targetY = cframe.Y -- 모델의 실질적인 정중앙 높이
+	local groundY = targetY - (size.Y/2)
+	
+	-- 크기가 10 스터드를 넘으면 4.5(시선 조금 위), 아니면 3
+	local eyeLevelY = groundY + (size.Y > 10 and 4.5 or 3)
+	
+	-- ExtentsOffsetWorldSpace은 Adornee 파트의 바운딩박스와 영향을 주고받으므로
+	-- 절대좌표 오프셋인 StudsOffsetWorldSpace를 사용하여 파트 중심점과 상관없이 무조건 바닥 높이로 맞춥니다.
+	local offsetFromPrimary = eyeLevelY - primary.Position.Y
+	bg.StudsOffsetWorldSpace = Vector3.new(0, offsetFromPrimary, 0)
+	
+	bg.AlwaysOnTop = true -- 모델 파트에 피묻히거나 가려지지 않고 항상 렌더링되게 변경
 	bg.MaxDistance = 60
 	
-	-- 배경
+	-- 배경 (이름 + 바 전체를 덮는 테마형 레이아웃)
+	local mainFrame = Instance.new("Frame")
+	mainFrame.Name = "BG"
+	mainFrame.Size = UDim2.new(1, 0, 1, 0)
+	mainFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	mainFrame.BackgroundTransparency = 0.95 -- 유리 수준으로 매우 투명하게 변경
+	mainFrame.BorderSizePixel = 0
+	mainFrame.Parent = bg
+	
+	local cornerMain = Instance.new("UICorner")
+	cornerMain.CornerRadius = UDim.new(0, 4)
+	cornerMain.Parent = mainFrame
+	
+	-- 이름 텍스트
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, 0, 0.4, 0)
+	label.BackgroundTransparency = 1
+	label.Text = nodeModel.Name
+	label.TextColor3 = Color3.fromRGB(255, 255, 255)
+	label.TextTransparency = 0.5
+	label.TextSize = 8 -- 글씨 아주 작게 축소 (10 -> 8)
+	label.Font = Enum.Font.GothamMedium
+	label.TextStrokeTransparency = 1 -- 텍스트 외곽선도 완전 투명화(제거)
+	label.Parent = mainFrame
+	
+	-- HP 바 배경
 	local frame = Instance.new("Frame")
-	frame.Name = "BG"
+	frame.Name = "HealthBG"
 	frame.Size = BAR_SIZE
-	frame.Position = UDim2.new(0.5, 0, 0.5, 0)
-	frame.AnchorPoint = Vector2.new(0.5, 0.5)
-	frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	frame.BackgroundTransparency = 0.7 -- 투명도 상향 (0.5 -> 0.7)
+	frame.Position = UDim2.new(0.5, 0, 0.6, 0)
+	frame.AnchorPoint = Vector2.new(0.5, 0)
+	frame.BackgroundTransparency = 1 -- 부모(mainFrame) 배경만 보이게 투명 처리
 	frame.BorderSizePixel = 0
-	frame.Parent = bg
+	frame.Parent = mainFrame
 	
 	local corner = Instance.new("UICorner")
 	corner.CornerRadius = UDim.new(0, 4)
@@ -63,25 +99,12 @@ local function createHPBar(nodeModel, nodeUID, maxHits)
 	fill.Name = "Fill"
 	fill.Size = UDim2.new(1, 0, 1, 0)
 	fill.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
-	fill.BackgroundTransparency = 0.6 -- 투명도 상향 (0.4 -> 0.6)
+	fill.BackgroundTransparency = 0.6
 	fill.BorderSizePixel = 0
 	fill.Parent = frame
 	
-	local corner2 = corner:Clone()
+	local corner2 = cornerMain:Clone()
 	corner2.Parent = fill
-	
-	-- 텍스트 (아이템 이름 등)
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2.new(1, 0, 0, 14)
-	label.Position = UDim2.new(0, 0, -1, 0)
-	label.BackgroundTransparency = 1
-	label.Text = nodeModel.Name
-	label.TextColor3 = Color3.fromRGB(255, 255, 255)
-	label.TextTransparency = 0.5 -- 투명도 상향 (0.3 -> 0.5)
-	label.TextSize = 10
-	label.Font = Enum.Font.GothamMedium
-	label.TextStrokeTransparency = 0.8
-	label.Parent = frame
 	
 	bg.Parent = nodeModel
 	activeBars[nodeUID] = bg
@@ -106,10 +129,16 @@ local function updateHPBar(nodeUID, remainingHits, maxHits)
 	end
 	
 	if bg then
-		local fill = bg.BG:FindFirstChild("Fill")
-		if fill then
-			local ratio = math.clamp(remainingHits / maxHits, 0, 1)
-			TweenService:Create(fill, TweenInfo.new(0.2), {Size = UDim2.new(ratio, 0, 1, 0)}):Play()
+		local bgFrame = bg:FindFirstChild("BG")
+		if bgFrame then
+			local healthBG = bgFrame:FindFirstChild("HealthBG")
+			if healthBG then
+				local fill = healthBG:FindFirstChild("Fill")
+				if fill then
+					local ratio = math.clamp(remainingHits / maxHits, 0, 1)
+					TweenService:Create(fill, TweenInfo.new(0.2), {Size = UDim2.new(ratio, 0, 1, 0)}):Play()
+				end
+			end
 		end
 	end
 end

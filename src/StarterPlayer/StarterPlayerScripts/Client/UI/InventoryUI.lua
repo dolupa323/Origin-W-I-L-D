@@ -38,7 +38,8 @@ InventoryUI.Refs = {
 	CraftGrid = nil,
 }
 
-function InventoryUI.Init(parent, UIManager)
+function InventoryUI.Init(parent, UIManager, isMobile)
+	local isSmall = isMobile
 	-- Background Shadow Overlay
 	InventoryUI.Refs.Frame = Utils.mkFrame({
 		name = "InventoryMenu",
@@ -52,7 +53,7 @@ function InventoryUI.Init(parent, UIManager)
 	-- Main Panel
 	local main = Utils.mkWindow({
 		name = "Main",
-		size = UDim2.new(0.9, 0, 0.85, 0),
+		size = UDim2.new(isSmall and 0.95 or 0.9, 0, isSmall and 0.95 or 0.85, 0),
 		pos = UDim2.new(0.5, 0, 0.5, 0),
 		anchor = Vector2.new(0.5, 0.5),
 		bg = C.BG_PANEL,
@@ -61,7 +62,7 @@ function InventoryUI.Init(parent, UIManager)
 		stroke = 2,
 		strokeC = C.BORDER_DIM,
 		parent = InventoryUI.Refs.Frame,
-		ratio = 1.6 -- Durango is very widescreen
+		ratio = isSmall and 1.3 or 1.6 -- Durango is very widescreen
 	})
 
 	-- [Header]
@@ -105,7 +106,8 @@ function InventoryUI.Init(parent, UIManager)
 	scroll.Parent = gridArea
 	
 	local grid = Instance.new("UIGridLayout")
-	grid.CellSize = UDim2.new(0, 75, 0, 75)
+	local cellSize = isSmall and 65 or 75
+	grid.CellSize = UDim2.new(0, cellSize, 0, cellSize)
 	grid.CellPadding = UDim2.new(0, 4, 0, 4)
 	grid.SortOrder = Enum.SortOrder.LayoutOrder
 	grid.Parent = scroll
@@ -134,6 +136,9 @@ function InventoryUI.Init(parent, UIManager)
 		end)
 		
 		slot.click.MouseButton1Click:Connect(function() UIManager._onInvSlotClick(i) end)
+		slot.click.MouseButton2Click:Connect(function() 
+			if UIManager.onInventorySlotRightClick then UIManager.onInventorySlotRightClick(i) end
+		end)
 		slot.click.InputBegan:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				if UIManager.handleDragStart then UIManager.handleDragStart(i, input) end
@@ -216,8 +221,49 @@ function InventoryUI.Init(parent, UIManager)
 	box.Parent = dropModalFrame
 	InventoryUI.Refs.DropModal.Input = box
 	
-	InventoryUI.Refs.DropModal.MaxLabel = Utils.mkLabel({text="(최대: 1)", size=UDim2.new(1,0,0,20), pos=UDim2.new(0,0,0.6,0), ts=14, color=C.GRAY, parent=dropModalFrame})
+	InventoryUI.Refs.DropModal.MaxLabel = Utils.mkLabel({text="(최대: 1)", size=UDim2.new(1,0,0,20), pos=UDim2.new(0,0,0.5,0), ts=14, color=C.GRAY, parent=dropModalFrame})
 	
+	-- Slider System
+	local sliderBack = Utils.mkFrame({name="SliderBack", size=UDim2.new(0.8,0,0,8), pos=UDim2.new(0.5,0,0.65,0), anchor=Vector2.new(0.5,0.5), bg=C.BORDER_DIM, r=4, parent=dropModalFrame})
+	local sliderHandle = Utils.mkFrame({name="Handle", size=UDim2.new(0,20,0,20), pos=UDim2.new(0,0,0.5,0), anchor=Vector2.new(0.5,0.5), bg=C.GOLD_SEL, r="full", stroke=1, parent=sliderBack})
+	
+	local dragging = false
+	local function updateSlider(input)
+		local x = math.clamp((input.Position.X - sliderBack.AbsolutePosition.X) / sliderBack.AbsoluteSize.X, 0, 1)
+		sliderHandle.Position = UDim2.new(x, 0, 0.5, 0)
+		
+		local max = tonumber(InventoryUI.Refs.DropModal.MaxLabel.Text:match("%d+")) or 1
+		local val = math.max(1, math.round(x * max))
+		box.Text = tostring(val)
+	end
+	
+	sliderHandle.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+		end
+	end)
+	
+	game:GetService("UserInputService").InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			updateSlider(input)
+		end
+	end)
+	
+	game:GetService("UserInputService").InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+		end
+	end)
+	
+	-- Manual input sync
+	box:GetPropertyChangedSignal("Text"):Connect(function()
+		local val = tonumber(box.Text) or 0
+		local max = tonumber(InventoryUI.Refs.DropModal.MaxLabel.Text:match("%d+")) or 1
+		if not dragging then
+			sliderHandle.Position = UDim2.new(math.clamp(val/max, 0, 1), 0, 0.5, 0)
+		end
+	end)
+
 	local mBtnArea = Utils.mkFrame({size=UDim2.new(0.9,0,0,45), pos=UDim2.new(0.5,0,1,-10), anchor=Vector2.new(0.5,1), bgT=1, parent=dropModalFrame})
 	local mBtnList = Instance.new("UIListLayout"); mBtnList.FillDirection=Enum.FillDirection.Horizontal; mBtnList.HorizontalAlignment=Enum.HorizontalAlignment.Center; mBtnList.Padding=UDim.new(0, 10); mBtnList.Parent=mBtnArea
 	
@@ -228,6 +274,7 @@ function InventoryUI.Init(parent, UIManager)
 		local amount = tonumber(box.Text)
 		if amount and amount > 0 and UIManager.confirmModalAction then
 			UIManager.confirmModalAction(amount)
+			dropModalFrame.Visible = false
 		end
 	end)
 	cancelBtn.MouseButton1Click:Connect(function() dropModalFrame.Visible = false end)
@@ -264,7 +311,15 @@ function InventoryUI.SetTab(tabId)
 	end
 end
 
-function InventoryUI.UpdateSlotSelectionHighlight(selectedIndex)
+function InventoryUI.UpdateSlotSelectionHighlight(selectedIndex, items, DataHelper)
+	local RarityColors = {
+		COMMON = Color3.fromRGB(180, 180, 180),
+		UNCOMMON = Color3.fromRGB(40, 200, 40),
+		RARE = Color3.fromRGB(40, 120, 255),
+		EPIC = Color3.fromRGB(180, 40, 255),
+		LEGENDARY = Color3.fromRGB(255, 180, 0),
+	}
+	
 	for i = 1, 60 do
 		local s = InventoryUI.Refs.Slots[i]
 		if not s then continue end
@@ -274,8 +329,11 @@ function InventoryUI.UpdateSlotSelectionHighlight(selectedIndex)
 				st.Color = C.GOLD_SEL
 				st.Thickness = 2
 			else
-				st.Color = C.BORDER_DIM
-				st.Thickness = 1
+				local item = items and items[i]
+				local itemData = item and DataHelper.GetData("ItemData", item.itemId)
+				local color = (itemData and itemData.rarity and RarityColors[itemData.rarity]) or C.BORDER_DIM
+				st.Color = color
+				st.Thickness = (itemData and itemData.rarity and itemData.rarity ~= "COMMON") and 2 or 1
 			end
 		end
 	end
@@ -283,19 +341,57 @@ end
 
 function InventoryUI.RefreshSlots(items, getItemIcon, __C, DataHelper)
 	local slots = InventoryUI.Refs.Slots
+	local RarityColors = {
+		COMMON = Color3.fromRGB(180, 180, 180),
+		UNCOMMON = Color3.fromRGB(40, 200, 40),
+		RARE = Color3.fromRGB(40, 120, 255),
+		EPIC = Color3.fromRGB(180, 40, 255),
+		LEGENDARY = Color3.fromRGB(255, 180, 0),
+	}
+
 	for i = 1, 60 do
 		local s = slots[i]
 		if not s then continue end
 		
 		local item = items[i]
+		local st = s.frame:FindFirstChildOfClass("UIStroke")
+		
 		if item and item.itemId then
 			s.icon.Image = getItemIcon(item.itemId)
 			s.icon.Visible = true
 			s.countLabel.Text = (item.count and item.count > 1) and ("x"..item.count) or ""
+			
+			local itemData = DataHelper.GetData("ItemData", item.itemId)
+			if st then
+				local color = (itemData and itemData.rarity and RarityColors[itemData.rarity]) or C.BORDER_DIM
+				st.Color = color
+				st.Thickness = (itemData and itemData.rarity and itemData.rarity ~= "COMMON") and 2 or 1
+			end
+			
+			if item.durability and itemData and itemData.durability then
+				local ratio = math.clamp(item.durability / itemData.durability, 0, 1)
+				s.durBg.Visible = true
+				s.durFill.Size = UDim2.new(ratio, 0, 1, 0)
+				
+				if ratio > 0.5 then
+					s.durFill.BackgroundColor3 = Color3.fromRGB(150, 255, 150)
+				elseif ratio > 0.2 then
+					s.durFill.BackgroundColor3 = Color3.fromRGB(255, 200, 100)
+				else
+					s.durFill.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+				end
+			else
+				if s.durBg then s.durBg.Visible = false end
+			end
 		else
 			s.icon.Image = ""
 			s.icon.Visible = false
 			s.countLabel.Text = ""
+			if s.durBg then s.durBg.Visible = false end
+			if st then
+				st.Color = C.BORDER_DIM
+				st.Thickness = 1
+			end
 		end
 	end
 end

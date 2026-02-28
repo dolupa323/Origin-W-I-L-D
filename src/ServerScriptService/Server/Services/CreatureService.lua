@@ -366,38 +366,53 @@ function CreatureService.spawn(creatureId, position)
 	local modelHeight = getModelHeight(model)
 	local bg = Instance.new("BillboardGui")
 	bg.Name = "CreatureLabel"
-	bg.Size = UDim2.new(0, 120, 0, 40)
-	bg.StudsOffset = Vector3.new(0, modelHeight / 2 + 1.5, 0)
-	bg.AlwaysOnTop = false -- 너무 멀면 가려지게
+	bg.Size = UDim2.new(0, 100, 0, 30) -- 전체 박스 축소
+	
+	-- 바운딩 박스를 기준으로 위치 세팅 (모델 중심/Y축 고려)
+	local _, size = model:GetBoundingBox()
+	local offsetY = 2 -- 공룡/동물의 경우 머리에서 살짝만 위
+	if size.Y > 15 then -- 티렉스 같은 거대 공룡
+		offsetY = 3
+	end
+	
+	bg.StudsOffset = Vector3.new(0, (size.Y/2) + offsetY, 0)
+	bg.AlwaysOnTop = true -- 몹 몸체에 묻히지 않도록 수정
 	bg.MaxDistance = 60
 	bg.Parent = rootPart
 	
 	-- 배경 (이름 + 바)
 	local mainFrame = Instance.new("Frame")
 	mainFrame.Size = UDim2.new(1, 0, 1, 0)
-	mainFrame.BackgroundTransparency = 1
+	mainFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	mainFrame.BackgroundTransparency = 0.95 -- 유리 수준으로 매우 투명하게 변경
+	mainFrame.BorderSizePixel = 0
 	mainFrame.Parent = bg
 	
-	-- 이름 텍스트 (타입 제거)
+	local cornerMain = Instance.new("UICorner")
+	cornerMain.CornerRadius = UDim.new(0, 4)
+	cornerMain.Parent = mainFrame
+	
+	-- 이름 텍스트
 	local nameLabel = Instance.new("TextLabel")
 	nameLabel.Name = "NameLabel"
 	nameLabel.Size = UDim2.new(1, 0, 0.4, 0)
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.Text = data.name or creatureId
-	nameLabel.TextColor3 = Color3.new(1, 1, 1)
-	nameLabel.TextStrokeTransparency = 0.5
-	nameLabel.Font = Enum.Font.GothamBold
-	nameLabel.TextSize = 12
+	nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	nameLabel.TextTransparency = 0.5
+	nameLabel.TextStrokeTransparency = 1 -- 텍스트 외곽선 제거
+	nameLabel.Font = Enum.Font.GothamMedium
+	nameLabel.TextSize = 8 -- 글자 사이즈 매우 작게 (10 -> 8)
 	nameLabel.Parent = mainFrame
 	
 	-- HP 바 배경
 	local healthBG = Instance.new("Frame")
 	healthBG.Name = "HealthBG"
-	healthBG.Size = UDim2.new(0.8, 0, 0.2, 0)
-	healthBG.Position = UDim2.new(0.5, 0, 0.6, 0)
+	healthBG.Size = UDim2.new(0.8, 0, 0.15, 0) -- 두께 아주 얇게 변경
+	healthBG.Position = UDim2.new(0.5, 0, 0.65, 0)
 	healthBG.AnchorPoint = Vector2.new(0.5, 0)
-	healthBG.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-	healthBG.BackgroundTransparency = 0.3
+	healthBG.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	healthBG.BackgroundTransparency = 1 -- 투명하게 하여 mainFrame 배경만 보이도록 유도
 	healthBG.BorderSizePixel = 0
 	healthBG.Parent = mainFrame
 	
@@ -409,7 +424,8 @@ function CreatureService.spawn(creatureId, position)
 	local healthFill = Instance.new("Frame")
 	healthFill.Name = "HealthFill"
 	healthFill.Size = UDim2.new(1, 0, 1, 0)
-	healthFill.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
+	healthFill.BackgroundColor3 = Color3.fromRGB(100, 255, 100) -- 연두색 통일
+	healthFill.BackgroundTransparency = 0.6
 	healthFill.BorderSizePixel = 0
 	healthFill.Parent = healthBG
 	
@@ -419,11 +435,11 @@ function CreatureService.spawn(creatureId, position)
 	-- Torpor 바 배경
 	local torporBG = Instance.new("Frame")
 	torporBG.Name = "TorporBG"
-	torporBG.Size = UDim2.new(0.8, 0, 0.1, 0)
+	torporBG.Size = UDim2.new(0.8, 0, 0.1, 0) -- 두께 아주 얇게 유지
 	torporBG.Position = UDim2.new(0.5, 0, 0.85, 0)
 	torporBG.AnchorPoint = Vector2.new(0.5, 0)
-	torporBG.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-	torporBG.BackgroundTransparency = 0.5
+	torporBG.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	torporBG.BackgroundTransparency = 1
 	torporBG.BorderSizePixel = 0
 	torporBG.Parent = mainFrame
 	
@@ -435,6 +451,7 @@ function CreatureService.spawn(creatureId, position)
 	torporFill.Name = "TorporFill"
 	torporFill.Size = UDim2.new(0, 0, 1, 0)
 	torporFill.BackgroundColor3 = Color3.fromRGB(160, 60, 220) -- 보라색
+	torporFill.BackgroundTransparency = 0.6
 	torporFill.BorderSizePixel = 0
 	torporFill.Visible = false
 	torporFill.Parent = torporBG

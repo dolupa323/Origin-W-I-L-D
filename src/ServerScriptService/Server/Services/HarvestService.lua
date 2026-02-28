@@ -814,15 +814,25 @@ function HarvestService.hit(player: Player, nodeUID: string, toolSlot: number?, 
 	local actualHitCount = math.min(power, nodeState.remainingHits)
 	nodeState.remainingHits = nodeState.remainingHits - actualHitCount
 	
-	-- 도구 내구도 감소
-	if toolSlot and DurabilityService then
-		DurabilityService.reduceDurability(player, toolSlot, 1)
+	-- 7.4 도구 내구도 감소 (Phase 10-11)
+	-- 실제 아이템이 있고 내구도 속성이 있는 경우만 시도
+	if toolSlot and DurabilityService and InventoryService then
+		local slotData = InventoryService.getSlot(player.UserId, toolSlot)
+		if slotData and slotData.durability then
+			DurabilityService.reduceDurability(player, toolSlot, 1) -- 스윙당 1 감소 (또는 actualHitCount에 비례 가능)
+		end
 	end
 	
 	-- 7.5 XP 보상 (타격당 지급)
 	if PlayerStatService then
 		local xpPerHit = nodeData.xpPerHit or Balance.XP_HARVEST_XP_PER_HIT or 2
 		PlayerStatService.addXP(player.UserId, xpPerHit * actualHitCount, Enums.XPSource.HARVEST_RESOURCE)
+	end
+	
+	-- 7.6 채집 시 배고픔 소모 연동 (Phase 11)
+	local HSuccess, HungerService = pcall(function() return require(game:GetService("ServerScriptService").Server.Services.HungerService) end)
+	if HSuccess and HungerService then
+		HungerService.consumeHunger(userId, Balance.HUNGER_HARVEST_COST * actualHitCount)
 	end
 	
 	-- 타격 브로드캐스트 (네트워크 최적화: 400스터드)
@@ -895,19 +905,6 @@ function HarvestService.hit(player: Player, nodeUID: string, toolSlot: number?, 
 		-- 퀘스트 콜백 (Phase 8)
 		if questCallback then
 			questCallback(userId, nodeData.nodeType or nodeData.id)
-		end
-		
-		-- 도구 내구도 감소
-		if DurabilityService and toolSlot then
-			-- 타격 횟수만큼 내구도 감소
-			-- 내구도가 있는 아이템인지 확인 (InventoryService가 내부에서 검증하지만 warn 방지용 사전 체크)
-			local inv = InventoryService.getInventory(player.UserId)
-			local slotData = inv and inv.slots[toolSlot]
-			if slotData and slotData.durability then
-				DurabilityService.reduceDurability(player, toolSlot, actualHitCount)
-			end
-		elseif DurabilityService and not toolSlot and nodeData.optimalTool then
-			warn(string.format("[HarvestService] No toolSlot provided for node %s", nodeUID))
 		end
 	end
 	

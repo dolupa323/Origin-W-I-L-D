@@ -20,6 +20,31 @@ function DurabilityService.Init(_NetController, _InventoryService)
 	NetController = _NetController
 	InventoryService = _InventoryService
 	print("[DurabilityService] Initialized")
+	
+	-- 패시브 내구도 감소 루프 (예: 횃불)
+	local Players = game:GetService("Players")
+	local DataHelper = require(Shared.Util.DataHelper)
+	
+	task.spawn(function()
+		while true do
+			task.wait(1) -- 매 1초마다 동기화 검사
+			for _, player in ipairs(Players:GetPlayers()) do
+				local userId = player.UserId
+				-- 장착 중인 아이템 가져오기
+				local activeSlot = InventoryService.getActiveSlot and InventoryService.getActiveSlot(userId)
+				if activeSlot then
+					local slotData = InventoryService.getSlot and InventoryService.getSlot(userId, activeSlot)
+					if slotData and slotData.itemId and slotData.durability then
+						local itemData = DataHelper.GetData("ItemData", slotData.itemId)
+						if itemData and itemData.passiveDurabilityDrain and itemData.passiveDurabilityDrain > 0 then
+							-- 1초마다 정해진 량만큼 내구도 자동 감소
+							DurabilityService.reduceDurability(player, activeSlot, itemData.passiveDurabilityDrain)
+						end
+					end
+				end
+			end
+		end
+	end)
 end
 
 --- 내구도 감소 요청 (채집, 공격 등에서 호출)
@@ -37,8 +62,10 @@ function DurabilityService.reduceDurability(player: Player, slot: number, amount
 	local success, errorCode, current = InventoryService.decreaseDurability(userId, slot, amount)
 	
 	if not success then
-		warn(string.format("[DurabilityService] Failed to reduce durability for player %d slot %d: %s", 
-			userId, slot, tostring(errorCode)))
+		if errorCode ~= Enums.ErrorCode.INVALID_ITEM then
+			warn(string.format("[DurabilityService] Failed to reduce durability for player %d slot %d: %s", 
+				userId, slot, tostring(errorCode)))
+		end
 		return false
 	end
 	

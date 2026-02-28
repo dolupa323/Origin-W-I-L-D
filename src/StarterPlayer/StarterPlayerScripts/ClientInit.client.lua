@@ -82,6 +82,11 @@ if success then
 		UIManager.updateStamina(current, max)
 	end)
 	
+	-- 배고픔 → UIManager 연동 (Phase 11)
+	NetClient.On("Hunger.Update", function(data)
+		UIManager.updateHunger(data.current, data.max)
+	end)
+	
 	-- 키 바인딩 설정
 	-- E = 장비창, B = 인벤토리
 	InputManager.bindKey(Enum.KeyCode.E, "ToggleEquipment", function()
@@ -90,9 +95,9 @@ if success then
 	InputManager.bindKey(Enum.KeyCode.B, "ToggleInventory", function()
 		UIManager.toggleInventory()
 	end)
-	-- C = 건축 (기존 제작 벤치에서 분리)
+	-- C = 건축 (기존 N키 역할 통합, 제작 탭 삭제)
 	InputManager.bindKey(Enum.KeyCode.C, "ToggleBuilding", function()
-		UIManager.toggleCrafting("BUILDING") -- BUILDING 모드로 고정 호출
+		UIManager.toggleBuild()
 	end)
 	-- K = 기술 트리 (T에서 K로 변경)
 	InputManager.bindKey(Enum.KeyCode.K, "ToggleTechTree", function()

@@ -114,6 +114,17 @@ function TechController.requestUnlock(techId: string, callback: ((boolean, strin
 	end)
 end
 
+--- 기술 초기화 요청 (Relinquish)
+function TechController.requestReset(callback: ((boolean) -> ())?)
+	task.spawn(function()
+		local ok, data = NetClient.Request("Tech.Reset.Request", {})
+		if ok then
+			TechController.requestTechInfo()
+		end
+		if callback then callback(ok) end
+	end)
+end
+
 --========================================
 -- Event Listener API
 --========================================
@@ -142,6 +153,13 @@ local function onTechUnlockedSvr(data)
 	TechController.requestTechInfo()
 end
 
+local function onTechListChanged(data)
+	if not data then return end
+	unlockedTech = data.unlocked or {}
+	techPoints = data.techPointsAvailable or 0
+	for _, cb in ipairs(listeners.techUpdated) do pcall(cb) end
+end
+
 --========================================
 -- Initialization
 --========================================
@@ -150,6 +168,7 @@ function TechController.Init()
 	if initialized then return end
 	
 	NetClient.On("Tech.Unlocked", onTechUnlockedSvr)
+	NetClient.On("Tech.List.Changed", onTechListChanged)
 	
 	-- 초기 데이터 로드
 	TechController.requestTechTree()

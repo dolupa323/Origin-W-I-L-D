@@ -95,6 +95,7 @@ Protocol.Commands = {
 	["Tech.Unlock.Request"] = true,            -- 기술 해금 요청
 	["Tech.List.Request"] = true,              -- 해금된 기술 목록 조회
 	["Tech.Tree.Request"] = true,              -- 전체 기술 트리 조회
+	["Tech.Reset.Request"] = true,             -- 기술 해금 초기화 (포인트 환급)
 	
 	-- Harvest 명령어 (Phase 7)
 	["Harvest.Hit.Request"] = true,            -- 자원 수확 타격
@@ -123,6 +124,10 @@ Protocol.Commands = {
 	
 	-- Stamina 명령어 (Phase 10)
 	["Stamina.GetState"] = true,               -- 스태미나 상태 조회
+	
+	-- Hunger 명령어 (Phase 11)
+	["Hunger.GetState"] = true,
+	["Hunger.Update"] = true,
 }
 
 -- 에러 코드는 Enums.ErrorCode 사용

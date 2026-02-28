@@ -182,6 +182,53 @@ function TechService.isUnlocked(userId: number, techId: string): boolean
 	return playerUnlocks[userId][techId] == true
 end
 
+--- 기술 초기화 및 포인트 환급 (Relinquish)
+--- @param userId number
+--- @return boolean success, number refundedPoints
+function TechService.relinquish(userId: number): (boolean, number)
+	_initPlayerUnlocks(userId)
+	local unlocks = playerUnlocks[userId]
+	if not unlocks then return false, 0 end
+	
+	local totalRefund = 0
+	for techId, isUnlocked in pairs(unlocks) do
+		if isUnlocked then
+			local tech = techDataMap[techId]
+			if tech and tech.techPointCost then
+				totalRefund = totalRefund + tech.techPointCost
+			end
+		end
+	end
+	
+	-- 초기 상태로 회귀 (cost=0인 기초 기술만 남김)
+	local newUnlocks = {}
+	for techId, tech in pairs(techDataMap) do
+		if tech.techPointCost == 0 then
+			newUnlocks[techId] = true
+		end
+	end
+	
+	playerUnlocks[userId] = newUnlocks
+	_savePlayerUnlocks(userId)
+	
+	-- 포인트 환급은 StatService에서 담당 (spent 수치 감소)
+	if PlayerStatService and PlayerStatService.refundTechPoints then
+		PlayerStatService.refundTechPoints(userId, totalRefund)
+	end
+	
+	-- 클라이언트에 전체 해금 상태 갱신 알림
+	local player = game:GetService("Players"):GetPlayerByUserId(userId)
+	if player and NetController then
+		NetController.FireClient(player, "Tech.List.Changed", {
+			unlocked = newUnlocks,
+			techPointsAvailable = PlayerStatService.getTechPoints(userId)
+		})
+	end
+	
+	print(string.format("[TechService] Player %d relinquished all techs. Refunded %d TP", userId, totalRefund))
+	return true, totalRefund
+end
+
 --- 해금된 기술 목록 조회
 --- @param userId number
 --- @return table { techId → true }
@@ -401,11 +448,17 @@ function TechService.Init(netController, dataService, playerStatService, saveSer
 	print("[TechService] Initialized")
 end
 
+local function handleReset(player: Player, payload: any)
+	local success, refunded = TechService.relinquish(player.UserId)
+	return { success = success, data = { refunded = refunded } }
+end
+
 function TechService.GetHandlers()
 	return {
 		["Tech.Unlock.Request"] = handleUnlock,
 		["Tech.List.Request"] = handleList,
 		["Tech.Tree.Request"] = handleTree,
+		["Tech.Reset.Request"] = handleReset,
 	}
 end
 

@@ -13,6 +13,7 @@ local Client = script.Parent.Parent
 local NetClient = require(Client.NetClient)
 local InputManager = require(Client.InputManager)
 local UIManager = require(Client.UIManager)
+local AnimationManager = require(Client.Utils.AnimationManager)
 
 local CombatController = {}
 
@@ -214,6 +215,34 @@ function CombatController.attack()
 	end
 	
 	lastAttackTime = now
+	
+	-- 선택된 아이템이 음식인지 확인 (들고 있는 상태에서 좌클릭 시 먹기)
+	local selectedSlot = UIManager.getSelectedSlot()
+	local InventoryController = require(Client.Controllers.InventoryController)
+	local slotData = InventoryController.getSlot(selectedSlot)
+	
+	if slotData then
+		local ItemData = require(ReplicatedStorage:WaitForChild("Data"):WaitForChild("ItemData"))
+		local itm = nil
+		for _, v in ipairs(ItemData) do
+			if v.id == slotData.itemId then
+				itm = v
+				break
+			end
+		end
+		
+		if itm and (itm.type == Enums.ItemType.FOOD or itm.foodValue) then
+			-- 섭취 애니메이션 재생
+			local character = player.Character
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				AnimationManager.play(humanoid, AnimationIds.CONSUME.EAT)
+			end
+			
+			InventoryController.requestUse(selectedSlot)
+			return
+		end
+	end
 	
 	local targetModel, targetPos, targetId, targetType = findTarget()
 	

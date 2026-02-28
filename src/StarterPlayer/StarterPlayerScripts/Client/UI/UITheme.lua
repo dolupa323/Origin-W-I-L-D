@@ -21,6 +21,7 @@ local UITheme = {
 		HP_BG         = Color3.fromRGB(50, 15, 15),
 		STA           = Color3.fromRGB(40, 150, 220), -- 스태미너 블루
 		STA_BG        = Color3.fromRGB(10, 35, 55),
+		HUNGER        = Color3.fromRGB(220, 110, 40), -- 배고픔 오렌지
 		XP            = Color3.fromRGB(140, 200, 80),
 
 		-- Text

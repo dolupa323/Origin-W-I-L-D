@@ -47,7 +47,7 @@ local ItemData = {
 		weight = 0.1, -- 추가
 		description = "덤불에서 채집한 베리. 먹으면 체력이 조금 회복된다.",
 		dropDespawn = "GATHER",
-		foodValue = 5,
+		foodValue = 35,
 	},
 	{
 		id = "RESIN",
@@ -172,7 +172,8 @@ local ItemData = {
 		maxStack = 1,
 		durability = 60,
 		damage = 5,
-		description = "시야 확보 및 체온 유지.",
+		description = "시야 확보 및 체온 유지. 장착 중 내구도가 서서히 감소합니다.",
+		passiveDurabilityDrain = 1, -- 초당 내구도 감소량
 	},
 	{
 		id = "WOODEN_CLUB",
@@ -374,8 +375,14 @@ local ItemData = {
 	-- 드롭/기타 자원
 	--========================================
 	{
-		id = "MEAT", name = "생고기", type = "RESOURCE", rarity = "COMMON", maxStack = 99,
-		description = "조리해서 먹을 수 있다.",
+		id = "MEAT", 
+		name = "생고기", 
+		type = "FOOD", 
+		rarity = "COMMON", 
+		maxStack = 99,
+		description = "그냥 먹을 수도 있지만, 조리해 먹는 편이 좋다.",
+		foodValue = 15,
+		dropDespawn = "MONSTER",
 	},
 	{
 		id = "LEATHER", name = "가죽", type = "RESOURCE", rarity = "COMMON", maxStack = 99,

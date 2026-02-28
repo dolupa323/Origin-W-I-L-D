@@ -112,13 +112,41 @@ function BuildController.startPlacement(facilityId: string)
 		if not currentGhost then return end
 		
 		-- 마우스가 가리키는 지면 찾기
-		local _, hitPos, hitNormal = InputManager.raycastFromMouse({currentGhost, player.Character}, 50)
+		local rayParams = RaycastParams.new()
+		rayParams.FilterDescendantsInstances = {currentGhost, player.Character}
+		rayParams.FilterType = Enum.RaycastFilterType.Exclude
 		
-		if hitPos then
+		local mousePos = UserInputService:GetMouseLocation()
+		local ray = workspace.CurrentCamera:ViewportPointToRay(mousePos.X, mousePos.Y)
+		local result = workspace:Raycast(ray.Origin, ray.Direction * 100, rayParams)
+		
+		local isPlaceable = false
+		if result then
+			local hitPos = result.Position
+			local hitNormal = result.Normal
+			
 			local finalRotation = CFrame.Angles(0, math.rad(currentRotation), 0)
-			if hitNormal then
-				-- 지면 법선에 맞게 회전 시도 (옵션: 현재는 단순히 Y축 회전만 적용)
-				currentGhost:SetPrimaryPartCFrame(CFrame.new(hitPos) * finalRotation)
+			
+			-- 기본적으로 hitNormal 방향으로 UpVector 설정 (지형을 따라감)
+			local lookAt = hitPos + finalRotation.LookVector
+			currentGhost:SetPrimaryPartCFrame(CFrame.lookAt(hitPos, lookAt, hitNormal))
+			
+			-- 건설 가능 조건 체크
+			local dist = (player.Character.PrimaryPart.Position - hitPos).Magnitude
+			isPlaceable = (dist <= 25) -- 25 스터드 이내
+			-- 추가 조건: 경사도 체크
+			local slope = math.deg(math.acos(hitNormal.Dot(Vector3.new(0, 1, 0))))
+			if slope > 45 then isPlaceable = false end -- 너무 가파르면 불가
+		else
+			isPlaceable = false
+		end
+		
+		-- Ghost 색상 업데이트
+		local color = isPlaceable and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(255, 100, 100)
+		for _, p in ipairs(currentGhost:GetDescendants()) do
+			if p:IsA("BasePart") then
+				p.Color = color
+				p.Transparency = 0.6
 			end
 		end
 	end)
@@ -133,9 +161,21 @@ function BuildController.startPlacement(facilityId: string)
 	end)
 	
 	-- 좌클릭: 배치 확정
-	InputManager.onLeftClick("BuildPlace", function(targetPos)
+	InputManager.onLeftClick("BuildPlace", function()
 		if isPlacing and currentGhost then
+			-- Ghost 색상이 빨간색이면(불가) 무시
+			local isRed = false
+			local pPart = currentGhost.PrimaryPart
+			if pPart and pPart.Color.R > pPart.Color.G then isRed = true end
+			
+			if isRed then
+				local UIManager = require(script.Parent.Parent.UIManager)
+				UIManager.notify("이 위치에는 건설할 수 없습니다.", Color3.fromRGB(255, 100, 100))
+				return
+			end
+			
 			local pos = currentGhost.PrimaryPart.Position
+			-- rotation은 currentRotation 기반 또는 Ghost의 실제 rotation 전달
 			local rot = Vector3.new(0, currentRotation, 0)
 			BuildController.requestPlace(currentFacilityId, pos, rot)
 		end

@@ -126,6 +126,12 @@ function CombatService.processPlayerAttack(player: Player, targetId: string, too
 		DurabilityService.reduceDurability(player, toolSlot, 1)
 	end
 	
+	-- 4.5 전투 시 배고픔 소모 연동 (Phase 11)
+	local HSuccess, HungerService = pcall(function() return require(game:GetService("ServerScriptService").Server.Services.HungerService) end)
+	if HSuccess and HungerService then
+		HungerService.consumeHunger(player.UserId, Balance.HUNGER_COMBAT_COST)
+	end
+	
 	-- 5. 피냄새 디버프 및 드롭 생성 (크리처를 킬했을 때)
 	if killed and dropPos then
 		-- 피냄새 적용

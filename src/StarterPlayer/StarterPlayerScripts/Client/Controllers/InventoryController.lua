@@ -124,7 +124,7 @@ local function onInventoryChanged(data)
 	-- Store old cache to calc diff for notifications
 	local oldTotals = {}
 	for k, v in pairs(inventoryCache) do
-		if v.itemId then oldTotals[v.itemId] = (oldTotals[v.itemId] or 0) + v.count end
+		if v and v.itemId then oldTotals[v.itemId] = (oldTotals[v.itemId] or 0) + (v.count or 0) end
 	end
 	
 	if data.changes then
@@ -136,6 +136,7 @@ local function onInventoryChanged(data)
 				inventoryCache[slot] = {
 					itemId = change.itemId,
 					count = change.count,
+					durability = change.durability,
 				}
 			end
 		end
@@ -145,25 +146,28 @@ local function onInventoryChanged(data)
 	if data.maxWeight then maxWeight = data.maxWeight end
 	
 	-- Toast UI Notification check (Only run if actual item count increased)
-	local UIManager = require(script.Parent.Parent.UIManager)
-	if data.changes and UIManager and UIManager.notify then
+	local UISuccess, UIMgr = pcall(function() return require(script.Parent.Parent.UIManager) end)
+	if data.changes and UISuccess and UIMgr and UIMgr.notify then
 		local newTotals = {}
 		for k, v in pairs(inventoryCache) do
-			if v.itemId then newTotals[v.itemId] = (newTotals[v.itemId] or 0) + v.count end
+			if v and v.itemId then newTotals[v.itemId] = (newTotals[v.itemId] or 0) + (v.count or 0) end
 		end
 		
 		local notified = {}
 		for _, change in ipairs(data.changes) do
-			if not change.empty and change.count and change.itemId then
+			if change and not change.empty and change.count and change.itemId then
 				local itemId = change.itemId
 				if not notified[itemId] then
 					notified[itemId] = true
 					local diff = (newTotals[itemId] or 0) - (oldTotals[itemId] or 0)
 					if diff > 0 then
-						local DataHelper = require(ReplicatedStorage.Shared.Util.DataHelper)
-						local itemData = DataHelper.GetData("ItemData", itemId)
-						local name = itemData and itemData.name or itemId
-						UIManager.notify(string.format("획득: %s x%d", name, diff), Color3.fromRGB(150, 255, 150))
+						local DSuccess, DataHelper = pcall(function() return require(ReplicatedStorage.Shared.Util.DataHelper) end)
+						local name = itemId
+						if DSuccess and DataHelper then
+							local itemData = DataHelper.GetData("ItemData", itemId)
+							if itemData then name = itemData.name or itemId end
+						end
+						UIMgr.notify(string.format("획득: %s x%d", name, diff)) -- 색상 파라미터 제외하여 UITheme의 기본 흰색(C.WHITE)을 따르게 함
 					end
 				end
 			end
@@ -193,6 +197,7 @@ function InventoryController.Init()
 				inventoryCache[item.slot] = {
 					itemId = item.itemId,
 					count = item.count,
+					durability = item.durability,
 				}
 			end
 			totalWeight = data.totalWeight or 0

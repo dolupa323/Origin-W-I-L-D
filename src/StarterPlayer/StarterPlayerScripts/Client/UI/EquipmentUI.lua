@@ -25,7 +25,8 @@ function EquipmentUI.SetVisible(visible)
 	end
 end
 
-function EquipmentUI.Init(parent, UIManager, Enums)
+function EquipmentUI.Init(parent, UIManager, Enums, isMobile)
+	local isSmall = isMobile
 	_UIManager = UIManager
 	EquipmentUI.Refs.Frame = Utils.mkWindow({
 		name = "EquipmentMenu",
@@ -40,14 +41,19 @@ function EquipmentUI.Init(parent, UIManager, Enums)
 	})
 	
 	local header = Utils.mkFrame({name="Header", size=UDim2.new(1,0,0,45), bgT=1, parent=EquipmentUI.Refs.Frame})
+	header.ZIndex = 10 -- 헤더가 캐릭터 위에 오도록 보정
 	Utils.mkLabel({text="장비", pos=UDim2.new(0, 15, 0, 0), ts=24, font=F.TITLE, ax=Enum.TextXAlignment.Left, parent=header})
 	Utils.mkBtn({text="X", size=UDim2.new(0, 30, 0, 30), pos=UDim2.new(1, -15, 0, 7), anchor=Vector2.new(1,0), bgT=1, ts=26, color=C.WHITE, fn=function() UIManager.closeEquipment() end, parent=header})
 	
 	local content = Utils.mkFrame({name="Content", size=UDim2.new(1, -20, 1, -55), pos=UDim2.new(0, 10, 0, 45), bgT=1, parent=EquipmentUI.Refs.Frame})
+	content.ClipsDescendants = true -- 캐릭터가 프레임 바깥으로 나가는 것 방지
 	
-	-- [Left: Equip Slots] (40%)
-	local eqArea = Utils.mkFrame({name="EquipArea", size=UDim2.new(0.4, -10, 1, 0), pos=UDim2.new(0, 0, 0, 0), bgT=1, parent=content})
-	local eList = Instance.new("UIListLayout"); eList.Padding=UDim.new(0,10); eList.HorizontalAlignment=Enum.HorizontalAlignment.Center; eList.Parent=eqArea
+	-- [Left: Character & Equip Slots] (45%)
+	local eqArea = Utils.mkFrame({name="EquipArea", size=UDim2.new(0.45, -10, 1, 0), pos=UDim2.new(0, 0, 0, 0), bgT=1, parent=content})
+	
+	-- Slots Container
+	local slotsContainer = Utils.mkFrame({name="SlotsContainer", size=UDim2.new(1, 0, 1, 0), pos=UDim2.new(0,0,0,0), bgT=1, parent=eqArea})
+	local sList = Instance.new("UIListLayout"); sList.Padding=UDim.new(0, 20); sList.HorizontalAlignment=Enum.HorizontalAlignment.Center; sList.VerticalAlignment=Enum.VerticalAlignment.Center; sList.Parent=slotsContainer
 	
 	local slotConfigs = {
 		{id="Head"},
@@ -56,16 +62,23 @@ function EquipmentUI.Init(parent, UIManager, Enums)
 		{id="Hand"}
 	}
 	for _, conf in ipairs(slotConfigs) do
-		local slot = Utils.mkSlot({name=conf.id.."Slot", size=UDim2.new(0,80,0,80), bgT=0.3, stroke=1, parent=eqArea})
+		local slot = Utils.mkSlot({
+			name = conf.id.."Slot", 
+			size = UDim2.new(0, 70, 0, 70), -- Fixed offset for vertical aligned slots
+			bgT = 0.3, 
+			stroke = 1, 
+			parent = slotsContainer
+		})
 		EquipmentUI.Refs.Slots[conf.id] = slot
 	end
 	
-	-- [Right: Stats Distribution] (60%)
-	local statArea = Utils.mkFrame({name="StatArea", size=UDim2.new(0.6, 0, 1, 0), pos=UDim2.new(1, 0, 0, 0), anchor=Vector2.new(1,0), bg=C.BG_PANEL_L, parent=content})
+	-- [Right: Stats Distribution] (55%)
+	local statArea = Utils.mkFrame({name="StatArea", size=UDim2.new(0.55, 0, 1, 0), pos=UDim2.new(1, 0, 0, 0), anchor=Vector2.new(1,0), bg=C.BG_PANEL_L, parent=content})
 	EquipmentUI.Refs.StatPoints = Utils.mkLabel({text="보유 포인트: 0", size=UDim2.new(1, -20, 0, 40), pos=UDim2.new(0,10,0,0), ts=18, font=F.TITLE, color=C.GOLD, ax=Enum.TextXAlignment.Left, parent=statArea})
 	
-	local sList = Utils.mkFrame({size=UDim2.new(1,-20,1,-120), pos=UDim2.new(0,10,0,50), bgT=1, parent=statArea})
-	local sLayout = Instance.new("UIListLayout"); sLayout.Padding=UDim.new(0, 5); sLayout.Parent=sList
+	local statsScroll = Instance.new("ScrollingFrame")
+	statsScroll.Size = UDim2.new(1,-20,1,-120); statsScroll.Position = UDim2.new(0,10,0,50); statsScroll.BackgroundTransparency = 1; statsScroll.BorderSizePixel = 0; statsScroll.ScrollBarThickness = 2; statsScroll.Parent = statArea
+	local sLayout = Instance.new("UIListLayout"); sLayout.Padding=UDim.new(0, 5); sLayout.Parent=statsScroll
 	
 	local stats = {
 		{id=Enums.StatId.MAX_HEALTH, name="최대 체력"}, 
@@ -75,23 +88,39 @@ function EquipmentUI.Init(parent, UIManager, Enums)
 		{id=Enums.StatId.ATTACK, name="공격력"}
 	}
 	for _, s in ipairs(stats) do
-		local line = Utils.mkFrame({size=UDim2.new(1,0,0,45), bg=C.BG_SLOT, bgT=0.3, parent=sList})
+		-- 스텟 라인 크기 비율화 (0.18 Scale)
+		local line = Utils.mkFrame({size=UDim2.new(1, 0, 0, 50), bg=C.BG_SLOT, bgT=0.3, parent=statsScroll})
 		Utils.mkLabel({text=s.name, size=UDim2.new(0.4,0,1,0), pos=UDim2.new(0,10,0,0), ts=14, ax=Enum.TextXAlignment.Left, parent=line})
 		local val = Utils.mkLabel({text="0", size=UDim2.new(0.4,0,1,0), pos=UDim2.new(0.8,-40,0,0), anchor=Vector2.new(1,0), ts=15, font=F.NUM, ax=Enum.TextXAlignment.Right, parent=line})
 		
-		local btn = Utils.mkBtn({text="+", size=UDim2.new(0,35,0,35), pos=UDim2.new(1,-5,0.5,0), anchor=Vector2.new(1,0.5), bg=C.GOLD_SEL, ts=20, font=F.NUM, parent=line})
+		-- 강화 버튼: 가로 크기를 확실하게 확보 (35px, 모바일 40px)
+		local bSize = isSmall and 40 or 35
+		local btn = Utils.mkBtn({
+			text="+", 
+			size=UDim2.new(0, bSize, 0.8, 0), -- 가로 오프셋 고정, 세로 비율 유지
+			pos=UDim2.new(1, -10, 0.5, 0), 
+			anchor=Vector2.new(1, 0.5), 
+			bg=C.GOLD_SEL, 
+			ts=isSmall and 24 or 20, 
+			font=F.NUM, 
+			parent=line
+		})
 		
+		-- 텍스트가 잘리지 않도록 설정
+		btn.TextScaled = false
+		btn.TextWrapped = false
+
 		btn.MouseButton1Click:Connect(function() UIManager.addPendingStat(s.id) end)
 		EquipmentUI.Refs.StatLines[s.id] = {val=val, btn=btn}
 	end
 	
-	-- Action Frame (Apply/Cancel) at the bottom right
-	local actionFrame = Utils.mkFrame({size=UDim2.new(1,-20,0,50), pos=UDim2.new(0,10,1,-15), anchor=Vector2.new(0,1), bgT=1, vis=false, parent=statArea})
+	-- Action Frame (Apply/Cancel) 가변 비율 조정
+	local actionFrame = Utils.mkFrame({size=UDim2.new(1,-20,0.15,0), pos=UDim2.new(0,10,1,-5), anchor=Vector2.new(0,1), bgT=1, vis=false, parent=statArea})
 	EquipmentUI.Refs.ActionFrame = actionFrame
-	local aList = Instance.new("UIListLayout"); aList.FillDirection=Enum.FillDirection.Horizontal; aList.Padding=UDim.new(0,10); aList.HorizontalAlignment=Enum.HorizontalAlignment.Center; aList.Parent=actionFrame
+	local aList = Instance.new("UIListLayout"); aList.FillDirection=Enum.FillDirection.Horizontal; aList.Padding=UDim.new(0.05,0); aList.HorizontalAlignment=Enum.HorizontalAlignment.Center; aList.VerticalAlignment=Enum.VerticalAlignment.Center; aList.Parent=actionFrame
 	
-	Utils.mkBtn({text="적용", size=UDim2.new(0.48,0,1,0), bg=C.GREEN, font=F.TITLE, color=C.BG_PANEL, fn=function() UIManager.confirmPendingStats() end, parent=actionFrame})
-	Utils.mkBtn({text="초기화", size=UDim2.new(0.48,0,1,0), bg=C.BTN, font=F.TITLE, fn=function() UIManager.cancelPendingStats() end, parent=actionFrame})
+	Utils.mkBtn({text="적용", size=UDim2.new(0.45,0,0.8,0), bg=C.GREEN, font=F.TITLE, color=C.BG_PANEL, fn=function() UIManager.confirmPendingStats() end, parent=actionFrame})
+	Utils.mkBtn({text="초기화", size=UDim2.new(0.45,0,0.8,0), bg=C.BTN, font=F.TITLE, fn=function() UIManager.cancelPendingStats() end, parent=actionFrame})
 end
 
 function EquipmentUI.Refresh(cachedStats, totalPending, equipmentData, getItemIcon, Enums)
@@ -105,9 +134,28 @@ function EquipmentUI.Refresh(cachedStats, totalPending, equipmentData, getItemIc
 			if item then
 				slot.icon.Image = getItemIcon(item.itemId)
 				slot.icon.Visible = true
+				
+				local DataHelper = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared").Util.DataHelper)
+				local itemData = DataHelper.GetData("ItemData", item.itemId)
+				
+				if item.durability and itemData and itemData.durability then
+					local ratio = math.clamp(item.durability / itemData.durability, 0, 1)
+					slot.durBg.Visible = true
+					slot.durFill.Size = UDim2.new(ratio, 0, 1, 0)
+					if ratio > 0.5 then
+						slot.durFill.BackgroundColor3 = Color3.fromRGB(150, 255, 150)
+					elseif ratio > 0.2 then
+						slot.durFill.BackgroundColor3 = Color3.fromRGB(255, 200, 100)
+					else
+						slot.durFill.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+					end
+				else
+					if slot.durBg then slot.durBg.Visible = false end
+				end
 			else
 				slot.icon.Image = ""
 				slot.icon.Visible = false
+				if slot.durBg then slot.durBg.Visible = false end
 			end
 		end
 	end
@@ -148,8 +196,7 @@ function EquipmentUI.Refresh(cachedStats, totalPending, equipmentData, getItemIc
 end
 
 function EquipmentUI.UpdateCharacterPreview(character)
-	-- 실제 로블록스 캐릭터 클론 및 ViewportFrame에 렌더링 로직 (향후 구현 확장성)
-	-- 캐릭터 복사 후 camera CFrame 조정 역할만 마련
+	-- [제거됨] 유저 요청으로 장비창 내 캐릭터 미리보기 기능 완전 삭제
 end
 
 return EquipmentUI

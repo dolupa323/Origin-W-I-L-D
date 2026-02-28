@@ -313,6 +313,17 @@ function MovementController.isDodging(): boolean
 	return isDodging
 end
 
+--- [Mobile 전용] 구르기 실행
+function MovementController.performDodge()
+	performDodge()
+end
+
+--- [Mobile 전용] 스프린트 상태 업데이트 (터치 Down/Up 연동)
+function MovementController.updateSprintState(held)
+	shiftHeld = held
+	updateSprint()
+end
+
 --- 스태미나 변경 이벤트 구독
 function MovementController.onStaminaChanged(callback: (number, number) -> ())
 	table.insert(staminaChangedCallbacks, callback)

@@ -308,16 +308,33 @@ function PartyService._createPalModel(palData, position: Vector3, ownerUserId: n
 	local bg = Instance.new("BillboardGui")
 	bg.Size = UDim2.new(0, 120, 0, 40)
 	bg.StudsOffset = Vector3.new(0, 3, 0)
-	bg.AlwaysOnTop = true
+	bg.AlwaysOnTop = true -- 파트 몸체에 안 묻히게 수정
+	bg.MaxDistance = 60
 	bg.Parent = rootPart
+	
+	-- 배경 (이름표 전체 테마 레이아웃)
+	local mainFrame = Instance.new("Frame")
+	mainFrame.Size = UDim2.new(1, 0, 0.4, 0)
+	mainFrame.Position = UDim2.new(0, 0, 0.3, 0)
+	mainFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	mainFrame.BackgroundTransparency = 0.95 -- 유리 수준으로 매우 투명하게 변경
+	mainFrame.BorderSizePixel = 0
+	mainFrame.Parent = bg
+	
+	local cornerMain = Instance.new("UICorner")
+	cornerMain.CornerRadius = UDim.new(0, 4)
+	cornerMain.Parent = mainFrame
 	
 	local txt = Instance.new("TextLabel")
 	txt.Size = UDim2.new(1, 0, 1, 0)
 	txt.BackgroundTransparency = 1
 	txt.Text = string.format("🐾 %s (Lv.%d)", palData.nickname, palData.level)
-	txt.TextColor3 = Color3.new(0.3, 1, 0.3)
-	txt.TextStrokeTransparency = 0
-	txt.Parent = bg
+	txt.TextColor3 = Color3.fromRGB(150, 255, 150) -- 부드러운 파스텔 연두색 유지
+	txt.TextTransparency = 0.2
+	txt.TextStrokeTransparency = 0.8
+	txt.Font = Enum.Font.GothamMedium
+	txt.TextSize = 10
+	txt.Parent = mainFrame
 	
 	-- 팰임을 표시하는 속성
 	rootPart:SetAttribute("IsPal", true)

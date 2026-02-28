@@ -140,6 +140,18 @@ Balance.HARVEST_RANGE = 25             -- 수확 가능 거리 (18 -> 25 확대)
 Balance.COMBAT_HITBOX_SIZE = 12        -- 맨손 공격 판정 반경 (8 -> 12 상향)
 Balance.XP_HARVEST_XP_PER_HIT = 2      -- 타격당 XP
 
+--========================================
+-- 배고픔 (생존) 시스템
+--========================================
+Balance.HUNGER_MAX = 100               -- 최대 배고픔 수치
+Balance.HUNGER_DECREASE_RATE = 0.5     -- 초당 배고픔 감소량 (예: 0.5면 200초 뒤 0)
+Balance.HUNGER_STARVATION_DAMAGE = 2   -- 배고픔이 0일 때 초당 잃는 체력
+Balance.HUNGER_SPRINT_COST = 0.5       -- 달리기 시 초당 배고픔 추가 소모량
+Balance.HUNGER_DODGE_COST = 2.0        -- 구르기 1회당 배고픔 소모량
+Balance.HUNGER_HARVEST_COST = 1.0      -- 채집 1회(또는 1스윙)당 배고픔 소모량
+Balance.HUNGER_COMBAT_COST = 1.0       -- 공격 1회당 배고픔 소모량
+
+
 -- 채집 홀드 시스템 (E키 꿉 누르기)
 Balance.HARVEST_HOLD_TIME_BASE = 2.0   -- 기본 채집 시간 (초, 맨손 기준)
 Balance.HARVEST_HOLD_TIME_OPTIMAL = 0.8 -- 최적 도구 사용 시 채집 시간 (초)

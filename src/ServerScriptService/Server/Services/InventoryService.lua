@@ -146,13 +146,14 @@ end
 --========================================
 
 --- 슬롯 설정 (내부용)
-local function _setSlot(inv: any, slot: number, itemId: string?, count: number?)
+local function _setSlot(inv: any, slot: number, itemId: string?, count: number?, durability: number?)
 	if itemId == nil or count == nil or count <= 0 then
 		inv.slots[slot] = nil
 	else
 		inv.slots[slot] = {
 			itemId = itemId,
 			count = count,
+			durability = durability,
 		}
 	end
 end
@@ -171,7 +172,7 @@ local function _decreaseSlot(inv: any, slot: number, count: number)
 end
 
 --- 슬롯에 수량 증가 (또는 새로 생성)
-local function _increaseSlot(inv: any, slot: number, itemId: string, count: number)
+local function _increaseSlot(inv: any, slot: number, itemId: string, count: number, durability: number?)
 	local slotData = inv.slots[slot]
 	if slotData then
 		slotData.count = slotData.count + count
@@ -179,6 +180,7 @@ local function _increaseSlot(inv: any, slot: number, itemId: string, count: numb
 		inv.slots[slot] = {
 			itemId = itemId,
 			count = count,
+			durability = durability,
 		}
 	end
 end
@@ -579,7 +581,7 @@ function InventoryService.MoveInternal(
 	
 	if targetData == nil then
 		-- 타겟 슬롯이 비어있으면: 단순 이동
-		_increaseSlot(targetContainer, targetSlot, sourceData.itemId, moveCount)
+		_increaseSlot(targetContainer, targetSlot, sourceData.itemId, moveCount, sourceData.durability)
 		_decreaseSlot(sourceContainer, sourceSlot, moveCount)
 		
 		table.insert(sourceChanges, _makeChange(sourceContainer, sourceSlot))
@@ -592,7 +594,7 @@ function InventoryService.MoveInternal(
 			return false, Enums.ErrorCode.STACK_OVERFLOW, nil
 		end
 		
-		_increaseSlot(targetContainer, targetSlot, sourceData.itemId, moveCount)
+		_increaseSlot(targetContainer, targetSlot, sourceData.itemId, moveCount, sourceData.durability)
 		_decreaseSlot(sourceContainer, sourceSlot, moveCount)
 		
 		table.insert(sourceChanges, _makeChange(sourceContainer, sourceSlot))
@@ -654,12 +656,13 @@ function InventoryService.addItem(userId: number, itemId: string, count: number)
 		if itemData then maxDurability = itemData.durability end
 	end
 	
-	-- 1. 같은 아이템이 있는 슬롯에 먼저 채우기
+	-- 1. 같은 아이템이 있는 슬롯에 먼저 채우기 (내구도가 필요없는 일반 스택 아이템 한정)
 	for slot = 1, Balance.INV_SLOTS do
 		if remaining <= 0 then break end
+		if maxDurability then break end -- 내구도를 가진 도구/무기류는 함부로 다른 스택과 뭉치지 않고 바로 빈 칸으로 넘김
 		
 		local slotData = inv.slots[slot]
-		if slotData and slotData.itemId == itemId and slotData.count < Balance.MAX_STACK then
+		if slotData and slotData.itemId == itemId and slotData.count < Balance.MAX_STACK and not slotData.durability then
 			local canAddByStack = Balance.MAX_STACK - slotData.count
 			local canAddByWeight = math.floor((maxWeight - currentWeight) / itemWeight)
 			
@@ -724,14 +727,15 @@ function InventoryService.sort(userId: number)
 		end
 	end
 	
-	-- 아이템 압축 (같은 아이템 합치기)
+	-- 아이템 압축 (같은 아이템 합치기, 내구도 보존)
 	local compressed = {}
 	for _, item in ipairs(items) do
 		local remaining = item.count
 		
 		for _, comp in ipairs(compressed) do
 			if remaining <= 0 then break end
-			if comp.itemId == item.itemId and comp.count < Balance.MAX_STACK then
+			-- 내구도가 없는 같은 스택형 자원 아이템일 경우만 합치기
+			if comp.itemId == item.itemId and comp.count < Balance.MAX_STACK and not comp.durability and not item.durability then
 				local space = Balance.MAX_STACK - comp.count
 				local amount = math.min(remaining, space)
 				comp.count = comp.count + amount
@@ -900,6 +904,7 @@ function InventoryService.getFullInventory(userId: number): {{slot: number, item
 				slot = slot,
 				itemId = slotData.itemId,
 				count = slotData.count,
+				durability = slotData.durability,
 			})
 		end
 	end
@@ -1048,11 +1053,40 @@ local function handleUse(player: Player, payload: any)
 		end
 	end
 	
-	-- 2. 소모성 아이템 (Phase 4-2 연동 예정)
+	-- 2. 소모성 아이템
 	if itemData.type == Enums.ItemType.CONSUMABLE then
 		-- 임시: 사용 알림만
 		print(string.format("[InventoryService] User %d used %s", userId, slotData.itemId))
 		return { success = true, data = { action = "USE", itemId = slotData.itemId } }
+	end
+	
+	-- 3. 음식 (Phase 11 연동)
+	if itemData.type == Enums.ItemType.FOOD or itemData.foodValue then
+		local HungerService = require(game:GetService("ServerScriptService").Server.Services.HungerService)
+		local current, max = HungerService.getHunger(userId)
+		if current >= max and not itemData.healingValue then
+			-- 배가 가득 차있고 치유 효과도 없는 음식이면 안 먹어짐
+			return { success = false, errorCode = "HUNGER_FULL" }
+		end
+		
+		-- 배고픔 회복
+		if itemData.foodValue then
+			HungerService.eatFood(userId, itemData.foodValue)
+		end
+		
+		-- 체력 회복
+		if itemData.healingValue then
+			local character = player.Character
+			local humanoid = character and character:FindFirstChild("Humanoid")
+			if humanoid then
+				humanoid.Health = math.min(humanoid.MaxHealth, humanoid.Health + itemData.healingValue)
+			end
+		end
+		
+		-- 아이템 1개 소모
+		InventoryService.removeItemFromSlot(userId, slot, 1)
+		
+		return { success = true, data = { action = "EAT", itemId = slotData.itemId, foodValue = itemData.foodValue } }
 	end
 	
 	return { success = false, errorCode = Enums.ErrorCode.NOT_SUPPORTED }

@@ -332,6 +332,14 @@ function PlayerStatService.spendTechPoints(userId: number, amount: number): bool
 	return true
 end
 
+--- 기술 포인트 환급
+function PlayerStatService.refundTechPoints(userId: number, amount: number)
+	_initPlayerStats(userId)
+	local currentSpent = playerStats[userId].techPointsSpent or 0
+	playerStats[userId].techPointsSpent = math.max(0, currentSpent - amount)
+	_savePlayerStats(userId)
+end
+
 --========================================
 -- Handlers
 --========================================

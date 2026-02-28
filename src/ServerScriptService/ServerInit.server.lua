@@ -130,6 +130,10 @@ NetController.RegisterHandler("Inventory.Drop.Request", handleInventoryDropWithW
 local StaminaService = require(Services.StaminaService)
 StaminaService.Init(NetController)
 
+-- HungerService 초기화 (Phase 11: 생존/배고픔 로그 루프)
+local HungerService = require(Services.HungerService)
+HungerService.Init(NetController)
+
 -- PlayerStatService 초기화 (Phase 6) - 다른 서비스에서 XP 보상을 위해 일찍 초기화
 local PlayerStatService = require(Services.PlayerStatService)
 PlayerStatService.Init(NetController, SaveService, DataService, StaminaService)

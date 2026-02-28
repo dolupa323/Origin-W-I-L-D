@@ -57,7 +57,8 @@ function ShopUI.Refresh(shopItems, playerItems, getItemIcon, C, UIManager)
 	end
 end
 
-function ShopUI.Init(parent, UIManager)
+function ShopUI.Init(parent, UIManager, isMobile)
+	local isSmall = isMobile
 	-- Background Dim
 	ShopUI.Refs.Frame = Utils.mkFrame({
 		name = "ShopMenu",
@@ -102,7 +103,11 @@ function ShopUI.Init(parent, UIManager)
 	local function mkScroll(name)
 		local s = Instance.new("ScrollingFrame")
 		s.Name = name; s.Size = UDim2.new(1, 0, 1, 0); s.BackgroundTransparency = 1; s.BorderSizePixel = 0; s.ScrollBarThickness = 4; s.ScrollBarImageColor3 = C.GRAY; s.Parent = content; s.AutomaticCanvasSize = Enum.AutomaticSize.Y
-		local g = Instance.new("UIGridLayout"); g.CellSize = UDim2.new(0, 85, 0, 85); g.CellPadding = UDim2.new(0, 10, 0, 10); g.Parent = s
+		local g = Instance.new("UIGridLayout")
+		local cellSize = isSmall and 75 or 85
+		g.CellSize = UDim2.new(0, cellSize, 0, cellSize)
+		g.CellPadding = UDim2.new(0, 8, 0, 8)
+		g.Parent = s
 		local pad = Instance.new("UIPadding"); pad.PaddingLeft = UDim.new(0,8); pad.PaddingTop = UDim.new(0,8); pad.PaddingRight = UDim.new(0,8); pad.PaddingBottom = UDim.new(0,8); pad.Parent = s
 		s.ClipsDescendants = false
 		return s
