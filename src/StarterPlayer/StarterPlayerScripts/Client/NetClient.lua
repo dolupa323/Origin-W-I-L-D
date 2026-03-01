@@ -35,23 +35,54 @@ function NetClient.Request(command: string, payload: any?): (boolean, any)
 	
 	local requestId = generateRequestId()
 	
-	local request = {
-		command = command,
-		requestId = requestId,
-		payload = payload or {},
-	}
+	-- 타임아웃 처리 (UI 프리징 방지)
+	local thread = coroutine.running()
+	local completed = false
+	local timeoutSeconds = 5
 	
-	local success, response = pcall(function()
-		local compressedPayload = Protocol.Compress(payload or {})
-		local request = {
-			command = command,
-			requestId = requestId,
-			payload = compressedPayload,
-		}
-		return Cmd:InvokeServer(request)
+	task.delay(timeoutSeconds, function()
+		if not completed then
+			completed = true
+			task.spawn(thread, false, "TIMEOUT")
+		end
 	end)
 	
+	task.spawn(function()
+		local success, responseValue = pcall(function()
+			local compressedPayload = Protocol.Compress(payload or {})
+			local requestData = {
+				command = command,
+				requestId = requestId,
+				payload = compressedPayload,
+			}
+			return Cmd:InvokeServer(requestData)
+		end)
+		
+		if not completed then
+			completed = true
+			task.spawn(thread, success, responseValue)
+		end
+	end)
+	
+	local success, response = coroutine.yield()
+	
 	if not success then
+		if response == "TIMEOUT" then
+			warn("[NetClient] Request timeout:", command)
+			-- UI 프리징 해제 및 알림 (Circular Dependency 방지를 위해 지연 require)
+			task.spawn(function()
+				local UIManager = require(script.Parent.UIManager)
+				if UIManager then
+					if UIManager.hideAllLoading then
+						UIManager.hideAllLoading()
+					end
+					if UIManager.notify then
+						UIManager.notify("서버 응답이 지연되고 있습니다.", Color3.fromRGB(255, 100, 100))
+					end
+				end
+			end)
+			return false, "TIMEOUT"
+		end
 		warn("[NetClient] Request failed:", response)
 		return false, "NETWORK_ERROR"
 	end

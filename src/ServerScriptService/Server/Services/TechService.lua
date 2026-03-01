@@ -22,6 +22,11 @@ local Enums = require(Shared.Enums.Enums)
 local techDataMap = {}   -- [techId] = techData (Init에서 로드)
 local playerUnlocks = {} -- [userId] = { [techId] = true }
 
+-- O(1) 룩업 테이블 (성능 최적화 캐시)
+local unlockedRecipes = {}    -- [userId] = { [recipeId] = true }
+local unlockedFacilities = {} -- [userId] = { [facilityId] = true }
+local unlockedFeatures = {}   -- [userId] = { [featureId] = true }
+
 -- Tech unlock callback (Phase 8)
 local unlockCallback = nil
 
@@ -47,6 +52,34 @@ local function _loadTechData()
 	print(string.format("[TechService] Loaded %d tech nodes", count))
 end
 
+--- 기술 해금 캐시(룩업 테이블) 업데이트
+local function _updateUnlockCache(userId: number, techId: string)
+	local tech = techDataMap[techId]
+	if not tech or not tech.unlocks then return end
+	
+	unlockedRecipes[userId] = unlockedRecipes[userId] or {}
+	unlockedFacilities[userId] = unlockedFacilities[userId] or {}
+	unlockedFeatures[userId] = unlockedFeatures[userId] or {}
+	
+	if tech.unlocks.recipes then
+		for _, recipeId in ipairs(tech.unlocks.recipes) do
+			unlockedRecipes[userId][recipeId] = true
+		end
+	end
+	
+	if tech.unlocks.facilities then
+		for _, facilityId in ipairs(tech.unlocks.facilities) do
+			unlockedFacilities[userId][facilityId] = true
+		end
+	end
+	
+	if tech.unlocks.features then
+		for _, featureId in ipairs(tech.unlocks.features) do
+			unlockedFeatures[userId][featureId] = true
+		end
+	end
+end
+
 --- 플레이어 해금 상태 초기화/로드
 local function _initPlayerUnlocks(userId: number)
 	if playerUnlocks[userId] then return end
@@ -56,11 +89,22 @@ local function _initPlayerUnlocks(userId: number)
 	local savedUnlocks = state and state.unlockedTech
 	
 	playerUnlocks[userId] = savedUnlocks or {}
+	unlockedRecipes[userId] = {}
+	unlockedFacilities[userId] = {}
+	unlockedFeatures[userId] = {}
+	
+	-- 기존 해금된 모든 기술에 대해 캐시 구축
+	for techId, isUnlocked in pairs(playerUnlocks[userId]) do
+		if isUnlocked then
+			_updateUnlockCache(userId, techId)
+		end
+	end
 	
 	-- 기본 기술 자동 해금 (TECH_BASICS 등 cost=0인 것들)
 	for techId, tech in pairs(techDataMap) do
 		if tech.techPointCost == 0 and not playerUnlocks[userId][techId] then
 			playerUnlocks[userId][techId] = true
+			_updateUnlockCache(userId, techId)
 		end
 	end
 end
@@ -150,6 +194,7 @@ function TechService.unlock(userId: number, techId: string): (boolean, string?)
 	
 	-- 해금 처리
 	playerUnlocks[userId][techId] = true
+	_updateUnlockCache(userId, techId)
 	_savePlayerUnlocks(userId)
 	
 	-- 이벤트 발행
@@ -209,6 +254,15 @@ function TechService.relinquish(userId: number): (boolean, number)
 	end
 	
 	playerUnlocks[userId] = newUnlocks
+	unlockedRecipes[userId] = {}
+	unlockedFacilities[userId] = {}
+	unlockedFeatures[userId] = {}
+	
+	-- 기본 기술 캐시 재구축
+	for techId, _ in pairs(newUnlocks) do
+		_updateUnlockCache(userId, techId)
+	end
+	
 	_savePlayerUnlocks(userId)
 	
 	-- 포인트 환급은 StatService에서 담당 (spent 수치 감소)
@@ -284,23 +338,8 @@ end
 --- @return boolean
 function TechService.isRecipeUnlocked(userId: number, recipeId: string): boolean
 	_initPlayerUnlocks(userId)
-	local unlocks = playerUnlocks[userId]
-	
-	-- 모든 기술 순회하여 레시피가 해금되었는지 확인
-	for techId, isUnlocked in pairs(unlocks) do
-		if isUnlocked then
-			local tech = techDataMap[techId]
-			if tech and tech.unlocks and tech.unlocks.recipes then
-				for _, recipe in ipairs(tech.unlocks.recipes) do
-					if recipe == recipeId then
-						return true
-					end
-				end
-			end
-		end
-	end
-	
-	return false
+	local recipes = unlockedRecipes[userId]
+	return recipes and recipes[recipeId] == true or false
 end
 
 --- 특정 시설이 해금되었는지 확인
@@ -309,22 +348,8 @@ end
 --- @return boolean
 function TechService.isFacilityUnlocked(userId: number, facilityId: string): boolean
 	_initPlayerUnlocks(userId)
-	local unlocks = playerUnlocks[userId]
-	
-	for techId, isUnlocked in pairs(unlocks) do
-		if isUnlocked then
-			local tech = techDataMap[techId]
-			if tech and tech.unlocks and tech.unlocks.facilities then
-				for _, fac in ipairs(tech.unlocks.facilities) do
-					if fac == facilityId then
-						return true
-					end
-				end
-			end
-		end
-	end
-	
-	return false
+	local facilities = unlockedFacilities[userId]
+	return facilities and facilities[facilityId] == true or false
 end
 
 --- 특정 기능이 해금되었는지 확인
@@ -333,22 +358,8 @@ end
 --- @return boolean
 function TechService.isFeatureUnlocked(userId: number, featureId: string): boolean
 	_initPlayerUnlocks(userId)
-	local unlocks = playerUnlocks[userId]
-	
-	for techId, isUnlocked in pairs(unlocks) do
-		if isUnlocked then
-			local tech = techDataMap[techId]
-			if tech and tech.unlocks and tech.unlocks.features then
-				for _, feat in ipairs(tech.unlocks.features) do
-					if feat == featureId then
-						return true
-					end
-				end
-			end
-		end
-	end
-	
-	return false
+	local features = unlockedFeatures[userId]
+	return features and features[featureId] == true or false
 end
 
 --========================================
@@ -436,8 +447,12 @@ function TechService.Init(netController, dataService, playerStatService, saveSer
 	
 	-- Player 퇴장 시 정리
 	game:GetService("Players").PlayerRemoving:Connect(function(player)
-		_savePlayerUnlocks(player.UserId)
-		playerUnlocks[player.UserId] = nil
+		local userId = player.UserId
+		_savePlayerUnlocks(userId)
+		playerUnlocks[userId] = nil
+		unlockedRecipes[userId] = nil
+		unlockedFacilities[userId] = nil
+		unlockedFeatures[userId] = nil
 	end)
 	
 	-- 이미 접속한 플레이어 처리

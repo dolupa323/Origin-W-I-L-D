@@ -59,6 +59,8 @@ local function _getDefaultPlayerSave()
 		barn = {},
 		-- 기술 해금
 		unlockedTech = {["TECH_Lv1_BASICS"] = true},
+		-- 제작 큐 (persistence)
+		craftingQueue = {},
 		-- 팰 보관함 (Phase 5)
 		palbox = {},
 		-- 통계 및 스탯 (Phase 6)
@@ -343,6 +345,12 @@ local function onPlayerRemoving(player: Player)
 	local ok, err = SaveService.savePlayer(userId)
 	if not ok then
 		warn(string.format("[SaveService] PlayerRemoving save failed: %d - %s", userId, tostring(err)))
+	end
+	
+	-- 인벤토리 서비스 정리 (무결성 보장: 저장 시도 후 메모리 데이터 제거)
+	local ISuccess, InventoryService = pcall(function() return require(game:GetService("ServerScriptService").Server.Services.InventoryService) end)
+	if ISuccess and InventoryService then
+		InventoryService.removeInventory(userId)
 	end
 	
 	-- 메모리에서 제거

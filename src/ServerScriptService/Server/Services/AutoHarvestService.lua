@@ -148,16 +148,16 @@ local function processGatheringFacility(structureId: string, facilityData: any, 
 			continue
 		end
 		
-		-- 수확 실행
-		local drops = calculateDrops(nodeData)
+		-- [FIX] 노드 데미지 적용하여 고갈 처리 (무한 자원 복사 방지)
+		local palDamage = 1 -- 팰의 기본 타격 데미지
+		local eff = (palInstance.workPower or 1) * 0.5 -- 팰의 효율
+		
+		local success, _, drops = HarvestService.damageNode(node.nodeUID, palDamage, eff, ownerId)
+		if not success then continue end
 		
 		for _, drop in ipairs(drops) do
-			-- workPower 보너스 적용
-			local bonusCount = math.floor(drop.count * workPowerBonus)
-			local totalCount = drop.count + bonusCount
-			
 			-- Output 슬롯에 추가
-			local remaining = addToOutput(structureId, drop.itemId, totalCount)
+			local remaining = addToOutput(structureId, drop.itemId, drop.count)
 			
 			if remaining > 0 then
 				-- Output 가득 참 - 수확 중단
@@ -166,7 +166,7 @@ local function processGatheringFacility(structureId: string, facilityData: any, 
 				return
 			end
 			
-			harvestedCount = harvestedCount + totalCount
+			harvestedCount = harvestedCount + drop.count
 		end
 	end
 	

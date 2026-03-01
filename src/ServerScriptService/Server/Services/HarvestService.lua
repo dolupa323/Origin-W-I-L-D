@@ -643,41 +643,63 @@ function HarvestService._despawnCheck()
 	local nodeFolder = workspace:FindFirstChild("ResourceNodes")
 	if not nodeFolder then return end
 	
-	for _, nodeModel in ipairs(nodeFolder:GetChildren()) do
-		-- 자동 스폰된 노드만 디스폰 (수동 배치는 유지)
-		if nodeModel:GetAttribute("AutoSpawned") then
-			local nodeUID = nodeModel:GetAttribute("NodeUID")
-			local nodePart = nodeModel.PrimaryPart or nodeModel:FindFirstChildWhichIsA("BasePart")
-			
-			if nodePart then
-				-- 가장 가까운 플레이어와의 거리 체크
-				local minDist = math.huge
-				for _, player in ipairs(Players:GetPlayers()) do
-					local char = player.Character
-					if char and char:FindFirstChild("HumanoidRootPart") then
-						local dist = (char.HumanoidRootPart.Position - nodePart.Position).Magnitude
-						if dist < minDist then
-							minDist = dist
-						end
-					end
+	local nodes = nodeFolder:GetChildren()
+	if #nodes == 0 then return end
+	
+	local players = Players:GetPlayers()
+	if #players == 0 then
+		-- 플레이어 없으면 모든 자동 노드 즉시 제거
+		for _, nodeModel in ipairs(nodes) do
+			if nodeModel:GetAttribute("AutoSpawned") then
+				local nodeUID = nodeModel:GetAttribute("NodeUID")
+				if nodeUID and activeNodes[nodeUID] then
+					local nodeId = activeNodes[nodeUID].nodeId
+					activeNodes[nodeUID] = nil
+					spawnedNodesByType[nodeId] = math.max(0, (spawnedNodesByType[nodeId] or 0) - 1)
+					spawnedNodeCount = math.max(0, spawnedNodeCount - 1)
 				end
-				
-				-- 너무 멀면 디스폰
-				if minDist > DESPAWN_DIST then
-					-- activeNodes에서 제거
-					if nodeUID and activeNodes[nodeUID] then
-						local nodeId = activeNodes[nodeUID].nodeId
-						activeNodes[nodeUID] = nil
-						
-						-- 카운트 감소
-						spawnedNodesByType[nodeId] = math.max(0, (spawnedNodesByType[nodeId] or 0) - 1)
-						spawnedNodeCount = math.max(0, spawnedNodeCount - 1)
-					end
-					
-					-- 모델 제거
-					nodeModel:Destroy()
+				nodeModel:Destroy()
+			end
+		end
+		return
+	end
+
+	-- 1. 보존할 노드 식별 (플레이어 주변 DESPAWN_DIST 이내)
+	local keepNodes = {}
+	local params = OverlapParams.new()
+	params.FilterDescendantsInstances = { nodeFolder }
+	params.FilterType = Enum.RaycastFilterType.Include
+	
+	for _, player in ipairs(players) do
+		local char = player.Character
+		local hrp = char and char:FindFirstChild("HumanoidRootPart")
+		if hrp then
+			-- 공간 분할 색인(GetPartBoundsInRadius) 활용하여 근처 노드만 추출
+			local nearbyParts = workspace:GetPartBoundsInRadius(hrp.Position, DESPAWN_DIST, params)
+			for _, part in ipairs(nearbyParts) do
+				local model = part:FindFirstAncestorOfClass("Model")
+				if model and model.Parent == nodeFolder then
+					keepNodes[model] = true
 				end
 			end
+		end
+	end
+	
+	-- 2. 보존 목록에 없는 자동 스폰 노드 제거
+	for _, nodeModel in ipairs(nodes) do
+		if nodeModel:GetAttribute("AutoSpawned") and not keepNodes[nodeModel] then
+			local nodeUID = nodeModel:GetAttribute("NodeUID")
+			if nodeUID and activeNodes[nodeUID] then
+				local nodeId = activeNodes[nodeUID].nodeId
+				activeNodes[nodeUID] = nil
+				
+				-- 카운트 감소
+				spawnedNodesByType[nodeId] = math.max(0, (spawnedNodesByType[nodeId] or 0) - 1)
+				spawnedNodeCount = math.max(0, spawnedNodeCount - 1)
+			end
+			
+			-- 모델 제거
+			nodeModel:Destroy()
 		end
 	end
 end
@@ -768,7 +790,7 @@ function HarvestService.hit(player: Player, nodeUID: string, toolSlot: number?, 
 	end
 	playerCooldowns[userId] = now
 	
-	-- 2. 노드 존재 확인 (고갈된 노드는 activeNodes에서 제거됨)
+	-- 2. 노드 존재 확인
 	local nodeState = activeNodes[nodeUID]
 	if not nodeState then
 		return false, Enums.ErrorCode.NODE_NOT_FOUND, nil
@@ -793,49 +815,57 @@ function HarvestService.hit(player: Player, nodeUID: string, toolSlot: number?, 
 		end
 	end
 	
-	-- 5. 도구 검증 (특정 자원은 맨손 불가)
+	-- 5. 도구 검증
 	local toolOk, toolError = validateTool(player, nodeData, toolSlot)
 	if not toolOk then
-		-- 맨손 채집 불가 시 안내 (클라이언트에서 처리하거나 여기서 ErrorCode 전달)
 		return false, toolError or Enums.ErrorCode.WRONG_TOOL, nil
 	end
 	
 	-- 6. 효율 계산
 	local efficiency = calculateEfficiency(player, nodeData.optimalTool, toolSlot)
 	
-	-- 7. 타격 처리
+	-- 7. 타격 처리 (Power 계산)
 	local workSpeedStat = 0
 	if PlayerStatService then
 		local stats = PlayerStatService.getStats(player.UserId)
 		workSpeedStat = (stats and stats.statInvested and stats.statInvested[Enums.StatId.WORK_SPEED]) or 0
 	end
+	local power = 1 + math.floor(workSpeedStat / 10)
 	
-	local power = 1 + math.floor(workSpeedStat / 10) -- 10점당 타격 횟수 +1 (속도)
-	local actualHitCount = math.min(power, nodeState.remainingHits)
-	nodeState.remainingHits = nodeState.remainingHits - actualHitCount
+	-- 8. 실제 데미지 적용
+	local success, err, drops = HarvestService.damageNode(nodeUID, power, efficiency, userId)
 	
-	-- 7.4 도구 내구도 감소 (Phase 10-11)
-	-- 실제 아이템이 있고 내구도 속성이 있는 경우만 시도
-	if toolSlot and DurabilityService and InventoryService then
-		local slotData = InventoryService.getSlot(player.UserId, toolSlot)
+	-- 9. (Player-specific) 도구 내구도 감소
+	if success and toolSlot and DurabilityService and InventoryService then
+		local slotData = InventoryService.getSlot(userId, toolSlot)
 		if slotData and slotData.durability then
-			DurabilityService.reduceDurability(player, toolSlot, 1) -- 스윙당 1 감소 (또는 actualHitCount에 비례 가능)
+			DurabilityService.reduceDurability(player, toolSlot, 1)
 		end
 	end
 	
-	-- 7.5 XP 보상 (타격당 지급)
-	if PlayerStatService then
-		local xpPerHit = nodeData.xpPerHit or Balance.XP_HARVEST_XP_PER_HIT or 2
-		PlayerStatService.addXP(player.UserId, xpPerHit * actualHitCount, Enums.XPSource.HARVEST_RESOURCE)
+	-- 10. (Player-specific) 배고픔 소모
+	if success then
+		local HSuccess, HungerService = pcall(function() return require(game:GetService("ServerScriptService").Server.Services.HungerService) end)
+		if HSuccess and HungerService then
+			HungerService.consumeHunger(userId, Balance.HUNGER_HARVEST_COST * power)
+		end
 	end
 	
-	-- 7.6 채집 시 배고픔 소모 연동 (Phase 11)
-	local HSuccess, HungerService = pcall(function() return require(game:GetService("ServerScriptService").Server.Services.HungerService) end)
-	if HSuccess and HungerService then
-		HungerService.consumeHunger(userId, Balance.HUNGER_HARVEST_COST * actualHitCount)
-	end
+	return success, err, drops
+end
+
+--- 자원 노드에 데미지 적용 (플레이어/팰 공용)
+function HarvestService.damageNode(nodeUID: string, damage: number, efficiency: number, sourceUserId: number?): (boolean, string?, {any}?)
+	local nodeState = activeNodes[nodeUID]
+	if not nodeState then return false, Enums.ErrorCode.NODE_NOT_FOUND, nil end
 	
-	-- 타격 브로드캐스트 (네트워크 최적화: 400스터드)
+	local nodeData = DataService.getResourceNode(nodeState.nodeId)
+	if not nodeData then return false, Enums.ErrorCode.NOT_FOUND, nil end
+	
+	local actualDamage = math.min(damage, nodeState.remainingHits)
+	nodeState.remainingHits = nodeState.remainingHits - actualDamage
+	
+	-- 타격 브로드캐스트
 	if NetController then
 		NetController.FireClientsInRange(nodeState.position, 400, "Harvest.Node.Hit", {
 			nodeUID = nodeUID,
@@ -844,67 +874,51 @@ function HarvestService.hit(player: Player, nodeUID: string, toolSlot: number?, 
 		})
 	end
 	
-	-- 8. 노드 고갈 처리 (모델 파괴 + 드롭 생성)
+	-- XP 보상 (있을 때만)
+	if sourceUserId and PlayerStatService then
+		local xpPerHit = nodeData.xpPerHit or Balance.XP_HARVEST_XP_PER_HIT or 2
+		PlayerStatService.addXP(sourceUserId, xpPerHit * actualDamage, Enums.XPSource.HARVEST_RESOURCE)
+	end
+	
 	local drops = {}
 	if nodeState.remainingHits <= 0 then
-		-- 고갈 시 드롭 계산 (효율 적용)
+		-- 고갈 시 드롭 계산
 		drops = calculateDrops(nodeData, efficiency)
 		
-		print(string.format("[HarvestService] Calculated drops for %s: %d items", nodeUID, #drops))
-		
-		-- 월드 드롭으로 생성 (인벤토리 직접 추가 X)
-		for i, drop in ipairs(drops) do
-			print(string.format("[HarvestService] Drop %d: %s x%d", i, drop.itemId, drop.count))
+		-- 월드 드롭 생성
+		for _, drop in ipairs(drops) do
 			if WorldDropService then
-				-- 랜덤 위치에 드롭 (노드 주변)
 				local angle = math.random() * math.pi * 2
 				local radius = math.random() * 2 + 1
-				local dropPosition = nodeState.position + Vector3.new(
-					math.cos(angle) * radius,
-					1.5,
-					math.sin(angle) * radius
-				)
-				local success, err, dropData = WorldDropService.spawnDrop(dropPosition, drop.itemId, drop.count)
-				if success and dropData then
-					print(string.format("[HarvestService] Spawned drop: %s at %s", tostring(dropData.dropId), tostring(dropPosition)))
-				else
-					warn("[HarvestService] Failed to spawn drop:", err)
-				end
-			else
-				warn("[HarvestService] WorldDropService is nil!")
+				local dropPosition = nodeState.position + Vector3.new(math.cos(angle) * radius, 1.5, math.sin(angle) * radius)
+				WorldDropService.spawnDrop(dropPosition, drop.itemId, drop.count)
 			end
 		end
 		
-		-- 서버에서 모델 파괴 (원본 데이터 저장)
-		local originalPartData = HarvestService._destroyNodeModel(nodeUID)
+		-- 모델 제거
+		HarvestService._destroyNodeModel(nodeUID)
 		
-		-- 고갈된 노드 처리
+		-- 고갈 처리
 		if nodeState.isAutoSpawned then
-			-- 자동 스폰된 노드는 리스폰 시키지 않고 카운트만 감소
 			local nodeId = nodeState.nodeId
 			spawnedNodesByType[nodeId] = math.max(0, (spawnedNodesByType[nodeId] or 0) - 1)
 			spawnedNodeCount = math.max(0, spawnedNodeCount - 1)
 			activeNodes[nodeUID] = nil
-			-- _respawnNode를 예약하지 않음
 		else
-			-- 수동 배치된 노드는 리스폰 예약
 			depletedNodes[nodeUID] = {
 				nodeId = nodeState.nodeId,
 				position = nodeState.position,
 				respawnAt = os.time() + (nodeData.respawnTime or 300),
-				originalPartData = originalPartData,
 			}
 			activeNodes[nodeUID] = nil
-			
-			-- 리스폰 예약
 			task.delay(nodeData.respawnTime or 300, function()
 				HarvestService._respawnNode(nodeUID)
 			end)
 		end
 		
-		-- 퀘스트 콜백 (Phase 8)
-		if questCallback then
-			questCallback(userId, nodeData.nodeType or nodeData.id)
+		-- 퀘스트 콜백
+		if sourceUserId and questCallback then
+			questCallback(sourceUserId, nodeData.nodeType or nodeData.id)
 		end
 	end
 	

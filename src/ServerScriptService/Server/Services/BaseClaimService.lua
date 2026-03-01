@@ -106,13 +106,28 @@ function BaseClaimService.create(userId: number, position: Vector3): (boolean, s
 		return false, Enums.ErrorCode.NOT_SUPPORTED, nil
 	end
 	
+	-- 중첩 검사 (Overlap Protection: (NewRadius + OtherRadius) < Distance)
+	local newRadius = Balance.BASE_DEFAULT_RADIUS or 30
+	for _, otherBase in pairs(bases) do
+		local dx = position.X - otherBase.centerPosition.X
+		local dz = position.Z - otherBase.centerPosition.Z
+		local dist = math.sqrt(dx * dx + dz * dz)
+		
+		-- 안전 마진 포함 (중첩 원천 차단)
+		local minSafeDist = newRadius + otherBase.radius
+		if dist < minSafeDist then
+			print(string.format("[BaseClaimService] Create failed: Overlap with player %d's base", otherBase.ownerId))
+			return false, Enums.ErrorCode.COLLISION, nil
+		end
+	end
+	
 	-- 베이스 생성
 	local baseId = generateBaseId(userId)
 	local baseClaim = {
 		id = baseId,
 		ownerId = userId,
 		centerPosition = position,
-		radius = Balance.BASE_DEFAULT_RADIUS or 30,
+		radius = newRadius,
 		level = 1,
 		createdAt = os.time(),
 	}
@@ -141,6 +156,20 @@ end
 --- 베이스 조회
 function BaseClaimService.getBase(userId: number): any?
 	return bases[userId]
+end
+
+--- 해당 위치를 소유한 베이스 주인 ID 반환
+function BaseClaimService.getOwnerAt(position: Vector3): number?
+	for userId, baseClaim in pairs(bases) do
+		local dx = position.X - baseClaim.centerPosition.X
+		local dz = position.Z - baseClaim.centerPosition.Z
+		local dist = math.sqrt(dx * dx + dz * dz)
+		
+		if dist <= baseClaim.radius then
+			return userId
+		end
+	end
+	return nil
 end
 
 --- 위치가 베이스 안인지 확인

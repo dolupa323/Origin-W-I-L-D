@@ -163,6 +163,16 @@ local function emitCraftEvent(eventName: string, player: Player, data: any)
 	end
 end
 
+--- SaveService에 현재 큐 상태 동기화
+local function _syncToSave(userId: number)
+	if not SaveService then return end
+	local queue = craftQueues[userId] or {}
+	SaveService.updatePlayerState(userId, function(state)
+		state.craftingQueue = queue
+		return state
+	end)
+end
+
 local function emitCraftEventToAll(eventName: string, data: any)
 	if NetController then
 		NetController.FireAllClients(eventName, data)
@@ -190,7 +200,26 @@ function CraftingService.Init(_NetController, _DataService, _InventoryService, _
 	-- Heartbeat 연결 (Lazy tick)
 	RunService.Heartbeat:Connect(processTick)
 	
-	-- 플레이어 퇴장 이벤트
+	-- 플레이어 이벤트 연결
+	Players.PlayerAdded:Connect(function(player)
+		local userId = player.UserId
+		-- SaveService에서 저장된 큐 로드
+		if SaveService then
+			local state = SaveService.getPlayerState(userId)
+			if state and state.craftingQueue then
+				-- 기존 큐가 있으면 병합 (이미 진행 중인 오프라인 작업 등)
+				if not craftQueues[userId] then
+					craftQueues[userId] = state.craftingQueue
+				else
+					for cid, entry in pairs(state.craftingQueue) do
+						if not craftQueues[userId][cid] then
+							craftQueues[userId][cid] = entry
+						end
+					end
+				end
+			end
+		end
+	end)
 	Players.PlayerRemoving:Connect(onPlayerRemoving)
 	
 	initialized = true
@@ -311,7 +340,7 @@ function CraftingService.start(player: Player, recipeId: string, structureId: st
 		completesAt = craftEntry.completesAt,
 	}
 	
-	emitCraftEvent("Craft.Started", player, startData)
+	_syncToSave(userId)
 	
 	print(string.format("[CraftingService] Queued craft %s (%s) for player %d, completes in %ds",
 		craftId, recipeId, userId, realCraftTime))
@@ -349,6 +378,7 @@ function CraftingService.cancel(player: Player, craftId: string)
 	
 	-- 큐에서 제거
 	queue[craftId] = nil
+	_syncToSave(userId)
 	
 	local cancelData = {
 		craftId = craftId,
@@ -377,11 +407,11 @@ function CraftingService.collect(player: Player, craftId: string)
 	-- Lazy Update: 완료 시간 확인
 	local now = os.time()
 	if entry.state == Enums.CraftState.CRAFTING and now >= entry.completesAt then
-		entry.state = Enums.CraftState.COMPLETED
+		entry.state = Enums.CraftState.PENDING_COLLECT
 	end
 	
 	-- 아직 제작 중이면 수거 불가
-	if entry.state ~= Enums.CraftState.COMPLETED then
+	if entry.state ~= Enums.CraftState.PENDING_COLLECT then
 		return false, Enums.ErrorCode.INVALID_STATE, nil
 	end
 	
@@ -416,6 +446,7 @@ function CraftingService.collect(player: Player, craftId: string)
 	
 	-- 큐에서 제거
 	queue[craftId] = nil
+	_syncToSave(userId)
 	
 	local collectData = {
 		craftId = craftId,
@@ -441,7 +472,7 @@ function CraftingService.getQueue(player: Player)
 	local result = {}
 	for craftId, entry in pairs(queue) do
 		if entry.state == Enums.CraftState.CRAFTING and now >= entry.completesAt then
-			entry.state = Enums.CraftState.COMPLETED
+			entry.state = Enums.CraftState.PENDING_COLLECT
 		end
 		table.insert(result, {
 			craftId = craftId,
@@ -537,14 +568,20 @@ processTick = function()
 	for userId, queue in pairs(craftQueues) do
 		for craftId, entry in pairs(queue) do
 			if entry.state == Enums.CraftState.CRAFTING and now >= entry.completesAt then
-				entry.state = Enums.CraftState.COMPLETED
+				entry.state = Enums.CraftState.PENDING_COLLECT
+				_syncToSave(userId)
 				
 				local player = Players:GetPlayerByUserId(userId)
 				if player then
 					-- [NEW] 맨손 제작(Hand Craft)인 경우 즉시 자동 수거
 					if not entry.structureId then
 						task.spawn(function()
-							CraftingService.collect(player, craftId)
+							local success, _, _ = CraftingService.collect(player, craftId)
+							if not success then
+								-- 인벤토리 가득 참 등으로 수거 실패 시 에러 도배 방지
+								-- PENDING_COLLECT 상태로 유지되어 수동 수거 대기
+								print(string.format("[CraftingService] Auto-collect failed for %s (INV_FULL?), keeping in PENDING_COLLECT", craftId))
+							end
 						end)
 						print(string.format("[CraftingService] Auto-collected personal craft %s for userId %d", craftId, userId))
 					else
@@ -565,9 +602,28 @@ end
 -- Player 퇴장 시 큐 정리
 --========================================
 onPlayerRemoving = function(player: Player)
-	-- 진행 중인 제작은 다음 접속 시 복원하지 않음 (비영속)
-	-- 재료는 이미 차감되었으므로, 재접속 시 사라짐 (의도된 설계)
-	craftQueues[player.UserId] = nil
+	local userId = player.UserId
+	local queue = craftQueues[userId]
+	if not queue then return end
+	
+	-- 오프라인 정체 방지를 위해 완료되지 않은 '맨손 제작'만 취소 처리
+	-- 시설 제작(structureId 있음)은 큐에 유지하여 오프라인 제작 지원
+	for craftId, entry in pairs(queue) do
+		if not entry.structureId and entry.state == Enums.CraftState.CRAFTING then
+			queue[craftId] = nil
+		end
+	end
+	
+	-- 만약 큐가 완전히 비게 되었다면 메모리에서 해제, 아니면 오프라인 진행을 위해 유지
+	local hasRemaining = false
+	for _ in pairs(queue) do hasRemaining = true break end
+	
+	if not hasRemaining then
+		craftQueues[userId] = nil
+	end
+	
+	-- 최종 상태 저장
+	_syncToSave(userId)
 end
 
 --========================================

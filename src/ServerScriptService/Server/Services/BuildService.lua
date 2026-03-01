@@ -249,6 +249,14 @@ function BuildService.place(player: Player, facilityId: string, position: Vector
 		return false, Enums.ErrorCode.RECIPE_LOCKED, nil
 	end
 	
+	-- 1b. 타 유저 베이스 영역 검증 (Griefing Protection)
+	if BaseClaimService and BaseClaimService.getOwnerAt then
+		local zoneOwnerId = BaseClaimService.getOwnerAt(position)
+		if zoneOwnerId and zoneOwnerId ~= userId then
+			return false, Enums.ErrorCode.NO_PERMISSION, nil
+		end
+	end
+	
 	-- 2. 거리 검증 (서버 권위)
 	if character then
 		local hrp = character:FindFirstChild("HumanoidRootPart")
@@ -436,6 +444,17 @@ function BuildService.getAll(): {any}
 			health = struct.health,
 			ownerId = struct.ownerId,
 		})
+	end
+	return result
+end
+
+--- 특정 소유자의 모든 구조물 조회
+function BuildService.getStructuresByOwner(ownerId: number): {any}
+	local result = {}
+	for _, struct in pairs(structures) do
+		if struct.ownerId == ownerId then
+			table.insert(result, struct)
+		end
 	end
 	return result
 end

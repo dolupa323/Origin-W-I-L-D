@@ -21,6 +21,7 @@ local Enums = require(Shared.Enums.Enums)
 -- Internal State
 --========================================
 local playerStats = {}  -- [userId] = { level, currentXP, totalXP, techPointsSpent, statPoints = { StatId -> Level } }
+local totalXPTable = {} -- [level] = totalXPRequired (Pre-calculated lookup table)
 
 -- Level up callback (Phase 8)
 local levelUpCallback = nil
@@ -28,29 +29,30 @@ local levelUpCallback = nil
 --========================================
 -- Internal: XP/Level Calculations
 --========================================
---- 레벨에 필요한 총 XP 계산
+
+--- 레벨에 필요한 총 XP 계산 (Lookup Table 사용으로 O(1) 최적화)
 local function _getTotalXPForLevel(level: number): number
 	if level <= 1 then return 0 end
-	local total = 0
-	for l = 1, level - 1 do
-		total = total + math.floor(Balance.BASE_XP_PER_LEVEL * (Balance.XP_SCALING ^ (l - 1)))
+	if level > Balance.PLAYER_MAX_LEVEL then
+		return totalXPTable[Balance.PLAYER_MAX_LEVEL] or math.huge
 	end
-	return total
+	return totalXPTable[level] or 0
 end
 
 --- XP로부터 레벨 계산
 local function _calculateLevelFromXP(totalXP: number): number
-	local level = 1
-	while level < Balance.PLAYER_MAX_LEVEL do
-		local nextLevelXP = _getTotalXPForLevel(level + 1)
-		if totalXP < nextLevelXP then break end
-		level = level + 1
+	-- 역순으로 순회하거나 이진 탐색 가능 (최대 레벨이 작으므로 역순 순회로도 충분히 빠름)
+	for level = Balance.PLAYER_MAX_LEVEL, 1, -1 do
+		if totalXP >= _getTotalXPForLevel(level) then
+			return level
+		end
 	end
-	return level
+	return 1
 end
 
 --- 다음 레벨까지 필요한 XP (순수 해당 레벨 구간)
 local function _getXPForNextLevel(currentLevel: number): number
+	if currentLevel >= Balance.PLAYER_MAX_LEVEL then return 0 end
 	return math.floor(Balance.BASE_XP_PER_LEVEL * (Balance.XP_SCALING ^ (currentLevel - 1)))
 end
 
@@ -372,6 +374,15 @@ function PlayerStatService.Init(netController, saveService, dataService, stamina
 	SaveService = saveService
 	DataService = dataService
 	StaminaService = staminaService
+	
+	-- [PRE-CALCULATE] XP Lookup Table (O(N^2) 방지)
+	local runningTotal = 0
+	totalXPTable[1] = 0
+	for l = 1, Balance.PLAYER_MAX_LEVEL - 1 do
+		local xpNeededForThisLevel = math.floor(Balance.BASE_XP_PER_LEVEL * (Balance.XP_SCALING ^ (l - 1)))
+		runningTotal = runningTotal + xpNeededForThisLevel
+		totalXPTable[l + 1] = runningTotal
+	end
 	
 	-- Player 접속 시 스탯 초기화
 	game:GetService("Players").PlayerAdded:Connect(function(player)

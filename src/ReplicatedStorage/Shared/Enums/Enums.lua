@@ -171,7 +171,8 @@ Enums.FacilityType = {
 Enums.CraftState = {
 	IDLE = "IDLE",             -- 대기
 	CRAFTING = "CRAFTING",     -- 제작 중
-	COMPLETED = "COMPLETED",   -- 완료 (수거 대기)
+	COMPLETED = "COMPLETED",   -- 완료 (수거 완료)
+	PENDING_COLLECT = "PENDING_COLLECT", -- 완료 (수거 대기)
 	CANCELLED = "CANCELLED",   -- 취소됨
 }
 

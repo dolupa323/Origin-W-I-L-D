@@ -103,6 +103,8 @@ function UIManager.openTechTree()
 	if isTechOpen then return end
 	closeAllWindows("TECH")
 	isTechOpen = true
+	InputManager.setUIOpen(true)
+	UIManager._setMainHUDVisible(false)
 	
 	-- Blur
 	if not blurEffect then
@@ -110,8 +112,7 @@ function UIManager.openTechTree()
 	end
 	
 	TechUI.SetVisible(true)
-	InputManager.setUIOpen(true)
-	UIManager._setMainHUDVisible(false)
+	UIManager.refreshTechTree()
 end
 
 function UIManager.closeTechTree()
@@ -424,6 +425,14 @@ function UIManager.openInventory(startTab)
 		if startTab then InventoryUI.SetTab(startTab) end
 		return 
 	end
+	
+	-- 만약 단축키 등으로 직접 여는 것이라면 시설 정보 초기화
+	-- (openWorkbench를 통해 들어온 것이 아님을 보장)
+	if not startTab or startTab == "BAG" then
+		activeFacilityId = nil
+		activeStructureId = nil
+	end
+
 	closeAllWindows("INV")
 	isInvOpen = true
 	InventoryUI.SetVisible(true)
@@ -438,6 +447,18 @@ end
 
 function UIManager.closeInventory()
 	if not isInvOpen then return end
+	
+	-- 드래그 상태 강제 초기화 (Drag & Drop Cleanup)
+	if isDragging then
+		isDragging = false
+		if dragDummy then
+			dragDummy:Destroy()
+			dragDummy = nil
+		end
+		pendingDragIdx = nil
+		draggingSlotIdx = nil
+	end
+	
 	isInvOpen = false
 	InventoryUI.SetVisible(false)
 	updateUIMode()
@@ -675,97 +696,21 @@ end
 ----------------------------------------------------------------
 -- Public API: Crafting
 ----------------------------------------------------------------
+--- [수정] C키는 건축(건물을 짓는 행위) 전용입니다.
 function UIManager.openCrafting(mode)
-	if isCraftOpen then return end
-	closeAllWindows("CRAFT")
-	activeStructureId = nil
-	activeFacilityId = nil
-	isCraftOpen = true
-	CraftingUI.SetVisible(true)
-	InputManager.setUIOpen(true)
-	UIManager._setMainHUDVisible(false)
-	
-	menuMode = mode or "BUILDING"
-	CraftingUI.UpdateTitle(menuMode == "CRAFTING" and "제작 벤치" or "건축 및 시설")
-
-	blurEffect = Instance.new("BlurEffect"); blurEffect.Size = 15; blurEffect.Parent = Lighting
-	UIManager.refreshCrafting()
-end
-
---- 작업대(가구)를 통한 제작 메뉴 열기
-function UIManager.openWorkbench(structureId, facilityId)
-	if isCraftOpen then return end
-	closeAllWindows("CRAFT")
-	activeStructureId = structureId
-	activeFacilityId = facilityId
-	isCraftOpen = true
-	CraftingUI.SetVisible(true)
-	InputManager.setUIOpen(true)
-	UIManager._setMainHUDVisible(false)
-	menuMode = "CRAFTING" -- 작업대는 여전히 제작 모
-	
-	CraftingUI.UpdateTitle(facilityId == "CAMPFIRE" and "요리 하기" or "작업대 제작")
-
-	-- Blur
-	blurEffect = Instance.new("BlurEffect"); blurEffect.Size = 15; blurEffect.Parent = Lighting
-	UIManager.refreshCrafting()
-end
-
-function UIManager.closeCrafting()
-	if not isCraftOpen then return end
-	if blurEffect then blurEffect:Destroy(); blurEffect = nil end
-	isCraftOpen = false
-	CraftingUI.SetVisible(false)
-	selectedRecipeId = nil
-	updateUIMode()
+	UIManager.openBuild()
 end
 
 function UIManager.toggleCrafting()
-	if isCraftOpen then UIManager.closeCrafting() else UIManager.openCrafting() end
+	UIManager.toggleBuild()
 end
 
-function UIManager.refreshCrafting()
-	task.spawn(function()
-		local recipes, facilities = {}, {}
-		if menuMode == "CRAFTING" then
-			local ok, data = NetClient.Request("Recipe.List.Request", {
-				structureId = activeStructureId,
-				facilityId = activeFacilityId
-			})
-			if ok and data and data.recipes then recipes = data.recipes end
-		else
-			local ok, data = NetClient.Request("Facility.List.Request", {})
-			if ok and data and data.facilities then facilities = data.facilities end
-		end
-
-		local itemsToShow = (menuMode == "CRAFTING") and recipes or facilities
-		table.sort(itemsToShow, function(a, b)
-			local lvA = a.techLevel or 0
-			local lvB = b.techLevel or 0
-			if lvA ~= lvB then return lvA < lvB end
-			return (a.name or "") < (b.name or "")
-		end)
-
-		local playerItemCounts = InventoryController.getItemCounts()
-		CraftingUI.Refresh(itemsToShow, playerItemCounts, getItemIcon, menuMode, UIManager)
-	end)
+--- [제거] 작업대라는 개념은 존재하지 않습니다. 모든 아이템 제작은 인벤토리에서 진행됩니다.
+function UIManager.openWorkbench(structureId, facilityId)
+	UIManager.notify("시설에 접근했습니다. (제작은 인벤토리[I]에서 가능합니다)", C.GOLD)
 end
 
-function UIManager._onCraftSlotClick(item, mode)
-	if mode == "CRAFTING" then
-		selectedRecipeId = item.id
-		selectedFacilityId = nil
-	else
-		selectedRecipeId = nil
-		selectedFacilityId = item.id
-	end
-	
-	local playerItemCounts = InventoryController.getItemCounts()
-	local isLocked = item.isLocked
-	local canMake, _ = UIManager.checkMaterials(item, playerItemCounts)
-	
-	CraftingUI.UpdateDetail(item, mode, isLocked, canMake, playerItemCounts, DataHelper)
-end
+-- [Legacy] Removed refreshCrafting and _onCraftSlotClick as all logic moved to refreshPersonalCrafting.
 
 -- 재료 체크 헬퍼
 function UIManager.checkMaterials(item, playerItemCounts)
@@ -797,10 +742,27 @@ end
 function UIManager.refreshPersonalCrafting(forceRefresh)
 	if not invPersonalCraftGrid then return end
 	
-	-- Clear unless we're just updating states
 	if forceRefresh or not cachedPersonalRecipes then
 		for _, ch in pairs(invPersonalCraftGrid:GetChildren()) do if ch:IsA("Frame") then ch:Destroy() end end
 		personalCraftNodes = {}; selectedPersonalRecipeId = nil
+		
+		-- [수정] 인벤토리 제작탭은 '아이템 레시피'만 표시합니다.
+		local allRecipes = require(ReplicatedStorage.Data.RecipeData)
+		cachedPersonalRecipes = {}
+		
+		for _, recipe in ipairs(allRecipes) do
+			-- 작업대가 없으므로 모든 레시피를 인벤토리에서 보여줍니다 (단, 기술 해금 필요)
+			local r = table.clone(recipe)
+			r._isFacility = false
+			table.insert(cachedPersonalRecipes, r)
+		end
+		
+		table.sort(cachedPersonalRecipes, function(a, b) 
+			local lvA = a.techLevel or 0
+			local lvB = b.techLevel or 0
+			if lvA ~= lvB then return lvA < lvB end
+			return (a.name or "") < (b.name or "")
+		end)
 	end
 
 	local gridLayout = invPersonalCraftGrid:FindFirstChildOfClass("UIGridLayout")
@@ -822,6 +784,7 @@ function UIManager.refreshPersonalCrafting(forceRefresh)
 
 	local function updateNodes(recipes)
 		local playerItemCounts = InventoryController.getItemCounts()
+		local TechController = require(Controllers.TechController)
 		
 		for _, recipe in ipairs(recipes) do
 			local isLocked = not TechController.isRecipeUnlocked(recipe.id)
@@ -901,18 +864,7 @@ function UIManager.refreshPersonalCrafting(forceRefresh)
 		invPersonalCraftGrid.CanvasSize = UDim2.new(0, 0, 0, rows * (sSize + 10) + 10)
 	end
 
-	if cachedPersonalRecipes and not forceRefresh then
-		updateNodes(cachedPersonalRecipes)
-	else
-		task.spawn(function()
-			local ok, data = NetClient.Request("Recipe.List.Request", {facilityId = nil})
-			if ok and data and data.recipes then
-				cachedPersonalRecipes = data.recipes
-				table.sort(cachedPersonalRecipes, function(a, b) return (a.techLevel or 0) < (b.techLevel or 0) end)
-				updateNodes(cachedPersonalRecipes)
-			end
-		end)
-	end
+	updateNodes(cachedPersonalRecipes)
 end
 
 function UIManager._updatePersonalCraftDetail(recipe)
@@ -938,19 +890,28 @@ function UIManager._updatePersonalCraftDetail(recipe)
 		d.Stats.Visible = false
 		d.Weight.Text = ""
 		
-		local matsText = ""
-		for _, inp in ipairs(recipe.inputs or {}) do
-			local have = playerItemCounts[inp.itemId or inp.id] or 0
-			local req = inp.count or 0
-			local matId = inp.itemId or inp.id
-			local matData = DataHelper.GetData("ItemData", matId)
-			local matName = matData and matData.name or matId
-			matsText = matsText .. string.format("%s %d/%d\n", matName, have, req)
+		local recipe = recipe -- Redundant but safe
+		d.Mats.RichText = true
+		if isLocked then
+			d.Mats.Text = "<font color=\"#E63232\">기술 트리(K)에서 해금이 필요합니다.</font>"
+			d.BtnUse.Text = "잠김 (해금 필요)"
+			d.BtnUse.BackgroundColor3 = C.BTN_DIS
+		else
+			local matsText = ""
+			for _, inp in ipairs(recipe.inputs or {}) do
+				local have = playerItemCounts[inp.itemId or inp.id] or 0
+				local req = inp.count or 0
+				local matId = inp.itemId or inp.id
+				local matData = DataHelper.GetData("ItemData", matId)
+				local matName = matData and matData.name or matId
+				local color = (have >= req) and "#8CDC64" or "#E63232"
+				matsText = matsText .. string.format("<font color=\"%s\">%s %d/%d</font>\n", color, matName, have, req)
+			end
+			d.Mats.Text = "필요 재료:\n" .. matsText
+			d.BtnUse.Text = "제작하기"
+			d.BtnUse.BackgroundColor3 = canCraft and C.GOLD_SEL or C.BTN_DIS
 		end
-		d.Mats.Text = "필요 재료:\n" .. matsText
-		d.BtnUse.Text = "제작하기"
 		d.BtnUse.Visible = true
-		d.BtnUse.BackgroundColor3 = canCraft and C.GOLD_SEL or C.BTN_DIS
 		d.BtnDrop.Visible = false
 	end
 	
@@ -972,91 +933,43 @@ function UIManager.stopCraftingProgress()
 	HUDUI.HideHarvestProgress()
 end
 function UIManager._doCraft()
-	-- 1. 인벤토리 내 개인 제작 처리
+	-- 인벤토리 내 제작 탭 처리 (아이템 제작 전용)
 	if isInvOpen and invCraftContainer and invCraftContainer.Visible then
 		if not selectedPersonalRecipeId then return end
 		
-		-- 기술 잠금 체크
-		if not TechController.isRecipeUnlocked(selectedPersonalRecipeId) then
-			UIManager.notify("레벨 2 달성 및 기술 해금이 필요합니다.", C.RED)
+		local recipe = nil
+		for _, r in ipairs(cachedPersonalRecipes or {}) do
+			if r.id == selectedPersonalRecipeId then recipe = r; break end
+		end
+		if not recipe then return end
+
+		-- [기술 잠금 체크] - 인벤토리 제작은 RecipeData이므로 isRecipeUnlocked 사용
+		if not TechController.isRecipeUnlocked(recipe.id) then
+			UIManager.notify("기술 해금이 필요합니다.", C.RED)
 			return
 		end
 
-		local recipe = DataHelper.GetData("RecipeData", selectedPersonalRecipeId)
-		if recipe then
-			local ok, msg = UIManager.checkMaterials(recipe)
-			if not ok then UIManager.notify(msg, C.RED); return end
-		end
+		-- 재료 체크
+		local ok, msg = UIManager.checkMaterials(recipe)
+		if not ok then UIManager.notify(msg, C.RED); return end
 
+		-- 제작 프로세스 시작
+		UIManager.showCraftingProgress(recipe.craftTime or 3)
+		
 		task.spawn(function()
-			local ok, data = NetClient.Request("Craft.Start.Request", {recipeId = selectedPersonalRecipeId})
-			if ok then 
-				-- 제작 시작 성공 (NetClient.Request는 response.success가 true일 때만 ok=true 반환)
-				UIManager.notify("제작을 시작했습니다.", C.GREEN)
-				-- 제작 시간 정보가 있으면 프로그레스바 시작
-				if data and data.craftTime and data.craftTime > 0 then
-					UIManager.showCraftingProgress(data.craftTime)
-				end
-				task.delay(0.5, function() UIManager.refreshPersonalCrafting() end)
+			local resultOk, response = NetClient.Request("Recipe.Craft.Request", {
+				recipeId = selectedPersonalRecipeId
+			})
+			
+			UIManager.stopCraftingProgress()
+			if resultOk then
+				UIManager.notify((recipe.name or "아이템") .. " 제작 완료!", C.GREEN)
+				UIManager.refreshInventory()
+				UIManager.refreshPersonalCrafting() 
 			else
-				local reason = tostring(data or "서버 오류")
-				UIManager.notify("제작 실패: " .. reason, C.RED)
+				UIManager.notify("제작 실패: " .. tostring(response), C.RED)
 			end
 		end)
-		return
-	end
-
-	-- 2. 일반 공방/건축 처리
-	if menuMode == "CRAFTING" then
-		if not selectedRecipeId then return end
-		
-		-- 기술 잠금 체크
-		if not TechController.isRecipeUnlocked(selectedRecipeId) then
-			UIManager.notify("기술이 해금되지 않았습니다.", C.RED)
-			return
-		end
-		
-		local recipe = DataHelper.GetData("RecipeData", selectedRecipeId)
-		if recipe then
-			local ok, msg = UIManager.checkMaterials(recipe)
-			if not ok then UIManager.notify(msg, C.RED); return end
-		end
-
-		task.spawn(function()
-			local ok, data = NetClient.Request("Craft.Start.Request", {recipeId = selectedRecipeId})
-			if ok then
-				print("[UIManager] Craft Started:", selectedRecipeId)
-				UIManager.notify("제작을 시작했습니다.", C.GREEN)
-				-- 제작 시간 정보가 있으면 프로그레스바 시작
-				if data and data.craftTime and data.craftTime > 0 then
-					UIManager.showCraftingProgress(data.craftTime)
-				end
-				task.delay(0.5, function() if isCraftOpen then UIManager.refreshCrafting() end end)
-			else
-				local reason = tostring(data or "서버 오류")
-				UIManager.notify("제작 실패: " .. reason, C.RED)
-			end
-		end)
-	else
-		-- BUILDING 모드
-		if not selectedFacilityId then return end
-		
-		-- 1. Lock Check
-		if not TechController.isFacilityUnlocked(selectedFacilityId) then
-			UIManager.notify("기술이 해금되지 않았습니다.", C.RED)
-			return
-		end
-		
-		-- 2. Material Check
-		local facility = DataHelper.GetData("FacilityData", selectedFacilityId)
-		if facility then
-			local ok, msg = UIManager.checkMaterials(facility)
-			if not ok then UIManager.notify(msg, C.RED); return end
-		end
-
-		print("[UIManager] Start Placement:", selectedFacilityId)
-		UIManager.closeCrafting()
-		BuildController.startPlacement(selectedFacilityId)
 	end
 end
 
@@ -1235,8 +1148,7 @@ function UIManager.toggleBuild()
 end
 
 function UIManager.refreshBuild()
-	local allFacilities = DataHelper.GetTable("FacilityData") or {}
-	local unlockedTech = TechController.getUnlockedTech()
+	local allFacilities = require(ReplicatedStorage.Data.FacilityData) -- 최신 데이터 로드
 	
 	local CatFacMap = {
 		STRUCTURES = {"BUILDING"},
@@ -1252,11 +1164,14 @@ function UIManager.refreshBuild()
 		for _, tt in ipairs(targetTypes) do if f.functionType == tt then match = true; break end end
 		
 		if match then
-			table.insert(list, f)
+			local fData = table.clone(f)
+			-- 건축물도 잠금 상태를 표시하기 위해 정보 추가
+			fData.isLocked = not TechController.isFacilityUnlocked(fData.id)
+			table.insert(list, fData)
 		end
 	end
 	
-	BuildUI.Refresh(list, unlockedTech, selectedBuildCat, getItemIcon, UIManager)
+	BuildUI.Refresh(list, {}, selectedBuildCat, getItemIcon, UIManager)
 end
 
 function UIManager._onBuildCategoryClick(catId)
@@ -1627,6 +1542,13 @@ function UIManager.Init()
 
 	initialized = true
 	print("[UIManager] Initialized — Responsive Scale applied")
+end
+
+function UIManager.hideAllLoading()
+	if craftSpinner then
+		craftSpinner.Visible = false
+	end
+	-- 추가적인 로딩 UI가 있다면 여기서 처리
 end
 
 return UIManager

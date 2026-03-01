@@ -335,7 +335,7 @@ function NPCShopService.sell(userId: number, shopId: string, slot: number, count
 	end
 	
 	-- 인벤토리에서 아이템 제거
-	local removeOk, removeErr = InventoryService.removeFromSlot(userId, slot, count)
+	local removeOk, removeErr = InventoryService.removeItemFromSlot(userId, slot, count)
 	if not removeOk then
 		return false, removeErr
 	end

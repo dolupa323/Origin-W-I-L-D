@@ -231,25 +231,25 @@ function DebuffService._environmentCheck()
 			
 			-- Workspace에서 Campfire 파트 검색 (간단한 거리 체크)
 			-- BuildService가 "Facilities" 폴더를 생성함
-			local campfires = workspace:FindFirstChild("Facilities")
-			if campfires then
-				for _, obj in ipairs(campfires:GetChildren()) do
-					if obj:GetAttribute("FacilityType") == "COOKING" then
-						-- Part일 수도 있고 Model일 수도 있으므로 안전하게 위치 가져오기
-						local objPos
-						if obj:IsA("BasePart") then
-							objPos = obj.Position
-						elseif obj:IsA("Model") and obj.PrimaryPart then
-							objPos = obj.PrimaryPart.Position
-						end
-						
-						if objPos then
-							local dist = (hrp.Position - objPos).Magnitude
-							if dist <= 15 then -- 15 스터드 이내
-								nearFire = true
-								break
-							end
-						end
+			-- 최적화: GetPartBoundsInRadius를 사용하여 주변의 모닥불만 검색 (O(P*F) -> O(P*LogF))
+			local overlapParams = OverlapParams.new()
+			local facilitiesFolder = workspace:FindFirstChild("Facilities")
+			if facilitiesFolder then
+				overlapParams.FilterDescendantsInstances = { facilitiesFolder }
+				overlapParams.FilterType = Enum.RaycastFilterType.Include
+				
+				local nearbyParts = workspace:GetPartBoundsInRadius(hrp.Position, 15, overlapParams)
+				for _, part in ipairs(nearbyParts) do
+					-- 파트 자체 또는 부모 모델이 COOKING 속성을 가졌는지 확인
+					local facilityType = part:GetAttribute("FacilityType")
+					if not facilityType then
+						local facility = part:FindFirstAncestorOfClass("Model")
+						if facility then facilityType = facility:GetAttribute("FacilityType") end
+					end
+
+					if facilityType == "COOKING" then
+						nearFire = true
+						break
 					end
 				end
 			end

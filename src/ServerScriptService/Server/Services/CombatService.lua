@@ -19,6 +19,7 @@ local DebuffService
 local StaminaService
 local WorldDropService
 local PlayerStatService
+local HungerService -- Cached (Phase 11)
 
 -- Constants
 local DEFAULT_ATTACK_RANGE = 5 -- 맨손 사거리
@@ -56,6 +57,11 @@ function CombatService.Init(_NetController, _DataService, _CreatureService, _Inv
 	DebuffService = _DebuffService
 	WorldDropService = _WorldDropService
 	PlayerStatService = _PlayerStatService
+	
+	-- HungerService 로드 및 캐싱 (성능 최적화)
+	local HSuccess, HService = pcall(function() return require(game:GetService("ServerScriptService").Server.Services.HungerService) end)
+	if HSuccess then HungerService = HService end
+	
 	print("[CombatService] Initialized")
 end
 
@@ -127,8 +133,7 @@ function CombatService.processPlayerAttack(player: Player, targetId: string, too
 	end
 	
 	-- 4.5 전투 시 배고픔 소모 연동 (Phase 11)
-	local HSuccess, HungerService = pcall(function() return require(game:GetService("ServerScriptService").Server.Services.HungerService) end)
-	if HSuccess and HungerService then
+	if HungerService then
 		HungerService.consumeHunger(player.UserId, Balance.HUNGER_COMBAT_COST)
 	end
 	
@@ -185,9 +190,14 @@ end
 
 local function handleHitRequest(player, payload)
 	local targetId = payload.targetInstanceId -- InstanceId (GUID)
-	local toolSlot = payload.toolSlot -- 인벤토리 슬롯 번호
 	
-	local success, errorCode, result = CombatService.processPlayerAttack(player, targetId, toolSlot)
+	-- 보안/기획: 클라이언트가 보낸 toolSlot 대신, 서버의 현재 활성 슬롯(Active Slot)을 사용
+	local activeSlot = 1
+	if InventoryService then
+		activeSlot = InventoryService.getActiveSlot(player.UserId)
+	end
+	
+	local success, errorCode, result = CombatService.processPlayerAttack(player, targetId, activeSlot)
 	
 	if not success then
 		return { success = false, errorCode = errorCode }

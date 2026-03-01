@@ -708,8 +708,8 @@ function InventoryService.addItem(userId: number, itemId: string, count: number)
 		_emitChanged(player, changes)
 	end
 	
-	-- [FIX] Ensure items are always packed (Left-to-Right, Top-to-Bottom)
-	InventoryService.sort(userId)
+	-- [FIX] Ensure items are packed during sort request only, not every add (Performance optimization)
+	-- InventoryService.sort(userId)
 	
 	return added, remaining
 end
@@ -1143,11 +1143,7 @@ local function onPlayerAdded(player: Player)
 	end
 end
 
-local function onPlayerRemoving(player: Player)
-	local userId = player.UserId
-	-- SaveService에서 저장 후 제거하므로 여기서는 제거만
-	InventoryService.removeInventory(userId)
-end
+-- onPlayerRemoving moved to SaveService to prevent Race Condition
 
 --========================================
 -- Initialization
@@ -1167,7 +1163,7 @@ function InventoryService.Init(netController, dataService, saveService, playerSt
 	
 	-- 플레이어 이벤트 연결
 	Players.PlayerAdded:Connect(onPlayerAdded)
-	Players.PlayerRemoving:Connect(onPlayerRemoving)
+	-- Players.PlayerRemoving:Connect(onPlayerRemoving) -- Moved to SaveService
 	
 	-- 이미 접속한 플레이어 처리
 	for _, player in ipairs(Players:GetPlayers()) do

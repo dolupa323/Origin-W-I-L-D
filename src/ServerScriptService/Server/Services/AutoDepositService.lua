@@ -36,25 +36,18 @@ local TICK_INTERVAL = Balance.AUTO_DEPOSIT_INTERVAL or 5
 local function findNearestStorage(facilityPosition: Vector3, ownerId: number): (string?, any?)
 	if not BuildService then return nil, nil end
 	
-	local allStructures = BuildService.getAll()
-	local nearestId = nil
-	local nearestDist = math.huge
-	local nearestStorage = nil
+	-- [FIX] 모든 구조물이 아닌 해당 소유자의 구조물만 순회 (성능 최적화)
+	local ownerStructures = BuildService.getStructuresByOwner(ownerId)
 	
-	local searchRange = Balance.AUTO_DEPOSIT_RANGE or 20
-	
-	for _, structure in ipairs(allStructures) do
+	for _, structure in ipairs(ownerStructures) do
 		-- Storage 타입인지 확인
 		local facilityData = DataService and DataService.getFacility(structure.facilityId)
 		if facilityData and facilityData.functionType == "STORAGE" then
-			-- 소유자 확인
-			if structure.ownerId == ownerId then
-				local dist = (structure.position - facilityPosition).Magnitude
-				if dist <= searchRange and dist < nearestDist then
-					nearestId = structure.id
-					nearestDist = dist
-					nearestStorage = structure
-				end
+			local dist = (structure.position - facilityPosition).Magnitude
+			if dist <= searchRange and dist < nearestDist then
+				nearestId = structure.id
+				nearestDist = dist
+				nearestStorage = structure
 			end
 		end
 	end

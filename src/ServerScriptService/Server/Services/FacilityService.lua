@@ -88,12 +88,16 @@ local function findRecipeForInput(facilityId: string, inputItemId: string): any?
 end
 
 --- 상태 전이 판정
-local function determineState(runtime): string
+local function determineState(runtime: any): number
 	local facilityData = DataService.getFacility(runtime.facilityId)
 	if not facilityData then return Enums.FacilityState.IDLE end
-	
-	-- Output 슬롯이 꽉 찼으면 → FULL (더 이상 사용하지 않음, 즉시 드롭하므로)
-	-- if facilityData.hasOutputSlot and runtime.outputSlot ...
+
+	-- Output 슬롯이 꽉 찼으면 → FULL
+	if facilityData.hasOutputSlot and runtime.outputSlot then
+		if runtime.outputSlot.count >= (Balance.MAX_FACILITY_OUTPUT or 1000) then
+			return Enums.FacilityState.FULL
+		end
+	end
 	
 	-- 작업 가능 조건: Input + Fuel
 	local hasInput = (runtime.inputSlot ~= nil and runtime.inputSlot.count > 0)
@@ -167,10 +171,16 @@ local function lazyUpdate(runtime)
 			
 			local context = { facilityId = runtime.facilityId, creatureBonus = creatureBonus }
 			local effectiveCraftTime = RecipeService.calculateCraftTime(runtime.currentRecipeId, context)
+			-- [FIX] 최소 제작 시간 보장 (무한 루프 방지)
+			effectiveCraftTime = math.max(0.1, effectiveCraftTime)
             
 			local remainingTime = activeTime
+			local iterations = 0
+			local MAX_ITERATIONS = 1000 -- 자원 소모 방지 및 서버 크래시 방지용 최대 틱
 			
-			while remainingTime > 0 and runtime.inputSlot and runtime.inputSlot.count > 0 do
+			while remainingTime > 0 and runtime.inputSlot and runtime.inputSlot.count > 0 and iterations < MAX_ITERATIONS do
+				iterations = iterations + 1
+				
 				-- 현재 아이템의 남은 제작 시간
 				local timeNeeded = effectiveCraftTime - runtime.processProgress
 				
@@ -185,26 +195,27 @@ local function lazyUpdate(runtime)
 						runtime.inputSlot = nil
 					end
 					
-					-- Output 처리: 즉시 월드 드롭 (NotebookLM 요구사항)
+					-- [FIX] 가상 인벤토리(outputSlot)에 누적 (월드 드롭 스파이크 방지)
 					if facilityData.hasOutputSlot then
 						if recipe.outputs and #recipe.outputs > 0 then
 							local outputItem = recipe.outputs[1]
 							local count = outputItem.count or 1
 							
-							-- 구조물 위치 조회
-							local structure = BuildService.get(runtime.structureId)
-							if structure and structure.position and WorldDropService then
-								-- 구조물 위로 드롭
-								local dropPos = structure.position + Vector3.new(0, 3, 0)
-								WorldDropService.spawnDrop(dropPos, outputItem.itemId, count)
+							if runtime.outputSlot then
+								if runtime.outputSlot.itemId == outputItem.itemId then
+									runtime.outputSlot.count = runtime.outputSlot.count + count
+								end
+								-- 다른 아이템일 경우(레시피 변경 등)는 덮어쓰거나 꽉 찬 것으로 처리
+							else
+								runtime.outputSlot = { itemId = outputItem.itemId, count = count }
+							end
+							
+							-- Output 캡 체크 (FULL 상태 전이용)
+							if runtime.outputSlot.count >= (Balance.MAX_FACILITY_OUTPUT or 1000) then
+								break
 							end
 						end
 					end
-					
-					-- Output이 꽉 차서 멈추는 로직 제거 (계속 생산)
-					-- if runtime.outputSlot and runtime.outputSlot.count >= (Balance.MAX_STACK or 99) then
-					-- 	break
-					-- end
 				else
 					-- 시간 부족 → 진행률만 갱신
 					runtime.processProgress = runtime.processProgress + remainingTime
@@ -457,9 +468,48 @@ function FacilityService.addInput(player: Player, structureId: string, invSlot: 
 end
 
 --- 산출물 수거 (Output 슬롯)
---- 현재 미지원: Output은 즉시 월드 드롭으로 전환됨
 function FacilityService.collectOutput(player: Player, structureId: string)
-	return false, Enums.ErrorCode.NOT_SUPPORTED, nil
+	local runtime = facilityStates[structureId]
+	if not runtime then
+		return false, Enums.ErrorCode.NOT_FOUND, nil
+	end
+	
+	-- Lazy Update 선행
+	lazyUpdate(runtime)
+	
+	if not runtime.outputSlot or runtime.outputSlot.count <= 0 then
+		return false, Enums.ErrorCode.SLOT_EMPTY, nil
+	end
+	
+	local userId = player.UserId
+	local itemId = runtime.outputSlot.itemId
+	local totalToCollect = runtime.outputSlot.count
+	
+	-- 인벤토리에 추가
+	local added, remaining = InventoryService.addItem(userId, itemId, totalToCollect)
+	
+	if added > 0 then
+		if remaining <= 0 then
+			runtime.outputSlot = nil
+		else
+			runtime.outputSlot.count = remaining
+		end
+		
+		-- 상태 재판정
+		runtime.state = determineState(runtime)
+		
+		emitFacilityEvent("Facility.StateChanged", player, {
+			structureId = structureId,
+			state = runtime.state,
+			outputSlot = runtime.outputSlot,
+		})
+		
+		print(string.format("[FacilityService] Player %d collected %s x%d from %s", 
+			userId, itemId, added, structureId))
+		return true, nil, { added = added, remaining = remaining }
+	else
+		return false, Enums.ErrorCode.INV_FULL, nil
+	end
 end
 
 --- 시설 런타임 존재 여부

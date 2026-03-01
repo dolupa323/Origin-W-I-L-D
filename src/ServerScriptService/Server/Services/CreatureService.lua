@@ -511,10 +511,13 @@ function CreatureService.removeCreature(instanceId: string)
 	activeCreatures[instanceId] = nil
 	creatureCount = creatureCount - 1
 	
-	-- 시각적 제거
-	if creature.gui then
-		creature.gui:Destroy()
+	-- 시각적 제거 (BillboardGui 및 관련 UI 명시적 파괴)
+	if creature.rootPart then
+		local label = creature.rootPart:FindFirstChild("CreatureLabel")
+		if label then label:Destroy() end
 	end
+	if creature.gui then creature.gui:Destroy() end
+	if creature.torporGui then creature.torporGui:Destroy() end
 	
 	if creature.model then
 		-- 연출을 위해 투명화 후 제거
@@ -904,7 +907,14 @@ function CreatureService._replenishLoop()
 	-- 한 번에 최대 2마리씩 보충 (자연스러운 등장)
 	local toSpawn = math.min(deficit, 2)
 	
-	for _, player in ipairs(Players:GetPlayers()) do
+	local players = Players:GetPlayers()
+	-- 스폰 지점 편향 방지를 위해 플레이어 목록 셔플
+	for i = #players, 2, -1 do
+		local j = math.random(i)
+		players[i], players[j] = players[j], players[i]
+	end
+	
+	for _, player in ipairs(players) do
 		if toSpawn <= 0 or creatureCount >= CREATURE_CAP then break end
 		
 		local char = player.Character
@@ -967,6 +977,7 @@ function CreatureService._updateAILoop()
 		local char = p.Character
 		if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") then
 			table.insert(playerCache, {
+				userId = p.UserId,
 				root = char.HumanoidRootPart,
 				pos = char.HumanoidRootPart.Position,
 				humanoid = char.Humanoid
@@ -989,6 +1000,7 @@ function CreatureService._updateAILoop()
 		local closestPlayerPos = nil
 		local closestPlayerRoot = nil
 		local closestPlayerHum = nil
+		local closestPlayerUserId = nil
 		
 		for _, pData in ipairs(playerCache) do
 			local d = (pData.pos - hrp.Position).Magnitude
@@ -997,6 +1009,7 @@ function CreatureService._updateAILoop()
 				closestPlayerPos = pData.pos
 				closestPlayerRoot = pData.root
 				closestPlayerHum = pData.humanoid
+				closestPlayerUserId = pData.userId
 			end
 		end
 		
@@ -1057,17 +1070,8 @@ function CreatureService._updateAILoop()
 		local detectRange = creature.data.detectRange or 20
 		
 		-- BloodSmell 어그로 배율 적용 (Phase 4-4)
-		if DebuffService and closestPlayerPos then
-			local playerUserId = nil
-			for _, p in ipairs(Players:GetPlayers()) do
-				if p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character.HumanoidRootPart.Position == closestPlayerPos then
-					playerUserId = p.UserId
-					break
-				end
-			end
-			if playerUserId then
-				detectRange = detectRange * DebuffService.getAggroMultiplier(playerUserId)
-			end
+		if DebuffService and closestPlayerUserId then
+			detectRange = detectRange * DebuffService.getAggroMultiplier(closestPlayerUserId)
 		end
 		
 		local newState = creature.state
