@@ -3,6 +3,7 @@
 -- 서버에서 오는 Facility.* 이벤트를 수신하여 UI에 전달
 
 local NetClient = require(script.Parent.Parent.NetClient)
+local UIManager = require(script.Parent.Parent.UIManager)
 
 local FacilityController = {}
 
@@ -13,9 +14,12 @@ local initialized = false
 --========================================
 
 local function onStateChanged(data)
-	print(string.format("[FacilityController] Facility %s state changed: %s",
-		data.structureId or "?", data.state or "?"))
-	-- TODO: UI에 시설 상태 변경 반영
+	if not data then return end
+	
+	-- 시설 상태 변경 알림
+	local structureId = data.structureId or "?"
+	local state = data.state or "?"
+	UIManager.notify(string.format("시설 상태 변경: %s -> %s", structureId, state), Color3.fromRGB(200, 200, 200))
 end
 
 --========================================

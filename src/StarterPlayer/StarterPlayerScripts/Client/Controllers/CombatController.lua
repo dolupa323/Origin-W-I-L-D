@@ -208,51 +208,63 @@ function CombatController.attack()
 		return
 	end
 	
-	-- 쿨다운 체크
-	local now = tick()
-	if now - lastAttackTime < ATTACK_COOLDOWN then
-		return
-	end
-	
-	lastAttackTime = now
-	
-	-- 선택된 아이템이 음식인지 확인 (들고 있는 상태에서 좌클릭 시 먹기)
+	-- 1. 선택된 슬롯 및 아이템 데이터 가져오기 (쿨다운, 음식 섭취, 사거리 등)
 	local selectedSlot = UIManager.getSelectedSlot()
 	local InventoryController = require(Client.Controllers.InventoryController)
 	local slotData = InventoryController.getSlot(selectedSlot)
+	local itm = nil
 	
 	if slotData then
 		local ItemData = require(ReplicatedStorage:WaitForChild("Data"):WaitForChild("ItemData"))
-		local itm = nil
 		for _, v in ipairs(ItemData) do
-			if v.id == slotData.itemId then
-				itm = v
-				break
-			end
-		end
-		
-		if itm and (itm.type == Enums.ItemType.FOOD or itm.foodValue) then
-			-- 섭취 애니메이션 재생
-			local character = player.Character
-			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-			if humanoid then
-				AnimationManager.play(humanoid, AnimationIds.CONSUME.EAT)
-			end
-			
-			InventoryController.requestUse(selectedSlot)
-			return
+			if v.id == slotData.itemId then itm = v; break end
 		end
 	end
 	
+	-- 2. 도구별 동적 쿨다운 결정
+	local dynamicCooldown = ATTACK_COOLDOWN -- 기본 0.5초
+	if itm and itm.attackSpeed then
+		dynamicCooldown = itm.attackSpeed
+	end
+	
+	-- 3. 쿨다운 체크
+	local now = tick()
+	if now - lastAttackTime < dynamicCooldown then
+		return
+	end
+	lastAttackTime = now
+	
+	-- 4. 음식이면 먹기 처리
+	if itm and (itm.type == Enums.ItemType.FOOD or itm.foodValue) then
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			AnimationManager.play(humanoid, AnimationIds.CONSUME.EAT)
+		end
+		InventoryController.requestUse(selectedSlot)
+		return
+	end
+	
+	-- 2. 대상 검색
 	local targetModel, targetPos, targetId, targetType = findTarget()
 	
 	if targetModel and targetPos and targetId then
 		local distance = getDistanceToTarget(targetPos)
-		local maxRange = Balance.HARVEST_RANGE or 15
 		
-		-- 공격 범위 체크
+		-- [개선] 대상 및 도구별 동적 사거리 계산
+		local maxRange = Balance.COMBAT_HITBOX_SIZE or 12
+		if targetType == "resource" then
+			maxRange = Balance.HARVEST_RANGE or 25
+		end
+		
+		-- 장착 도구 사거리 반영
+		if itm and itm.range then
+			maxRange = itm.range + 5 -- 서버의 여유분(+10)을 고려한 클라이언트 허용치
+		end
+		
+		-- 최종 공격 범위 체크
 		if distance > maxRange then
-			-- 범위 밖 - 빈 스윙 애니메이션
+			-- 범위 밖 - 공기 가르기 (빈 스윙)
 			playAttackAnimation(false)
 			return
 		end

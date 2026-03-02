@@ -65,10 +65,10 @@ local hotbarSlots = {}
 local selectedSlot = 1
 
 -- Panels
-local inventoryFrame, statusFrame, craftingOverlay, shopFrame, techOverlay, interactPrompt
+local inventoryFrame, craftingOverlay, shopFrame, techOverlay, interactPrompt
 local actionContainer, hotbarFrame -- Store refs for visibility control
 local craftDetailPanel, progFill, craftSpinner
-local isInvOpen, isStatusOpen, isCraftOpen, isShopOpen, isTechOpen, isBuildOpen, isEquipmentOpen = false, false, false, false, false, false, false
+local isInvOpen, isCraftOpen, isShopOpen, isTechOpen, isBuildOpen, isEquipmentOpen = false, false, false, false, false, false
 local cachedStats = {}
 local pendingStats = {}
 local activeDebuffs = {} -- { [debuffId] = {id, name, startTime, duration} }
@@ -78,7 +78,7 @@ local selectedBuildId = nil
 
 -- 0. UI 관리 헬퍼
 local function isAnyWindowOpen()
-	return isInvOpen or isCraftOpen or isShopOpen or isTechOpen or isBuildOpen or isEquipmentOpen or isStatusOpen
+	return isInvOpen or isCraftOpen or isShopOpen or isTechOpen or isBuildOpen or isEquipmentOpen
 end
 
 local function updateUIMode()
@@ -189,9 +189,10 @@ function UIManager.confirmPendingStats()
 	if total <= 0 then return end
 	
 	task.spawn(function()
-		local ok, data = NetClient.Request("Player.Stats.Upgrade", {stats = pendingStats})
+		local ok, data = NetClient.Request("Player.Stats.Upgrade.Request", {stats = pendingStats})
 		if ok then
 			pendingStats = {}
+			UIManager.refreshStats()
 			-- cachedStats는 Player.Stats.Changed 이벤트로 업데이트됨
 		else
 			UIManager.notify("강화 실패: " .. tostring(data), C.RED)
@@ -345,16 +346,21 @@ end
 
 -- 아이템 아이콘 가져오기 (폴더 검색 우선, 데이터 폴백)
 local function getItemIcon(itemId: string): string
+	if not itemId then return "" end
+	
+	-- CRAFT_ 나 SMELT_ 접두사가 있으면 제거
+	local coreId = itemId:gsub("^CRAFT_", ""):gsub("^SMELT_", "")
+	
 	-- 1. Assets/ItemIcons 폴더에서 검색
 	local assets = ReplicatedStorage:FindFirstChild("Assets")
-	local iconsFolder = assets and assets:FindFirstChild("ItemIcons")
+	local iconsFolder = assets and (assets:FindFirstChild("ItemIcons") or assets:FindFirstChild("Images") or assets:FindFirstChild("Icons"))
 	if iconsFolder then
-		local iconObj = iconsFolder:FindFirstChild(itemId)
+		local iconObj = iconsFolder:FindFirstChild(coreId) or iconsFolder:FindFirstChild(itemId)
 		if not iconObj then
-			-- Case-insensitive & Prefix search
-			local target = itemId:lower()
+			-- Case & Underscore insensitive search
+			local target = coreId:lower():gsub("_", "")
 			for _, child in ipairs(iconsFolder:GetChildren()) do
-				local cname = child.Name:lower()
+				local cname = child.Name:lower():gsub("_", "")
 				if cname == target or cname:match("^"..target) then
 					iconObj = child
 					break
@@ -367,18 +373,14 @@ local function getItemIcon(itemId: string): string
 				return iconObj.Texture
 			elseif iconObj:IsA("ImageLabel") or iconObj:IsA("ImageButton") then
 				return iconObj.Image
+			elseif iconObj:IsA("StringValue") then
+				return iconObj.Value
 			end
 		end
 	end
 
-	-- 2. ItemData.lua 필드 확인
-	local itemData = DataHelper.GetData("ItemData", itemId)
-	if itemData and itemData.icon and itemData.icon ~= "" then
-		return itemData.icon
-	end
-
-	-- 3. 기본 이미지 (플레이스홀더)
-	return "rbxassetid://15573752528" -- Stone icon as fallback for now
+	-- 2. If it's not found in folders, we return an empty string to be safe.
+	return ""
 end
 
 function UIManager.refreshHotbar()
@@ -553,39 +555,38 @@ function UIManager.handleDragEnd(input)
 		dragDummy = nil
 	end
 
-	-- Check which slot we are over
+	-- [개선] GetGuiObjectsAtPosition을 사용하여 UIScale 환경에서도 정확한 슬롯 감지
 	local mousePos = UserInputService:GetMouseLocation()
 	local foundSlot = nil
-	local padding = 10 -- Broader detection
+	local foundType = nil -- "bag" or "hotbar"
 	
-	-- Check Bag Slots
-	if isInvOpen and invSlots then
-		for i, s in pairs(invSlots) do
-			if s and s.frame and s.frame.Visible and s.frame.AbsoluteSize.X > 0 then
-				local absPos = s.frame.AbsolutePosition
-				local absSize = s.frame.AbsoluteSize
-				if mousePos.X >= absPos.X - padding and mousePos.X <= absPos.X + absSize.X + padding and
-				   mousePos.Y >= absPos.Y - padding and mousePos.Y <= absPos.Y + absSize.Y + padding then
+	local guiObjects = playerGui:GetGuiObjectsAtPosition(mousePos.X, mousePos.Y)
+	
+	-- 감지된 GUI 객체들 중 슬롯 프레임 찾기
+	for _, obj in ipairs(guiObjects) do
+		-- 1. 인벤토리 슬롯 확인
+		if isInvOpen and invSlots then
+			for i, s in pairs(invSlots) do
+				if s.frame == obj or obj:IsDescendantOf(s.frame) then
 					foundSlot = i
+					foundType = "bag"
 					break
 				end
 			end
 		end
-	end
-
-	-- Check Hotbar Slots
-	if not foundSlot and hotbarSlots then
-		for i, s in pairs(hotbarSlots) do
-			if s and s.frame and s.frame.Visible and s.frame.AbsoluteSize.X > 0 then
-				local absPos = s.frame.AbsolutePosition
-				local absSize = s.frame.AbsoluteSize
-				if mousePos.X >= absPos.X - padding and mousePos.X <= absPos.X + absSize.X + padding and
-				   mousePos.Y >= absPos.Y - padding and mousePos.Y <= absPos.Y + absSize.Y + padding then
+		if foundSlot then break end
+		
+		-- 2. 핫바 슬롯 확인
+		if hotbarSlots then
+			for i, s in pairs(hotbarSlots) do
+				if s.frame == obj or obj:IsDescendantOf(s.frame) then
 					foundSlot = i
+					foundType = "hotbar"
 					break
 				end
 			end
 		end
+		if foundSlot then break end
 	end
 
 	if foundSlot and foundSlot ~= draggingSlotIdx then
@@ -597,6 +598,10 @@ function UIManager.handleDragEnd(input)
 
 	draggingSlotIdx = nil
 	pendingDragIdx = nil
+end
+
+function UIManager.isDragging()
+	return isDragging
 end
 
 local modalActionType = "DROP" -- DROP or SPLIT
@@ -998,7 +1003,7 @@ function UIManager.closeTechTree()
 	isTechOpen = false
 	TechUI.SetVisible(false)
 	selectedTechId = nil
-	if not isInvOpen and not isShopOpen and not isStatusOpen and not isCraftOpen then 
+	if not isInvOpen and not isShopOpen and not isCraftOpen and not isEquipmentOpen then
 		InputManager.setUIOpen(false) 
 		UIManager._setMainHUDVisible(true)
 	end
@@ -1017,11 +1022,13 @@ function UIManager.refreshTechTree()
 	local techList = {}
 	for id, data in pairs(tree) do table.insert(techList, data) end
 	table.sort(techList, function(a,b) 
-		if a.techLevel ~= b.techLevel then return a.techLevel < b.techLevel end
+		local al = a.requireLevel or 1
+		local bl = b.requireLevel or 1
+		if al ~= bl then return al < bl end
 		return a.id < b.id
 	end)
 	
-	TechUI.Refresh(techList, unlocked, tp, getItemIcon, UIManager)
+	TechUI.Refresh(techList, unlocked, tp, playerLevel, getItemIcon, UIManager)
 end
 
 function UIManager.isTechUnlocked(techId)
@@ -1034,8 +1041,9 @@ function UIManager._onTechNodeClick(node)
 	local tp = TechController.getTechPoints()
 	local isUnlocked = unlocked[node.id]
 	local canAfford = (tp >= (node.techPointCost or 0))
+	local playerLevel = (cachedStats and cachedStats.level) or 1
 	
-	TechUI.UpdateDetail(node, isUnlocked, canAfford, UIManager, getItemIcon)
+	TechUI.UpdateDetail(node, isUnlocked, canAfford, playerLevel, UIManager, getItemIcon)
 end
 
 function UIManager._doUnlockTech()
@@ -1387,33 +1395,6 @@ local function setupEventListeners()
 		end)
 	end
 
-	-- Crafting Events
-	if NetClient.On then
-		NetClient.On("Craft.Started", function(data)
-			if data and data.craftTime and data.craftTime > 0 then
-				UIManager.showCraftingProgress(data.craftTime)
-			end
-		end)
-		
-		NetClient.On("Craft.Completed", function(data)
-			UIManager.stopCraftingProgress()
-			
-			local name = "아이템"
-			if data and data.recipeId then
-				local recipe = DataHelper.GetData("RecipeData", data.recipeId)
-				if recipe then name = recipe.name end
-			end
-			
-			UIManager.notify("제작 완료: " .. name, C.GREEN)
-			if isInvOpen then UIManager.refreshInventory() end
-			if isCraftOpen then UIManager.refreshCrafting() end
-		end)
-		
-		NetClient.On("Craft.Cancelled", function(data)
-			UIManager.stopCraftingProgress()
-			UIManager.notify("제작 취소됨", C.GRAY)
-		end)
-	end
 
 	-- Debuff Events
 	if NetClient.On then
@@ -1461,6 +1442,24 @@ local function setupEventListeners()
 			if d.statPointsAvailable then UIManager.updateStatPoints(d.statPointsAvailable) end
 		end
 	end)
+	
+	-- Tech Events
+	TechController.onTechUpdated(function()
+		if isTechOpen then UIManager.refreshTechTree() end
+		if isCraftOpen then UIManager.refreshPersonalCrafting() end
+		if isBuildOpen then UIManager.refreshBuild() end
+	end)
+	
+	TechController.onTechUnlocked(function(data)
+		if data and data.name then
+			UIManager.notify("💡 기술 연구 완료: " .. data.name, C.GOLD_SEL)
+			if isTechOpen and data.techId then
+				local node = {id = data.techId, name = data.name}
+				TechUI.ShowUnlockSuccessPopup(node, getItemIcon, mainGui)
+			end
+		end
+	end)
+
 	-- Drag & Drop global listeners
 	UserInputService.InputChanged:Connect(function(input) UIManager.handleDragUpdate(input) end)
 	UserInputService.InputEnded:Connect(function(input) UIManager.handleDragEnd(input) end)

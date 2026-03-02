@@ -802,14 +802,19 @@ function HarvestService.hit(player: Player, nodeUID: string, toolSlot: number?, 
 		return false, Enums.ErrorCode.NOT_FOUND, nil
 	end
 	
-	-- 4. 거리 검증
+	-- 4. 거리 검증 (Y축 무시 평면 거리 계산)
 	local character = player.Character
 	if character then
-		local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-		if humanoidRootPart then
-			local distance = (humanoidRootPart.Position - nodeState.position).Magnitude
-			local maxRange = Balance.HARVEST_RANGE or 5
-			if distance > maxRange then
+		local hrp = character:FindFirstChild("HumanoidRootPart")
+		if hrp then
+			local p1 = Vector2.new(hrp.Position.X, hrp.Position.Z)
+			local p2 = Vector2.new(nodeState.position.X, nodeState.position.Z)
+			local distance = (p1 - p2).Magnitude
+			
+			local maxRange = Balance.HARVEST_RANGE or 25
+			-- 서버 측 검증은 클라이언트보다 더 여유를 둡니다 (네트워크 레이턴시 고려)
+			if distance > maxRange + 10 then
+				warn(string.format("[HarvestService] Out of range (2D): %.1f > %.1f", distance, maxRange))
 				return false, Enums.ErrorCode.OUT_OF_RANGE, nil
 			end
 		end
@@ -833,7 +838,8 @@ function HarvestService.hit(player: Player, nodeUID: string, toolSlot: number?, 
 	local power = 1 + math.floor(workSpeedStat / 10)
 	
 	-- 8. 실제 데미지 적용
-	local success, err, drops = HarvestService.damageNode(nodeUID, power, efficiency, userId)
+	local finalHitCount = math.clamp(hitCount or 1, 1, 10) -- 보안: 비정상적인 다중 타격 방지
+	local success, err, drops = HarvestService.damageNode(nodeUID, power * finalHitCount, efficiency, userId)
 	
 	-- 9. (Player-specific) 도구 내구도 감소
 	if success and toolSlot and DurabilityService and InventoryService then

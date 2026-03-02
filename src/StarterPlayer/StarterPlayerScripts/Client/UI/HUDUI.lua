@@ -23,22 +23,27 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 	-- [Top Left Area] - HP, Stamina, Status Effects
 	local topLeftFrame = Utils.mkFrame({
 		name = "TopLeftHUD",
-		size = UDim2.new(0, isSmall and 260 or 240, 0, 100),
+		size = UDim2.new(0, isSmall and 260 or 240, 0, 110), -- 110으로 확장
 		pos = UDim2.new(0, isSmall and 60 or 180, 0, isSmall and 40 or 20), -- 로블록스 기본 UI 회피 (우측 이동)
 		bgT = 1,
 		parent = parent
 	})
 	HUDUI.Refs.statusPanel = topLeftFrame
 
-	-- HP Bar
+	local statusList = Instance.new("UIListLayout")
+	statusList.Padding = UDim.new(0, 4)
+	statusList.SortOrder = Enum.SortOrder.LayoutOrder
+	statusList.Parent = topLeftFrame
+
+	-- HP Bar (LayoutOrder 1)
 	HUDUI.Refs.healthBar = Utils.mkBar({
 		name = "HP",
 		size = UDim2.new(1, 0, 0, 16),
-		pos = UDim2.new(0, 0, 0, 0),
 		fillC = C.HP,
 		r = 6,
 		parent = topLeftFrame
 	})
+	HUDUI.Refs.healthBar.container.LayoutOrder = 1
 	local hpDecay = Utils.mkFrame({
 		name = "Decay",
 		size = UDim2.new(1, 0, 1, 0),
@@ -53,15 +58,15 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 	HUDUI.Refs.healthBar.label.Position = UDim2.new(0, 5, 0, 0)
 	HUDUI.Refs.healthBar.label.Text = "100 / 100"
 
-	-- Stamina Bar
+	-- Stamina Bar (LayoutOrder 2)
 	HUDUI.Refs.staminaBar = Utils.mkBar({
 		name = "STA",
 		size = UDim2.new(1, 0, 0, 16), 
-		pos = UDim2.new(0, 0, 0, 20),
 		fillC = C.GOLD,
 		r = 6,
 		parent = topLeftFrame
 	})
+	HUDUI.Refs.staminaBar.container.LayoutOrder = 2
 	local staDecay = Utils.mkFrame({
 		name = "Decay",
 		size = UDim2.new(1, 0, 1, 0),
@@ -76,15 +81,15 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 	HUDUI.Refs.staminaBar.label.Position = UDim2.new(0, 5, 0, 0)
 	HUDUI.Refs.staminaBar.label.Text = "100 / 100"
 
-	-- Hunger Bar
+	-- Hunger Bar (LayoutOrder 3)
 	HUDUI.Refs.hungerBar = Utils.mkBar({
 		name = "HUNGER",
 		size = UDim2.new(1, -20, 0, 14), -- 약간 짧고 얇게 조정
-		pos = UDim2.new(0, 0, 0, 64), -- 더욱 아래로 간격 추가 (스태미너 바와 띄움)
 		fillC = C.XP, -- 기본 색상: 초록색
 		r = 6,
 		parent = topLeftFrame
 	})
+	HUDUI.Refs.hungerBar.container.LayoutOrder = 3
 	local hunDecay = Utils.mkFrame({
 		name = "Decay",
 		size = UDim2.new(1, 0, 1, 0),
@@ -99,8 +104,9 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 	HUDUI.Refs.hungerBar.label.Position = UDim2.new(0, 5, 0, 0)
 	HUDUI.Refs.hungerBar.label.Text = "100 / 100"
 
-	-- Status Effect Icons Container (under HUNGER bar)
-	local effectList = Utils.mkFrame({name="EffectList", size=UDim2.new(1,0,0,30), pos=UDim2.new(0,0,0,56), bgT=1, parent=topLeftFrame})
+	-- Status Effect Icons Container (LayoutOrder 4)
+	local effectList = Utils.mkFrame({name="EffectList", size=UDim2.new(1,0,0,30), bgT=1, parent=topLeftFrame})
+	effectList.LayoutOrder = 4
 	local eLayout = Instance.new("UIListLayout"); eLayout.FillDirection=Enum.FillDirection.Horizontal; eLayout.Padding=UDim.new(0,5); eLayout.Parent=effectList
 	HUDUI.Refs.effectList = effectList
 	

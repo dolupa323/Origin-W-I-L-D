@@ -224,7 +224,7 @@ local TechUnlockData = {
 		category = "PAL",
 	},
 	{
-		id = "TECH_Lv50_REINFORCEDG_GATE",
+		id = "TECH_Lv50_REINFORCED_GATE",
 		name = "강화 성문",
 		requireLevel = 50,
 		techPointCost = 5,

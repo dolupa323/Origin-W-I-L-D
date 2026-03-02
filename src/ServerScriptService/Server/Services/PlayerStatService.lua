@@ -351,12 +351,29 @@ local function handleGetStats(player: Player, payload: any)
 end
 
 local function handleUpgradeStat(player: Player, payload: any)
-	if not payload or not payload.statId then
+	if not payload then
 		return { success = false, errorCode = Enums.ErrorCode.BAD_REQUEST }
 	end
 	
-	local ok, err = PlayerStatService.upgradeStat(player.UserId, payload.statId)
-	return { success = ok, errorCode = err }
+	-- Bulk upgrade support (multiple stats)
+	if payload.stats and type(payload.stats) == "table" then
+		local anySuccess = false
+		for statId, count in pairs(payload.stats) do
+			for i = 1, count do
+				local ok = PlayerStatService.upgradeStat(player.UserId, statId)
+				if ok then anySuccess = true end
+			end
+		end
+		return { success = anySuccess }
+	end
+	
+	-- Single upgrade support (compatibility)
+	if payload.statId then
+		local ok, err = PlayerStatService.upgradeStat(player.UserId, payload.statId)
+		return { success = ok, errorCode = err }
+	end
+	
+	return { success = false, errorCode = Enums.ErrorCode.BAD_REQUEST }
 end
 
 function PlayerStatService.GetHandlers()
@@ -388,8 +405,10 @@ function PlayerStatService.Init(netController, saveService, dataService, stamina
 	game:GetService("Players").PlayerAdded:Connect(function(player)
 		_initPlayerStats(player.UserId)
 		player.CharacterAdded:Connect(function(character)
-			task.wait(0.5) -- 로딩 대기
-			PlayerStatService.applyStats(player.UserId)
+			local humanoid = character:WaitForChild("Humanoid", 5)
+			if humanoid then
+				PlayerStatService.applyStats(player.UserId)
+			end
 		end)
 	end)
 	

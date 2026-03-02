@@ -241,7 +241,16 @@ function BaseClaimService.delete(userId: number): boolean
 	local baseClaim = bases[userId]
 	if not baseClaim then return false end
 	
-	-- SaveService에서 제거
+	-- 1. 베이스 내 모든 구조물 철거
+	if BuildService then
+		local structureIds = BaseClaimService.getStructuresInBase(userId)
+		for _, structureId in ipairs(structureIds) do
+			BuildService.removeStructure(structureId)
+		end
+		print(string.format("[BaseClaimService] Removed %d structures from base being deleted (%s)", #structureIds, baseClaim.id))
+	end
+	
+	-- 2. SaveService에서 제거
 	if SaveService and SaveService.updateWorldState then
 		SaveService.updateWorldState(function(state)
 			if state.bases then
@@ -251,7 +260,17 @@ function BaseClaimService.delete(userId: number): boolean
 		end)
 	end
 	
+	-- 3. 메모리 정리
 	bases[userId] = nil
+	
+	-- 클라이언트 알림 (동적으로 삭제되는 경우 대응)
+	if NetController then
+		local player = game:GetService("Players"):GetPlayerByUserId(userId)
+		if player then
+			NetController.FireClient(player, "Base.Deleted", { baseId = baseClaim.id })
+		end
+	end
+	
 	return true
 end
 

@@ -5,6 +5,8 @@
 local CraftController = {}
 
 local NetClient = require(script.Parent.Parent.NetClient)
+local UIManager = require(script.Parent.Parent.UIManager)
+local DataHelper = require(game.ReplicatedStorage.Shared.Util.DataHelper)
 
 local initialized = false
 
@@ -13,31 +15,33 @@ local initialized = false
 --========================================
 
 local function onCraftStarted(data)
-	print(string.format("[CraftController] Craft started: %s (recipe: %s, time: %ds)",
-		data.craftId or "instant", data.recipeId, data.craftTime or 0))
-	-- TODO: UI에 제작 진행 표시 (프로그레스바 시작)
+	if data and data.craftTime and data.craftTime > 0 then
+		UIManager.showCraftingProgress(data.craftTime)
+	end
 end
 
 local function onCraftCompleted(data)
-	print(string.format("[CraftController] Craft completed: recipe %s", data.recipeId))
-	if data.outputs then
-		for _, output in ipairs(data.outputs) do
-			print(string.format("  -> Received: %s x%d", output.itemId, output.count))
-		end
+	UIManager.stopCraftingProgress()
+	
+	local name = "아이템"
+	if data and data.recipeId then
+		local recipe = DataHelper.GetData("RecipeData", data.recipeId)
+		if recipe then name = recipe.name end
 	end
-	-- TODO: UI에 제작 완료 알림 + 인벤토리 갱신
+	
+	UIManager.notify("제작 완료: " .. name, Color3.fromRGB(100, 255, 100)) -- GREEN
+	UIManager.refreshInventory()
+	UIManager.refreshCrafting()
 end
 
 local function onCraftReady(data)
-	print(string.format("[CraftController] Craft ready to collect: %s (recipe: %s)",
-		data.craftId, data.recipeId))
-	-- TODO: UI에 "수거 가능" 알림 표시
+	-- 수거 가능 알림 (시설 제작 등의 경우)
+	UIManager.notify("제작 완료: 수거 가능", Color3.fromRGB(255, 215, 0)) -- GOLD
 end
 
 local function onCraftCancelled(data)
-	print(string.format("[CraftController] Craft cancelled: %s (recipe: %s)",
-		data.craftId, data.recipeId))
-	-- TODO: UI에서 제작 항목 제거
+	UIManager.stopCraftingProgress()
+	UIManager.notify("제작 취소됨", Color3.fromRGB(150, 150, 150)) -- GRAY
 end
 
 --========================================

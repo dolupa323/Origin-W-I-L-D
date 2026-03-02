@@ -44,11 +44,11 @@ local function applyItemLoss(userId: number)
 	local inv = InventoryService.getOrCreateInventory(userId)
 	if not inv then return end
 	
-	-- 슬롯 데이터를 미리 캡처
-	local occupiedSlots = {}
+	-- [UX 개선] 1~8번 슬롯(단축키)은 보호하고 9번 이후(가방)만 손실 대상으로 분류
+	local lossCandidateSlots = {}
 	for slot, slotData in pairs(inv.slots) do
-		if slotData and slotData.itemId then
-			table.insert(occupiedSlots, {
+		if slotData and slotData.itemId and slot > 8 then
+			table.insert(lossCandidateSlots, {
 				slot = slot,
 				itemId = slotData.itemId,
 				count = slotData.count,
@@ -56,21 +56,21 @@ local function applyItemLoss(userId: number)
 		end
 	end
 	
-	if #occupiedSlots == 0 then return end
+	if #lossCandidateSlots == 0 then return end
 	
-	-- 손실 아이템 수 계산 (최대 전체의 30%)
-	local lossCount = math.max(1, math.floor(#occupiedSlots * ITEM_LOSS_PERCENT))
-	lossCount = math.min(lossCount, #occupiedSlots)
+	-- 손실 아이템 수 계산 (가방 아이템의 최대 30%)
+	local lossCount = math.max(1, math.floor(#lossCandidateSlots * ITEM_LOSS_PERCENT))
+	lossCount = math.min(lossCount, #lossCandidateSlots)
 	
 	-- 랜덤 셔플
-	for i = #occupiedSlots, 2, -1 do
+	for i = #lossCandidateSlots, 2, -1 do
 		local j = math.random(1, i)
-		occupiedSlots[i], occupiedSlots[j] = occupiedSlots[j], occupiedSlots[i]
+		lossCandidateSlots[i], lossCandidateSlots[j] = lossCandidateSlots[j], lossCandidateSlots[i]
 	end
 	
 	-- [FIX] removeItem 대신 removeItemFromSlot을 사용하여 정확한 슬롯 제거
 	for i = 1, lossCount do
-		local info = occupiedSlots[i]
+		local info = lossCandidateSlots[i]
 		if info then
 			InventoryService.removeItemFromSlot(userId, info.slot, info.count)
 			print(string.format("[PlayerLifeService] Death Loss: Player %d lost %s x%d from slot %d",
@@ -171,8 +171,14 @@ function PlayerLifeService._respawnPlayer(player: Player)
 		local respawnPoint = state.respawnPoint
 		task.spawn(function()
 			local character = player.Character or player.CharacterAdded:Wait()
-			-- LoadCharacter 직후 CFrame 설정 시의 레이스 컨디션을 피하기 위해 PivotTo 사용
-			character:PivotTo(CFrame.new(respawnPoint + Vector3.new(0, 3, 0)))
+			-- HumanoidRootPart가 완전히 로드되고 물리 연산이 준비될 때까지 대기
+			local hrp = character:WaitForChild("HumanoidRootPart", 5)
+			
+			if hrp then
+				-- 한 프레임 대기하여 엔진이 캐릭터 배치를 완료하도록 함 (무한 추락 방지)
+				game:GetService("RunService").Stepped:Wait() 
+				character:PivotTo(CFrame.new(respawnPoint + Vector3.new(0, 3, 0)))
+			end
 		end)
 	end
 	

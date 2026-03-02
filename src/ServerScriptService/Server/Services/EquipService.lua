@@ -75,7 +75,7 @@ function EquipService.equipItem(player: Player, itemId: string?)
 		
 		-- 3. 에셋 탐색
 		local assets = ReplicatedStorage:FindFirstChild("Assets")
-		local modelsFolder = assets and assets:FindFirstChild("ItemModels")
+		local modelsFolder = assets and (assets:FindFirstChild("ItemModels") or assets:FindFirstChild("Models"))
 		
 		if modelsFolder then
 			local allNames = {}
@@ -85,12 +85,21 @@ function EquipService.equipItem(player: Player, itemId: string?)
 
 		local template = nil
 		if modelsFolder then
-			template = modelsFolder:FindFirstChild(itemId)
+			-- [최적화] 모든 투척용 볼라 아이템은 손에 "POUCH" 모델을 들고 있는 것으로 통일
+			if itemId:match("_BOLA$") then
+				template = modelsFolder:FindFirstChild("POUCH") or modelsFolder:FindFirstChild("Pouch")
+			end
+			
+			-- 기본 탐색
 			if not template then
-				for _, child in ipairs(modelsFolder:GetChildren()) do
-					if child.Name:lower() == itemId:lower() then 
-						template = child 
-						break 
+				template = modelsFolder:FindFirstChild(itemId)
+				if not template then
+					local searchTarget = itemId:lower():gsub("_", "")
+					for _, child in ipairs(modelsFolder:GetChildren()) do
+						if child.Name:lower():gsub("_", "") == searchTarget then 
+							template = child 
+							break 
+						end
 					end
 				end
 			end
@@ -99,7 +108,7 @@ function EquipService.equipItem(player: Player, itemId: string?)
 		-- 4. 도구 조립
 		local tool = Instance.new("Tool")
 		tool.Name = itemId
-		tool.RequiresHandle = true
+		tool.RequiresHandle = false
 		tool.CanBeDropped = false
 		
 		local handle = Instance.new("Part")
@@ -238,20 +247,41 @@ function EquipService.equipItem(player: Player, itemId: string?)
 		
 		hum:EquipTool(tool)
 		
-		-- [물리 보호 루프] 지속적으로 물리 속성 강제 제거
+		-- [PHYSICS REFACTOR] 고성능 물리 처리 (루프 탈피)
 		task.spawn(function()
-			for i = 1, 20 do
-				if not tool.Parent then break end
+			-- 도구가 캐릭터에 부모화될 때까지 대기
+			local toolAtChar = tool.Parent == char or tool:GetPropertyChangedSignal("Parent"):Wait()
+			if not toolAtChar or not tool.Parent then return end
+			
+			local hand = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
+			if hand then
+				-- 1. Motor6D 연결 (순수 물리 배제용)
+				local joint = hand:FindFirstChild("RightGripJoint") or Instance.new("Motor6D")
+				joint.Name = "RightGripJoint"
+				joint.Part0 = hand
+				joint.Part1 = handle
+				-- Tool.Grip은 Handle 기준이므로 역행렬을 C0에 적용하여 동일 효과 구현
+				joint.C0 = tool.Grip:Inverse()
+				joint.Parent = hand
+				
+				-- 2. NoCollisionConstraint 적용 (팔과 도구 사이 충돌 방지)
 				for _, p in ipairs(tool:GetDescendants()) do
 					if p:IsA("BasePart") then
-						p.CanCollide = false
-						p.CanTouch = false
-						p.CanQuery = false
-						p.Massless = true
-						p.Anchored = false
+						local ncc = Instance.new("NoCollisionConstraint")
+						ncc.Part0 = p
+						ncc.Part1 = hand
+						ncc.Parent = p
+						
+						-- 몸체 충돌도 추가 방지
+						local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
+						if torso then
+							local ncc2 = Instance.new("NoCollisionConstraint")
+							ncc2.Part0 = p
+							ncc2.Part1 = torso
+							ncc2.Parent = p
+						end
 					end
 				end
-				task.wait(0.1)
 			end
 		end)
 	end)

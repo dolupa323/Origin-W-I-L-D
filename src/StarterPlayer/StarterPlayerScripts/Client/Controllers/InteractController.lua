@@ -89,10 +89,14 @@ local function findNearbyInteractable(): (Instance?, string?)
 	overlapParams.FilterType = Enum.RaycastFilterType.Include
 	
 	local targetFolderNames = {"ResourceNodes", "WorldDrops", "NPCs", "Facilities"}
+	local folderObjects = {}
 	local includeList = {}
 	for _, name in ipairs(targetFolderNames) do
 		local folder = workspace:FindFirstChild(name)
-		if folder then table.insert(includeList, folder) end
+		if folder then 
+			folderObjects[name] = folder
+			table.insert(includeList, folder) 
+		end
 	end
 	
 	if #includeList == 0 then return nil, nil end
@@ -113,16 +117,38 @@ local function findNearbyInteractable(): (Instance?, string?)
 	}
 	
 	for _, part in ipairs(nearbyParts) do
-		-- 모델 또는 최상위 객체 찾기
-		local entity = part
-		while entity and entity.Parent and not typeMap[entity.Parent.Name] do
-			entity = entity.Parent
+		-- [UX 개선] IsDescendantOf 및 Marker 기반 탐색으로 중첩 폴더 대응
+		local entity = nil
+		local currentType = nil
+		
+		for folderName, folder in pairs(folderObjects) do
+			if part:IsDescendantOf(folder) then
+				currentType = typeMap[folderName]
+				
+				-- 상호작용 가능한 루트 탐색 (ID 속성 우선)
+				local check = part
+				while check and check ~= folder do
+					if check:GetAttribute("FacilityId") or 
+					   check:GetAttribute("DropId") or 
+					   check:GetAttribute("NPCId") or 
+					   check:GetAttribute("NodeId") or
+					   check:GetAttribute("ResourceNode") then
+						entity = check
+						break
+					end
+					
+					-- 폴더의 직계 자식이면 엔티티로 후보 등록
+					if check.Parent == folder then
+						entity = entity or check
+						break
+					end
+					check = check.Parent
+				end
+				break
+			end
 		end
 		
-		if not entity or not entity.Parent then continue end
-		local folderName = entity.Parent.Name
-		local currentType = typeMap[folderName]
-		if not currentType then continue end
+		if not entity or not currentType then continue end
 		
 		-- 고갈된 노드 스킵
 		if currentType == "resource" and entity:GetAttribute("Depleted") then

@@ -385,6 +385,15 @@ local ItemData = {
 		dropDespawn = "MONSTER",
 	},
 	{
+		id = "COOKED_MEAT", 
+		name = "구운 고기", 
+		type = "FOOD", 
+		rarity = "UNCOMMON", 
+		maxStack = 99,
+		description = "불에 구워 노릇노릇해진 고기. 허기를 크게 채워준다.",
+		foodValue = 50,
+	},
+	{
 		id = "LEATHER", name = "가죽", type = "RESOURCE", rarity = "COMMON", maxStack = 99,
 		description = "방어구 제작에 사용된다.",
 	},

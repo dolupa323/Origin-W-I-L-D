@@ -296,34 +296,10 @@ function StaminaService.performDodge(player: Player, direction: Vector3?): { suc
 		end
 	end)
 	
-	-- 캐릭터에 힘 적용 (서버 authoritative)
-	local character = player.Character
-	if character then
-		local rootPart = character:FindFirstChild("HumanoidRootPart")
-		if rootPart then
-			-- 방향 계산 (없으면 캐릭터가 바라보는 방향)
-			local dodgeDir = direction
-			if not dodgeDir or dodgeDir.Magnitude == 0 then
-				dodgeDir = rootPart.CFrame.LookVector
-			else
-				dodgeDir = dodgeDir.Unit
-			end
-			
-			-- BodyVelocity로 구르기 힘 적용
-			local bodyVelocity = Instance.new("BodyVelocity")
-			bodyVelocity.Name = "DodgeVelocity"
-			bodyVelocity.MaxForce = Vector3.new(math.huge, 0, math.huge)
-			bodyVelocity.Velocity = dodgeDir * (Balance.DODGE_DISTANCE / Balance.DODGE_DURATION)
-			bodyVelocity.Parent = rootPart
-			
-			-- 구르기 종료 시 제거
-			task.delay(Balance.DODGE_DURATION, function()
-				if bodyVelocity and bodyVelocity.Parent then
-					bodyVelocity:Destroy()
-				end
-			end)
-		end
-	end
+	-- [IMPORTANT] 서버 사이드 물리 이동(BodyVelocity) 제거
+	-- 캐릭터의 Network Ownership은 클라이언트에 있으므로, 
+	-- 서버에서 직접 힘을 가하면 위치 동기화(Rubberbanding) 문제가 발생함.
+	-- 이동 처리는 클라이언트(MovementController.lua)에서 수행함.
 	
 	-- 클라이언트에 동기화
 	syncStaminaToClient(player)

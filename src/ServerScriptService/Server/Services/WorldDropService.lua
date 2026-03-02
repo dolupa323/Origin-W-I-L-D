@@ -298,23 +298,29 @@ function WorldDropService.loot(player: Player, dropId: string): (boolean, string
 		return false, Enums.ErrorCode.OUT_OF_RANGE, nil
 	end
 	
-	-- 인벤토리 전량 수용 가능 여부 확인 (원자성)
-	if not InventoryService.canAdd(userId, drop.itemId, drop.count) then
-		return false, Enums.ErrorCode.INV_FULL, nil
-	end
-	
-	-- 인벤토리에 추가
+	-- 인벤토리에 추가 (부분 줍기 허용을 위해 canAdd 체크 제거)
 	local added, remaining = InventoryService.addItem(userId, drop.itemId, drop.count)
 	
-	-- 드롭 제거
-	emitDespawned(dropId, "LOOTED_OUT")
-	drops[dropId] = nil
-	dropCount = dropCount - 1
+	if added <= 0 then
+		return false, Enums.ErrorCode.INV_FULL, nil
+	end
+
+	if remaining > 0 then
+		-- 부분 줍기: 드롭 잔량 업데이트
+		drop.count = remaining
+		emitChanged(dropId, remaining)
+	else
+		-- 전량 줍기: 드롭 제거
+		emitDespawned(dropId, "LOOTED_OUT")
+		drops[dropId] = nil
+		dropCount = dropCount - 1
+	end
 	
 	return true, nil, {
 		dropId = dropId,
 		itemId = drop.itemId,
 		count = added,
+		remaining = remaining,
 	}
 end
 

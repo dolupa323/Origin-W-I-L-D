@@ -14,6 +14,7 @@ local PartyService = {}
 local NetController
 local PalboxService
 local CreatureService
+local SaveService
 
 -- [userId] = { slots = { [1..5] = palUID }, summonedSlot = nil, summonedModel = nil }
 local playerParties = {}
@@ -52,10 +53,21 @@ end
 -- Public API
 --========================================
 
-function PartyService.Init(_NetController, _PalboxService, _CreatureService)
+function PartyService.Init(_NetController, _PalboxService, _CreatureService, _SaveService)
 	NetController = _NetController
 	PalboxService = _PalboxService
 	CreatureService = _CreatureService
+	SaveService = _SaveService
+	
+	-- 플레이어 로그인 시 파티 로드
+	Players.PlayerAdded:Connect(function(player)
+		PartyService._loadPlayerParty(player)
+	end)
+	
+	-- 이미 접속한 플레이어 처리
+	for _, player in ipairs(Players:GetPlayers()) do
+		task.spawn(function() PartyService._loadPlayerParty(player) end)
+	end
 	
 	-- 팰 AI 루프 시작
 	task.spawn(function()
@@ -65,13 +77,43 @@ function PartyService.Init(_NetController, _PalboxService, _CreatureService)
 		end
 	end)
 	
-	-- 로그아웃 시 정리
-	Players.PlayerRemoving:Connect(function(player)
-		PartyService._recallPal(player.UserId) -- 소환 해제
-		playerParties[player.UserId] = nil
-	end)
-	
 	print("[PartyService] Initialized")
+end
+
+--- 로그아웃 전 정리 (SaveService에서 순차적으로 호출)
+function PartyService.prepareLogout(userId: number)
+	PartyService._recallPal(userId) -- 소환 해제
+	PartyService._savePlayerParty(userId) -- 파티 정보 저장
+	playerParties[userId] = nil
+	print(string.format("[PartyService] Prepared logout for player %d", userId))
+end
+
+function PartyService._loadPlayerParty(player: Player)
+	local userId = player.UserId
+	if not SaveService or not SaveService.getPlayerState then return end
+	
+	local state = SaveService.getPlayerState(userId)
+	if state and state.party then
+		-- 저장된 데이터가 있으면 캐시로 복사 (slots가 array/map 섞일 수 있으므로 주의)
+		local party = getOrCreateParty(userId)
+		party.slots = state.party.slots or {}
+		party.summonedSlot = nil -- 접속 시엔 무조건 미소환 상태로 초기화
+		
+		print(string.format("[PartyService] Loaded party for player %d", userId))
+	end
+end
+
+function PartyService._savePlayerParty(userId: number)
+	local party = playerParties[userId]
+	if not party or not SaveService or not SaveService.updatePlayerState then return end
+	
+	SaveService.updatePlayerState(userId, function(state)
+		state.party = {
+			slots = party.slots,
+			summonedSlot = party.summonedSlot
+		}
+		return state
+	end)
 end
 
 --- 파티에 팰 편성
@@ -370,28 +412,37 @@ function PartyService._updateSummonedPalAI()
 			continue
 		end
 		
+		-- 팰의 HRP
 		local palHrp = summon.rootPart
 		if not palHrp then continue end
-		
-		local player = Players:GetPlayerByUserId(userId)
-		if not player or not player.Character then continue end
-		
-		local ownerHrp = player.Character:FindFirstChild("HumanoidRootPart")
-		if not ownerHrp then continue end
-		
-		local distToOwner = (palHrp.Position - ownerHrp.Position).Magnitude
 		local humanoid = summon.humanoid
 		
-		-- 적 탐색 (근처의 적대 크리처)
+		-- 주인 상태 체크
+		local player = Players:GetPlayerByUserId(userId)
+		local char = player and player.Character
+		local ownerHrp = char and char:FindFirstChild("HumanoidRootPart")
+		local ownerHum = char and char:FindFirstChild("Humanoid")
+		local ownerIsAlive = ownerHum and ownerHum.Health > 0
+		
+		-- 1. 적 탐색 (근처의 적대 크리처)
 		local closestEnemy, enemyDist = nil, 9999
-		-- CreatureService의 활성 크리처를 직접 순회하기보다
-		-- Creatures 폴더에서 탐색
 		local creaturesFolder = workspace:FindFirstChild("Creatures")
 		if creaturesFolder then
-			for _, child in ipairs(creaturesFolder:GetChildren()) do
-				if child:IsA("Model") and not child.Name:match("^Pal_") then
-					local childRoot = child:FindFirstChild("HumanoidRootPart")
-					if childRoot then
+			-- [OPTIMIZATION] 모든 크리처 순회(O(N)) 대신 공간 쿼리(GetPartBoundsInRadius) 사용
+			local spatialParams = OverlapParams.new()
+			spatialParams.FilterDescendantsInstances = { creaturesFolder }
+			spatialParams.FilterType = Enum.RaycastFilterType.Include
+			
+			local nearbyParts = workspace:GetPartBoundsInRadius(palHrp.Position, PAL_COMBAT_RANGE, spatialParams)
+			local processedModels = {}
+			
+			for _, part in ipairs(nearbyParts) do
+				local model = part:FindFirstAncestorOfClass("Model")
+				if model and not processedModels[model] and not model.Name:match("^Pal_") then
+					processedModels[model] = true
+					local childRoot = model:FindFirstChild("HumanoidRootPart")
+					local childHum = model:FindFirstChild("Humanoid")
+					if childRoot and childHum and childHum.Health > 0 then
 						local d = (palHrp.Position - childRoot.Position).Magnitude
 						if d < enemyDist then
 							enemyDist = d
@@ -402,8 +453,39 @@ function PartyService._updateSummonedPalAI()
 			end
 		end
 		
+		-- 2. 주인 부재/사망 시 대응
+		if not ownerHrp or not ownerIsAlive then
+			if closestEnemy and enemyDist <= PAL_COMBAT_RANGE then
+				-- 주인은 없지만 근처에 적이 있으면 자기방어 수행
+				summon.state = "COMBAT"
+				humanoid:MoveTo(closestEnemy.Position)
+				humanoid.WalkSpeed = (summon.palData.stats.speed or 16) * 1.2
+				
+				-- 공격 범위 내면 공격
+				if enemyDist <= PAL_ATTACK_RANGE then
+					if not summon.lastAttackTime or (now - summon.lastAttackTime >= PAL_ATTACK_COOLDOWN) then
+						summon.lastAttackTime = now
+						local targetModel = closestEnemy.Parent
+						if targetModel and targetModel:GetAttribute("InstanceId") and CreatureService.applyDamage then
+							local damage = summon.palData.stats.attack or 10
+							CreatureService.applyDamage(targetModel:GetAttribute("InstanceId"), damage, player)
+						end
+					end
+				end
+			else
+				-- 주인도 없고 적도 없으면 안전하게 회수 (공중에 떠있거나 무방비 방치 방지)
+				print(string.format("[PartyService] Owner missing or dead, recalling pal %s", summon.palData.nickname))
+				PartyService._recallPal(userId)
+				continue
+			end
+			continue
+		end
+		
+		-- 3. 정상 상태 (주인이 살아있을 때)
+		local distToOwner = (palHrp.Position - ownerHrp.Position).Magnitude
+		
 		-- 주인이 너무 멀리 가면 텔레포트
-		if distToOwner > 50 then
+		if distToOwner > 60 then
 			palHrp.CFrame = CFrame.new(ownerHrp.Position + ownerHrp.CFrame.LookVector * -PAL_FOLLOW_DIST)
 			summon.state = "FOLLOW"
 		-- 적이 전투 범위 내에 있으면 전투
@@ -433,7 +515,6 @@ function PartyService._updateSummonedPalAI()
 		-- 주인 따라가기
 		elseif distToOwner > PAL_FOLLOW_DIST + 2 then
 			summon.state = "FOLLOW"
-			-- 주인 뒤쪽으로 이동
 			local behindOwner = ownerHrp.Position - ownerHrp.CFrame.LookVector * PAL_FOLLOW_DIST
 			humanoid:MoveTo(behindOwner)
 			humanoid.WalkSpeed = summon.palData.stats.speed or 16

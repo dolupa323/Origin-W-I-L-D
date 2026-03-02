@@ -11,6 +11,8 @@ local DebuffService = {}
 -- Dependencies
 local NetController
 local TimeService
+local DataService
+local StaminaService
 
 -- [userId] = { [debuffId] = { startTime, duration, tickDamage, ... } }
 local activeDebuffs = {}
@@ -62,9 +64,11 @@ end
 -- Public API
 --========================================
 
-function DebuffService.Init(_NetController, _TimeService)
+function DebuffService.Init(_NetController, _TimeService, _DataService, _StaminaService)
 	NetController = _NetController
 	TimeService = _TimeService
+	DataService = _DataService
+	StaminaService = _StaminaService
 	
 	-- 디버프 틱 루프 (2초마다)
 	task.spawn(function()
@@ -192,9 +196,12 @@ function DebuffService._tickLoop()
 				if now - state.lastTick >= def.tickInterval then
 					state.lastTick = now
 					
-					-- 플레이어 Humanoid에 데미지
+					-- [UX 개선] 무적 프레임(I-Frame) 체크 연동
+					local isInvulnerable = StaminaService and StaminaService.isInvulnerable(userId)
+					
+					-- 플레이어 Humanoid에 데미지 (무적이 아닐 때만)
 					local char = player.Character
-					if char then
+					if char and not isInvulnerable then
 						local hum = char:FindFirstChild("Humanoid")
 						if hum and hum.Health > 0 then
 							hum:TakeDamage(def.tickDamage)
@@ -240,16 +247,19 @@ function DebuffService._environmentCheck()
 				
 				local nearbyParts = workspace:GetPartBoundsInRadius(hrp.Position, 15, overlapParams)
 				for _, part in ipairs(nearbyParts) do
-					-- 파트 자체 또는 부모 모델이 COOKING 속성을 가졌는지 확인
-					local facilityType = part:GetAttribute("FacilityType")
-					if not facilityType then
+					-- [FIX] FacilityType -> FacilityId 속성 참조 및 DataService 연동
+					local facilityId = part:GetAttribute("FacilityId")
+					if not facilityId then
 						local facility = part:FindFirstAncestorOfClass("Model")
-						if facility then facilityType = facility:GetAttribute("FacilityType") end
+						if facility then facilityId = facility:GetAttribute("FacilityId") end
 					end
 
-					if facilityType == "COOKING" then
-						nearFire = true
-						break
+					if facilityId and DataService then
+						local facilityData = DataService.getFacility(facilityId)
+						if facilityData and (facilityData.functionType == "COOKING" or facilityData.functionType == "SMELTING") then
+							nearFire = true
+							break
+						end
 					end
 				end
 			end

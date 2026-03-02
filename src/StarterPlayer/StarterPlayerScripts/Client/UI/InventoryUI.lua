@@ -53,7 +53,8 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	-- Main Panel
 	local main = Utils.mkWindow({
 		name = "Main",
-		size = UDim2.new(isSmall and 0.95 or 0.9, 0, isSmall and 0.95 or 0.85, 0),
+		size = UDim2.new(isSmall and 0.98 or 0.9, 0, isSmall and 0.92 or 0.85, 0),
+		maxSize = Vector2.new(1200, 800),
 		pos = UDim2.new(0.5, 0, 0.5, 0),
 		anchor = Vector2.new(0.5, 0.5),
 		bg = C.BG_PANEL,
@@ -61,8 +62,8 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 		r = 0,
 		stroke = 2,
 		strokeC = C.BORDER_DIM,
-		parent = InventoryUI.Refs.Frame,
-		ratio = isSmall and 1.3 or 1.6 -- Durango is very widescreen
+		parent = InventoryUI.Refs.Frame
+		-- ratio removed: Responsive layout
 	})
 
 	-- [Header]
@@ -135,14 +136,30 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 			end
 		end)
 		
-		slot.click.MouseButton1Click:Connect(function() UIManager._onInvSlotClick(i) end)
-		slot.click.MouseButton2Click:Connect(function() 
-			if UIManager.onInventorySlotRightClick then UIManager.onInventorySlotRightClick(i) end
-		end)
+		-- Custom Tap & Hold logic for Mobile/PC
+		slot.click.Active = false -- Event blocking prevention
+		local pressStartTime = 0
+		
 		slot.click.InputBegan:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				pressStartTime = tick()
 				if UIManager.handleDragStart then UIManager.handleDragStart(i, input) end
 			end
+		end)
+		
+		slot.click.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				local duration = tick() - pressStartTime
+				-- If NOT dragging and released quickly (< 0.25s) -> Click
+				if not UIManager.isDragging() and duration < 0.25 then
+					UIManager._onInvSlotClick(i)
+				end
+				pressStartTime = 0
+			end
+		end)
+
+		slot.click.MouseButton2Click:Connect(function() 
+			if UIManager.onInventorySlotRightClick then UIManager.onInventorySlotRightClick(i) end
 		end)
 		
 		InventoryUI.Refs.Slots[i] = slot

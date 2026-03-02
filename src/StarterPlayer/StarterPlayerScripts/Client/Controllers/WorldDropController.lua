@@ -70,22 +70,14 @@ end
 local function findLootModel(itemId: string): Instance?
 	local assets = ReplicatedStorage:FindFirstChild("Assets")
 	if not assets then return nil end
-	local lootModels = assets:FindFirstChild("LootModels")
-	if not lootModels then return nil end
 	
-	-- 1. Exact match
-	local template = lootModels:FindFirstChild(itemId)
-	if template then return template end
+	-- 기존 LootModels 혹은 통합된 Models 폴더 체크
+	local modelsFolder = assets:FindFirstChild("LootModels") or assets:FindFirstChild("Models")
+	if not modelsFolder then return nil end
 	
-	-- 2. Case-insensitive match
-	local lowerId = itemId:lower()
-	for _, child in ipairs(lootModels:GetChildren()) do
-		if child.Name:lower() == lowerId then
-			return child
-		end
-	end
-	
-	return nil
+	-- [최적화] 기획 요청에 따라 모든 필드 드롭 아이템 모델을 단일 "POUCH" 모델로 통일
+	local template = modelsFolder:FindFirstChild("POUCH") or modelsFolder:FindFirstChild("Pouch")
+	return template
 end
 
 local function createDropModel(dropData)
@@ -181,8 +173,9 @@ local function createDropModel(dropData)
 	billboard.Name = "DropLabel"
 	billboard.Size = UDim2.new(0, 100, 0, 40)
 	billboard.StudsOffset = BILLBOARD_OFFSET
-	billboard.AlwaysOnTop = true
-	billboard.MaxDistance = 30
+	-- [UX 개선] AlwaysOnTop을 false로 변경하여 물체 뒤에 숨겨지게 함 (UI 겹침 공해 방지)
+	billboard.AlwaysOnTop = false 
+	billboard.MaxDistance = 25
 	billboard.Parent = attachmentPoint
 	
 	-- 배경 프레임
@@ -246,12 +239,16 @@ local function createDropModel(dropData)
 	task.spawn(function()
 		local startY = dropData.pos.Y
 		local t = 0
-		while mainObject and mainObject.Parent do
+		-- [FIX] IsDestroying 속성 체크를 추가하여 모델 삭제 중 루프가 도는 현상 방지
+		while mainObject and mainObject.Parent and not mainObject:GetAttribute("IsDestroying") do
 			t = t + 0.05
 			local newY = startY + math.sin(t * 2) * 0.3
 			
 			if mainObject:IsA("Model") then
-				mainObject:PivotTo(CFrame.new(dropData.pos.X, newY, dropData.pos.Z) * CFrame.Angles(0, t, 0))
+				-- PrimaryPart가 있을 때만 PivotTo 실행 (삭제 도중 nil 참조 에러 방지)
+				if mainObject.PrimaryPart then
+					mainObject:PivotTo(CFrame.new(dropData.pos.X, newY, dropData.pos.Z) * CFrame.Angles(0, t, 0))
+				end
 			else
 				mainObject.Position = Vector3.new(dropData.pos.X, newY, dropData.pos.Z)
 				mainObject.CFrame = mainObject.CFrame * CFrame.Angles(0, math.rad(1), 0)
@@ -289,6 +286,8 @@ end
 local function removeDropModel(dropId)
 	local model = dropModels[dropId]
 	if model then
+		-- [FIX] 삭제 시작 알림 (애니메이션 루프 즉시 종료용)
+		model:SetAttribute("IsDestroying", true)
 		dropModels[dropId] = nil
 		
 		if model:IsA("BasePart") then

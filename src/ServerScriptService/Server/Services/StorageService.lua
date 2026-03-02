@@ -24,7 +24,10 @@ local NetController = nil
 local SaveService = nil
 local InventoryService = nil
 
---========================================
+-- [userId] = { [storageId] = true }
+local playerSessions = {}
+-- [storageId] = { [userId] = true }
+local viewingPlayers = {}
 -- Internal: Storage Management
 --========================================
 
@@ -83,13 +86,48 @@ end
 -- Internal: Events
 --========================================
 
---- Storage.Changed 이벤트 발생 (모든 클라이언트에게)
+--- Storage.Changed 이벤트 발생 (해당 창고를 보고 있는 유저에게만)
 local function _emitStorageChanged(storageId: string, changes: any)
-	if NetController then
-		NetController.FireAllClients("Storage.Changed", {
-			storageId = storageId,
-			changes = changes,
-		})
+	if NetController and viewingPlayers[storageId] then
+		for userId, _ in pairs(viewingPlayers[storageId]) do
+			local player = Players:GetPlayerByUserId(userId)
+			if player then
+				NetController.FireClient(player, "Storage.Changed", {
+					storageId = storageId,
+					changes = changes,
+				})
+			end
+		end
+	end
+end
+
+--- 세션 관리: 창고 시청자 추가
+local function _addViewer(storageId: string, userId: number)
+	if not viewingPlayers[storageId] then
+		viewingPlayers[storageId] = {}
+	end
+	viewingPlayers[storageId][userId] = true
+	
+	if not playerSessions[userId] then
+		playerSessions[userId] = {}
+	end
+	playerSessions[userId][storageId] = true
+end
+
+--- 세션 관리: 창고 시청자 제거
+local function _removeViewer(storageId: string, userId: number)
+	if viewingPlayers[storageId] then
+		viewingPlayers[storageId][userId] = nil
+		if next(viewingPlayers[storageId]) == nil then
+			viewingPlayers[storageId] = nil
+		end
+	end
+	
+	if playerSessions[userId] then
+		playerSessions[userId][storageId] = nil
+		if next(playerSessions[userId]) == nil then
+			playerSessions[userId] = nil
+		end
 	end
 end
 
@@ -128,6 +166,8 @@ function StorageService.open(player: Player, storageId: string): (boolean, strin
 		end
 	end
 	
+	_addViewer(storageId, player.UserId)
+	
 	return true, nil, {
 		storageId = storageId,
 		slots = slots,
@@ -140,12 +180,12 @@ end
 -- Public API: Close
 --========================================
 
---- 창고 닫기 (클라이언트 UI 정리용, 서버에서는 특별한 처리 없음)
 function StorageService.close(player: Player, storageId: string): (boolean, string?, any?)
 	if not storageId or type(storageId) ~= "string" then
 		return false, Enums.ErrorCode.BAD_REQUEST, nil
 	end
 	
+	_removeViewer(storageId, player.UserId)
 	return true, nil, { storageId = storageId }
 end
 
@@ -397,6 +437,16 @@ function StorageService.Init(netController: any, saveService: any, inventoryServ
 	NetController = netController
 	SaveService = saveService
 	InventoryService = inventoryService
+	
+	-- 퇴장 시 시청 세션 정리
+	Players.PlayerRemoving:Connect(function(player)
+		local userId = player.UserId
+		if playerSessions[userId] then
+			for sId, _ in pairs(playerSessions[userId]) do
+				_removeViewer(sId, userId)
+			end
+		end
+	end)
 	
 	initialized = true
 	print(string.format("[StorageService] Initialized - Slots: %d, MaxStack: %d",

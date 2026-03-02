@@ -28,6 +28,15 @@ local NetController = nil
 -- Internal Functions
 --========================================
 
+--- 관리자 권한 체크 (방장 또는 지정된 ID)
+local function _isAdmin(userId: number): boolean
+	-- 게임 제작자(CreatorId)는 항상 관리자
+	if userId == game.CreatorId then return true end
+	
+	-- 추후: DataService나 전역 설정을 통한 관리자 리스트 확장 가능
+	return false
+end
+
 --- 현재 서버 시간 계산 (오프셋 포함)
 local function _getElapsed(): number
 	return (os.clock() - serverStartTime) + timeOffset
@@ -177,6 +186,11 @@ end
 
 --- Time.Warp 핸들러 (디버그용)
 local function handleWarp(player: Player, payload: any)
+	if not _isAdmin(player.UserId) then 
+		warn(string.format("[TimeService] Unauthorized warp attempt by %s (%d)", player.Name, player.UserId))
+		return { success = false, errorCode = "NO_PERMISSION" }
+	end
+	
 	local seconds = payload.seconds or 0
 	TimeService.warp(seconds)
 	return TimeService.getTime()
@@ -184,6 +198,11 @@ end
 
 --- Time.WarpToPhase 핸들러 (디버그용)
 local function handleWarpToPhase(player: Player, payload: any)
+	if not _isAdmin(player.UserId) then 
+		warn(string.format("[TimeService] Unauthorized warp attempt by %s (%d)", player.Name, player.UserId))
+		return { success = false, errorCode = "NO_PERMISSION" }
+	end
+
 	local targetPhase = payload.phase
 	if targetPhase then
 		TimeService.warpToPhase(targetPhase)
@@ -193,6 +212,8 @@ end
 
 --- Time.Debug 핸들러 (디버그 정보)
 local function handleDebug(player: Player, payload: any)
+	if not _isAdmin(player.UserId) then return nil end
+	
 	return {
 		phaseChangeCount = phaseChangeCount,
 		currentPhase = currentPhase,

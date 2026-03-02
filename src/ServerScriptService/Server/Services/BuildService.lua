@@ -197,10 +197,20 @@ local function spawnFacilityModel(facilityId: string, position: Vector3, rotatio
 	local facility = Instance.new("Part")
 	facility.Name = structureId
 	facility.Size = Vector3.new(4, 4, 4)
-	facility.Position = position
+	-- CFrame을 사용하여 위치와 회전을 동시에 적용
+	facility.CFrame = CFrame.new(position) * CFrame.Angles(math.rad(rotation.X), math.rad(rotation.Y), math.rad(rotation.Z))
 	facility.Anchored = true
 	facility.CanCollide = true
 	facility.BrickColor = BrickColor.new("Bright orange")
+	
+	-- 정면 표시용 띠 (회전 확인용)
+	local deco = Instance.new("Part")
+	deco.Size = Vector3.new(4.2, 1, 1)
+	deco.CFrame = facility.CFrame * CFrame.new(0, 0, -2)
+	deco.BrickColor = BrickColor.new("White")
+	deco.Anchored = true
+	deco.CanCollide = false
+	deco.Parent = facility
 	
 	-- 속성 설정
 	facility:SetAttribute("FacilityId", facilityId)
@@ -268,7 +278,11 @@ function BuildService.place(player: Player, facilityId: string, position: Vector
 		end
 	end
 	
-	-- 3. Cap 검사
+	-- 3. Cap 검사 (제한 도달 시 오래된 것 자동 정리 시도)
+	if structureCount >= Balance.BUILD_STRUCTURE_CAP then
+		pruneOldestIfNeeded()
+	end
+	
 	if structureCount >= Balance.BUILD_STRUCTURE_CAP then
 		return false, Enums.ErrorCode.STRUCTURE_CAP, nil
 	end

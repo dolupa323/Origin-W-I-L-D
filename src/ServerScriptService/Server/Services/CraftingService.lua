@@ -24,6 +24,8 @@ local BuildService = nil
 local RecipeService = nil
 local TechService = nil        -- Phase 6: 기술 해금 검증
 local PlayerStatService = nil  -- Phase 6: XP 지급
+local WorldDropService = nil   -- Phase 2-2: 인벤토리 풀 시 월드 드롭용
+local TimeService = nil
 
 --========================================
 -- State
@@ -143,11 +145,24 @@ end
 -- Internal: 재료 차감
 --========================================
 local function consumeMaterials(userId: number, inputs: { any }): boolean
+	local consumedList = {} -- 롤백을 위한 임시 저장소
+	
 	for _, input in ipairs(inputs) do
 		local removed = InventoryService.removeItem(userId, input.itemId, input.count)
+		
+		if removed > 0 then
+			table.insert(consumedList, { itemId = input.itemId, count = removed })
+		end
+		
 		if removed < input.count then
-			warn(string.format("[CraftingService] Failed to consume %s x%d for userId %d (only removed %d)",
-				input.itemId, input.count, userId, removed))
+			warn(string.format("[CraftingService] Failed to consume %s x%d for userId %d (Rollback triggered)",
+				input.itemId, input.count, userId))
+			
+			-- 롤백: 지금까지 차감한 재료들 다시 지급
+			for _, item in ipairs(consumedList) do
+				InventoryService.addItem(userId, item.itemId, item.count)
+			end
+			
 			return false
 		end
 	end
@@ -183,7 +198,7 @@ end
 -- Public API
 --========================================
 
-function CraftingService.Init(_NetController, _DataService, _InventoryService, _BuildService, _RecipeService, _TechService, _PlayerStatService)
+function CraftingService.Init(_NetController, _DataService, _InventoryService, _BuildService, _RecipeService, _TechService, _PlayerStatService, _WorldDropService, _TimeService)
 	if initialized then
 		warn("[CraftingService] Already initialized")
 		return
@@ -196,6 +211,8 @@ function CraftingService.Init(_NetController, _DataService, _InventoryService, _
 	RecipeService = _RecipeService
 	TechService = _TechService
 	PlayerStatService = _PlayerStatService
+	WorldDropService = _WorldDropService
+	TimeService = _TimeService
 	
 	-- Heartbeat 연결 (Lazy tick)
 	RunService.Heartbeat:Connect(processTick)
@@ -578,12 +595,34 @@ processTick = function()
 						task.spawn(function()
 							local success, _, _ = CraftingService.collect(player, craftId)
 							if not success then
-								-- 인벤토리 가득 참 등으로 수거 실패 시 에러 도배 방지
-								-- PENDING_COLLECT 상태로 유지되어 수동 수거 대기
-								print(string.format("[CraftingService] Auto-collect failed for %s (INV_FULL?), keeping in PENDING_COLLECT", craftId))
+								-- [개선] 인벤토리 가득 참 시 수동 수거 UI가 없는 맨손 제작은 월드 드롭 처리 (Softlock 방지)
+								local recipe = DataService.getRecipe(entry.recipeId)
+								local pPos = getPlayerPosition(player)
+								
+								if recipe and pPos and WorldDropService then
+									for _, output in ipairs(recipe.outputs) do
+										WorldDropService.spawnDrop(pPos + Vector3.new(0, 2, 0), output.itemId, output.count)
+									end
+									
+									-- 강제로 큐에서 제거 및 완료 이벤트 전송
+									queue[craftId] = nil
+									_syncToSave(userId)
+									
+									emitCraftEvent("Craft.Completed", player, {
+										craftId = craftId,
+										recipeId = entry.recipeId,
+										outputs = recipe.outputs,
+										dropped = true -- 클라이언트 알림용 플래그
+									})
+									
+									print(string.format("[CraftingService] INV_FULL: Hand craft %s dropped as WorldDrop for userId %d", craftId, userId))
+								else
+									-- 극단적인 예외 상황 (데이터 없음 등) 시 PENDING_COLLECT 유지
+									print(string.format("[CraftingService] Critical failure in auto-collect for %s, keeping pending", craftId))
+								end
 							end
 						end)
-						print(string.format("[CraftingService] Auto-collected personal craft %s for userId %d", craftId, userId))
+						print(string.format("[CraftingService] Auto-collecting personal craft %s for userId %d", craftId, userId))
 					else
 						-- 시설 제작인 경우 '수거 대기' 알림만 발송
 						emitCraftEvent("Craft.Ready", player, {

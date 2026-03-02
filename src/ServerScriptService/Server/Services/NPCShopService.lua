@@ -270,24 +270,27 @@ function NPCShopService.buy(userId: number, shopId: string, itemId: string, coun
 		return false, Enums.ErrorCode.INTERNAL_ERROR
 	end
 	
-	local addOk, addErr = InventoryService.addItem(userId, itemId, count)
-	if not addOk then
-		return false, addErr
+	local added, remaining = InventoryService.addItem(userId, itemId, count)
+	if added <= 0 then
+		return false, Enums.ErrorCode.INV_FULL
 	end
 	
+	-- 실제 추가된 수량만큼 비용 재계산
+	local actualCost = price * added
+	
 	-- 골드 차감
-	playerGold[userId] = currentGold - totalCost
+	playerGold[userId] = currentGold - actualCost
 	_savePlayerGold(userId)
 	_emitGoldChanged(userId)
 	
-	-- 재고 차감
+	-- 재고 차감 (실제 추가된 만큼만)
 	local stock = shopStock[shopId][itemIndex]
 	if stock ~= nil and stock > 0 then
-		shopStock[shopId][itemIndex] = stock - count
+		shopStock[shopId][itemIndex] = stock - added
 	end
 	
 	print(string.format("[NPCShopService] Player %d bought %dx %s from %s (cost: %d)", 
-		userId, count, itemId, shopId, totalCost))
+		userId, added, itemId, shopId, actualCost))
 	
 	return true, nil
 end
@@ -335,18 +338,21 @@ function NPCShopService.sell(userId: number, shopId: string, slot: number, count
 	end
 	
 	-- 인벤토리에서 아이템 제거
-	local removeOk, removeErr = InventoryService.removeItemFromSlot(userId, slot, count)
-	if not removeOk then
-		return false, removeErr
+	local removed = InventoryService.removeItemFromSlot(userId, slot, count)
+	if removed <= 0 then
+		return false, Enums.ErrorCode.INTERNAL_ERROR
 	end
 	
+	-- 실제 제거된 수량만큼 수익 재계산
+	local actualEarned = sellPrice * removed
+	
 	-- 골드 추가
-	playerGold[userId] = currentGold + totalEarned
+	playerGold[userId] = currentGold + actualEarned
 	_savePlayerGold(userId)
 	_emitGoldChanged(userId)
 	
 	print(string.format("[NPCShopService] Player %d sold %dx %s to %s (earned: %d)", 
-		userId, count, itemId, shopId, totalEarned))
+		userId, removed, itemId, shopId, actualEarned))
 	
 	return true, nil
 end
@@ -411,7 +417,13 @@ local function _onShopBuyRequest(player: Player, payload: any)
 		}
 	end
 	
-	return { success = true }
+	-- [최적화] 구매 성공 시 갱신된 상점 정보(재고 포함)를 함께 반환하여 추가 요청 방지
+	local updatedShopInfo = NPCShopService.getShopInfo(shopId)
+	
+	return { 
+		success = true,
+		shop = updatedShopInfo
+	}
 end
 
 local function _onShopSellRequest(player: Player, payload: any)

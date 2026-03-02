@@ -98,12 +98,13 @@ function ShopController.requestBuy(shopId: string, itemId: string, count: number
 			itemId = itemId,
 			count = count or 1,
 		})
-		-- 성공 시 상점 정보 갱신
-		if ok then
-			ShopController.requestShopInfo(shopId)
+		-- 성공 시 상점 정보 갱신 (서버에서 최적화되어 넘어온 데이터 사용)
+		if ok and data and data.shop then
+			shopInfoCache[shopId] = data.shop
+			_fireListeners("shopUpdated", data.shop)
 		end
 		if callback then
-			callback(ok, not ok and tostring(data) or nil)
+			callback(ok, not ok and tostring(data.errorCode or "UNKNOWN_ERROR") or nil)
 		end
 	end)
 end

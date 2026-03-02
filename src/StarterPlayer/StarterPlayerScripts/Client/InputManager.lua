@@ -233,6 +233,21 @@ local function onInputEnded(input: InputObject, gameProcessed: boolean)
 	end
 end
 
+--- 포커스 상실 시 모든 입력 초기화 (Sticky Keys 방지)
+local function resetInputs()
+	for keyCode, isHeld in pairs(heldKeys) do
+		if isHeld then
+			heldKeys[keyCode] = false
+			
+			-- 키 홀드 콜백 (뗌) 강제 호출
+			local holdBinding = keyHoldCallbacks[keyCode]
+			if holdBinding and holdBinding.onRelease then
+				pcall(holdBinding.onRelease)
+			end
+		end
+	end
+end
+
 --========================================
 -- Raycast Utility
 --========================================
@@ -292,6 +307,9 @@ function InputManager.Init()
 	
 	UserInputService.InputBegan:Connect(onInputBegan)
 	UserInputService.InputEnded:Connect(onInputEnded)
+	
+	-- [UX 개선] 알트탭(Focus Loss) 시 키 씹힘 방지
+	UserInputService.WindowFocusReleased:Connect(resetInputs)
 	
 	initialized = true
 	print("[InputManager] Initialized")

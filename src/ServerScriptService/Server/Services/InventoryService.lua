@@ -203,7 +203,7 @@ local function _emitChanged(player: Player, changes: {{slot: number, itemId: str
 	end
 
 	-- 현재 활성 슬롯(1~8)의 아이템이 변경되었다면 장착 모델 업데이트
-	local active = playerActiveSlots[userId]
+	local active = playerActiveSlots[userId] or 1 -- [FIX] Default to 1 if nil
 	local activeSlotChanged = false
 	for _, ch in ipairs(changes) do
 		if ch.slot == active then
@@ -361,15 +361,19 @@ function InventoryService.move(player: Player, fromSlot: number, toSlot: number,
 		table.insert(changes, _makeChange(inv, toSlot))
 		
 	elseif toData.itemId == fromData.itemId then
-		-- 같은 아이템이면: 합치기
-		ok, err = _validateStackRules(inv, toSlot, fromData.itemId, moveCount)
-		if not ok then return false, err, nil end
+		-- 같은 아이템이면: 합치기 (MAX_STACK 초과 시 부분 이동 처리)
+		local canAdd = math.max(0, Balance.MAX_STACK - toData.count)
+		local actualMove = math.min(moveCount, canAdd)
 		
-		_increaseSlot(inv, toSlot, fromData.itemId, moveCount)
-		_decreaseSlot(inv, fromSlot, moveCount)
-		
-		table.insert(changes, _makeChange(inv, fromSlot))
-		table.insert(changes, _makeChange(inv, toSlot))
+		if actualMove > 0 then
+			_increaseSlot(inv, toSlot, fromData.itemId, actualMove)
+			_decreaseSlot(inv, fromSlot, actualMove)
+			
+			table.insert(changes, _makeChange(inv, fromSlot))
+			table.insert(changes, _makeChange(inv, toSlot))
+		else
+			return false, Enums.ErrorCode.STACK_OVERFLOW, nil
+		end
 		
 	else
 		-- 다른 아이템이면: 스왑 (전체 이동일 때만)
@@ -588,17 +592,19 @@ function InventoryService.MoveInternal(
 		table.insert(targetChanges, _makeChange(targetContainer, targetSlot))
 		
 	elseif targetData.itemId == sourceData.itemId then
-		-- 같은 아이템이면: 합치기
-		local newCount = targetData.count + moveCount
-		if newCount > Balance.MAX_STACK then
+		-- 같은 아이템이면: 합치기 (MAX_STACK 초과 시 부분 이동 처리)
+		local canAdd = math.max(0, Balance.MAX_STACK - targetData.count)
+		local actualMove = math.min(moveCount, canAdd)
+		
+		if actualMove > 0 then
+			_increaseSlot(targetContainer, targetSlot, sourceData.itemId, actualMove, sourceData.durability)
+			_decreaseSlot(sourceContainer, sourceSlot, actualMove)
+			
+			table.insert(sourceChanges, _makeChange(sourceContainer, sourceSlot))
+			table.insert(targetChanges, _makeChange(targetContainer, targetSlot))
+		else
 			return false, Enums.ErrorCode.STACK_OVERFLOW, nil
 		end
-		
-		_increaseSlot(targetContainer, targetSlot, sourceData.itemId, moveCount, sourceData.durability)
-		_decreaseSlot(sourceContainer, sourceSlot, moveCount)
-		
-		table.insert(sourceChanges, _makeChange(sourceContainer, sourceSlot))
-		table.insert(targetChanges, _makeChange(targetContainer, targetSlot))
 		
 	else
 		-- 다른 아이템이면: 스왑 (전체 이동일 때만, 같은 컨테이너 내에서만)
@@ -766,6 +772,16 @@ function InventoryService.sort(userId: number)
 	
 	if player then
 		_emitChanged(player, changes)
+		
+		-- [추가 FIX] 정렬 후 현재 활성 슬롯(1~8)에 대한 시각적 장착 갱신 강제 수행
+		local active = playerActiveSlots[userId] or 1
+		local item = inv.slots[active]
+		if EquipService then
+			EquipService.equipItem(player, item and item.itemId)
+		end
+		
+		-- 클라이언트에 핫바 동기화 알림 (필요시)
+		NetController.FireClient(player, "Inventory.ActiveSlot.Changed", { slot = active })
 	end
 end
 

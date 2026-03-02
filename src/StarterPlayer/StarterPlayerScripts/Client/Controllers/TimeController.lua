@@ -14,7 +14,7 @@ local initialized = false
 
 -- 로컬 시간 캐시
 local timeCache = {
-	gameTime = 0,
+	dayTime = 0,
 	phase = "DAY",
 	serverTime = 0,
 }
@@ -31,8 +31,8 @@ function TimeController.getPhase(): string
 	return timeCache.phase
 end
 
-function TimeController.getGameTime(): number
-	return timeCache.gameTime
+function TimeController.getDayTime(): number
+	return timeCache.dayTime
 end
 
 --========================================
@@ -43,21 +43,22 @@ local function onPhaseChanged(data)
 	if not data then return end
 	
 	timeCache.phase = data.phase or timeCache.phase
-	timeCache.gameTime = data.gameTime or timeCache.gameTime
+	timeCache.dayTime = data.dayTime or timeCache.dayTime
+	timeCache.serverTime = data.serverTime or timeCache.serverTime
 	
 	-- 디버그 로그 (필요시 활성화)
-	-- print(string.format("[TimeController] Phase changed: %s at %.1f", timeCache.phase, timeCache.gameTime))
+	-- print(string.format("[TimeController] Phase changed: %s at dayTime=%.1f", timeCache.phase, timeCache.dayTime))
 end
 
 local function onSyncChanged(data)
 	if not data then return end
 	
-	timeCache.gameTime = data.gameTime or timeCache.gameTime
+	timeCache.dayTime = data.dayTime or timeCache.dayTime
 	timeCache.phase = data.phase or timeCache.phase
 	timeCache.serverTime = data.serverTime or timeCache.serverTime
 	
 	-- 디버그 로그 (필요시 활성화)
-	-- print(string.format("[TimeController] Sync: gameTime=%.1f, phase=%s", timeCache.gameTime, timeCache.phase))
+	-- print(string.format("[TimeController] Sync: dayTime=%.1f, phase=%s", timeCache.dayTime, timeCache.phase))
 end
 
 --========================================

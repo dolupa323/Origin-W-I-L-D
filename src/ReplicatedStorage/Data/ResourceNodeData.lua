@@ -85,6 +85,7 @@ local ResourceNodeData = {
 		maxHits = 1,
 		respawnTime = 120,
 		xpPerHit = 1,
+		requiresTool = false,
 	},
 	
 	--========================================
@@ -165,6 +166,7 @@ local ResourceNodeData = {
 		maxHits = 1,
 		respawnTime = 60,
 		xpPerHit = 1,
+		requiresTool = false,
 	},
 	{
 		id = "GROUND_BRANCH",
@@ -178,6 +180,7 @@ local ResourceNodeData = {
 		maxHits = 1,
 		respawnTime = 60,
 		xpPerHit = 1,
+		requiresTool = false,
 	},
 }
 

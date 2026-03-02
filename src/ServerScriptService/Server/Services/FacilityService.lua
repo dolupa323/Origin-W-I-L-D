@@ -45,6 +45,15 @@ local facilityStates = {}
 -- Internal Helpers
 --========================================
 
+--- 플레이어 캐릭터 위치 (월드 드롭용)
+local function getPlayerPosition(player: Player): Vector3?
+	local character = player.Character
+	if not character then return nil end
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return nil end
+	return hrp.Position
+end
+
 --- 시설 런타임 초기화
 local function createFacilityRuntime(structureId: string, facilityId: string, ownerId: number)
 	return {
@@ -357,10 +366,19 @@ function FacilityService.addFuel(player: Player, structureId: string, invSlot: n
 		return false, Enums.ErrorCode.BAD_REQUEST, nil
 	end
 	
-	-- 연료 슬롯에 같은 아이템이면 추가, 다르면 교체(기존 제거)
+	--燃料 슬롯에 같은 아이템이면 추가, 다르면 교체(기존 제거)
 	if runtime.fuelSlot and runtime.fuelSlot.itemId ~= slotData.itemId then
 		-- 기존 연료를 인벤으로 반환
-		InventoryService.addItem(userId, runtime.fuelSlot.itemId, runtime.fuelSlot.count)
+		local added, remaining = InventoryService.addItem(userId, runtime.fuelSlot.itemId, runtime.fuelSlot.count)
+		
+		-- 인벤토리 가득 참 시 월드 드롭 (아이템 증발 방지)
+		if remaining > 0 and WorldDropService then
+			local pPos = getPlayerPosition(player)
+			if pPos then
+				WorldDropService.spawnDrop(pPos + Vector3.new(0, 2, 0), runtime.fuelSlot.itemId, remaining)
+			end
+		end
+		
 		runtime.fuelSlot = nil
 	end
 	
@@ -424,7 +442,16 @@ function FacilityService.addInput(player: Player, structureId: string, invSlot: 
 	-- Input 슬롯에 같은 아이템인지 확인
 	if runtime.inputSlot and runtime.inputSlot.itemId ~= slotData.itemId then
 		-- 기존 Input을 인벤으로 반환
-		InventoryService.addItem(userId, runtime.inputSlot.itemId, runtime.inputSlot.count)
+		local added, remaining = InventoryService.addItem(userId, runtime.inputSlot.itemId, runtime.inputSlot.count)
+		
+		-- 인벤토리 가득 참 시 월드 드롭 (아이템 증발 방지)
+		if remaining > 0 and WorldDropService then
+			local pPos = getPlayerPosition(player)
+			if pPos then
+				WorldDropService.spawnDrop(pPos + Vector3.new(0, 2, 0), runtime.inputSlot.itemId, remaining)
+			end
+		end
+		
 		runtime.inputSlot = nil
 		runtime.currentRecipeId = nil
 		runtime.processProgress = 0
@@ -536,6 +563,11 @@ function FacilityService.assignPal(userId: number, structureId: string, palUID: 
 	local runtime = facilityStates[structureId]
 	if not runtime then
 		return false, Enums.ErrorCode.NOT_FOUND
+	end
+	
+	-- 권한 확인: 시설 소유자만 팰 배치 가능
+	if runtime.ownerId ~= userId then
+		return false, Enums.ErrorCode.NO_PERMISSION
 	end
 	
 	-- 이미 다른 팰이 배치되어 있으면 실패

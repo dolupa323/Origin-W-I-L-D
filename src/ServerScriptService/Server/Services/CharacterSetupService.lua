@@ -6,38 +6,15 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local InsertService = game:GetService("InsertService")
 
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Appearance = require(Shared.Config.Appearance)
+
 local CharacterSetupService = {}
 
 --========================================
 -- Dependencies
 --========================================
 local initialized = false
-
---========================================
--- 선사시대 스타일 설정
---========================================
--- 피부 톤 (황갈색 계열)
-local SKIN_TONES = {
-	Color3.fromRGB(180, 140, 100),  -- 황갈색
-	Color3.fromRGB(160, 120, 85),   -- 진한 황갈색
-	Color3.fromRGB(200, 160, 120),  -- 밝은 황갈색
-	Color3.fromRGB(140, 100, 70),   -- 어두운 갈색
-}
-
--- 머리카락 색상 (짙은 갈색/검정)
-local HAIR_COLORS = {
-	Color3.fromRGB(35, 25, 20),   -- 검정
-	Color3.fromRGB(60, 40, 30),   -- 짙은 갈색
-	Color3.fromRGB(80, 55, 40),   -- 갈색
-}
-
--- 원시 의상 색상 (가죽/모피)
-local CLOTHING_COLORS = {
-	Color3.fromRGB(101, 67, 33),   -- 가죽 갈색
-	Color3.fromRGB(85, 60, 42),    -- 어두운 가죽
-	Color3.fromRGB(139, 90, 43),   -- 밝은 가죽
-	Color3.fromRGB(110, 80, 50),   -- 모피 색
-}
 
 --========================================
 -- Internal Functions
@@ -58,13 +35,13 @@ end
 
 --- 선사시대 스타일 적용
 local function applyPrehistoricStyle(character)
-	-- Humanoid Description 가져오기
-	local humanoid = character:FindFirstChild("Humanoid")
+	-- Humanoid Description 가져오기 (동기적 대기)
+	local humanoid = character:WaitForChild("Humanoid", 5)
 	if not humanoid then return end
 	
 	-- 랜덤 피부톤 선택
-	local skinTone = randomChoice(SKIN_TONES)
-	local clothingColor = randomChoice(CLOTHING_COLORS)
+	local skinTone = randomChoice(Appearance.SKIN_TONES)
+	local clothingColor = randomChoice(Appearance.CLOTHING_COLORS)
 	
 	-- 신체 색상 설정
 	local bodyParts = {
@@ -108,8 +85,8 @@ local function applyPrehistoricStyle(character)
 		shirt.Name = "Shirt"
 		shirt.Parent = character
 	end
-	-- 가죽 조끼 느낌의 텍스처 (기본 ID - 실제 에셋 교체 권장)
-	shirt.ShirtTemplate = "rbxassetid://398633812"  -- 기본 갈색 셔츠
+	-- 가죽 조끼 느낌의 텍스처
+	shirt.ShirtTemplate = Appearance.CLOTHING_IDS.DEFAULT_SHIRT
 	
 	local pants = character:FindFirstChild("Pants")
 	if not pants then
@@ -118,27 +95,35 @@ local function applyPrehistoricStyle(character)
 		pants.Parent = character
 	end
 	-- 가죽 반바지/치마 느낌
-	pants.PantsTemplate = "rbxassetid://398633812"  -- 기본 갈색 바지
+	pants.PantsTemplate = Appearance.CLOTHING_IDS.DEFAULT_PANTS
 	
-	-- Body Part 색상 적용 (HumanoidDescription 방식)
-	task.spawn(function()
-		pcall(function()
-			local desc = humanoid:GetAppliedDescription()
-			if desc then
-				desc.HeadColor = skinTone
-				desc.LeftArmColor = skinTone
-				desc.RightArmColor = skinTone
-				desc.LeftLegColor = clothingColor
-				desc.RightLegColor = clothingColor
-				desc.TorsoColor = clothingColor
-				
-				-- HairColor는 별도 처리
-				-- desc.HairColor = randomChoice(HAIR_COLORS)
-				
-				humanoid:ApplyDescription(desc)
-			end
-		end)
+	-- Body Part 색상 적용 (HumanoidDescription 방식, 동기화)
+	-- 주의: ApplyDescription은 캐릭터가 DataModel(Workspace)에 소속되어 있어야만 호출 가능합니다.
+	if not character:IsDescendantOf(game) then
+		character.AncestryChanged:Wait()
+	end
+	if not character.Parent then return end -- 도중에 파괴된 경우 중단
+	
+	local success, err = pcall(function()
+		local desc = humanoid:GetAppliedDescription()
+		if desc then
+			desc.HeadColor = skinTone
+			desc.LeftArmColor = skinTone
+			desc.RightArmColor = skinTone
+			desc.LeftLegColor = clothingColor
+			desc.RightLegColor = clothingColor
+			desc.TorsoColor = clothingColor
+			
+			-- HairColor는 별도 처리
+			-- desc.HairColor = randomChoice(Appearance.HAIR_COLORS)
+			
+			humanoid:ApplyDescription(desc)
+		end
 	end)
+	
+	if not success then
+		warn(string.format("[CharacterSetupService] Failed to ApplyDescription to %s: %s", character.Name, tostring(err)))
+	end
 	
 	print(string.format("[CharacterSetupService] Applied prehistoric style to %s", character.Name))
 end
@@ -159,32 +144,32 @@ end
 -- Public API
 --========================================
 
+local function onCharacterAdded(player: Player, character)
+	applyPrehistoricStyle(character)
+	setupCharacterAttributes(player, character)
+end
+
+local function onPlayerAdded(player: Player)
+	player.CharacterAdded:Connect(function(character)
+		onCharacterAdded(player, character)
+	end)
+	
+	-- 이 시점에 이미 캐릭터가 존재하는 경우 즉시 처리
+	if player.Character then
+		task.spawn(onCharacterAdded, player, player.Character)
+	end
+end
+
 function CharacterSetupService.Init()
 	if initialized then return end
 	
 	-- 기존 플레이어 처리
 	for _, player in ipairs(Players:GetPlayers()) do
-		if player.Character then
-			applyPrehistoricStyle(player.Character)
-			setupCharacterAttributes(player, player.Character)
-		end
-		
-		player.CharacterAdded:Connect(function(character)
-			-- 잠시 대기 (Humanoid 로딩)
-			task.wait(0.5)
-			applyPrehistoricStyle(character)
-			setupCharacterAttributes(player, character)
-		end)
+		onPlayerAdded(player)
 	end
 	
 	-- 새 플레이어 처리
-	Players.PlayerAdded:Connect(function(player)
-		player.CharacterAdded:Connect(function(character)
-			task.wait(0.5)
-			applyPrehistoricStyle(character)
-			setupCharacterAttributes(player, character)
-		end)
-	end)
+	Players.PlayerAdded:Connect(onPlayerAdded)
 	
 	initialized = true
 	print("[CharacterSetupService] Initialized")

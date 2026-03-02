@@ -12,12 +12,16 @@ local UIUtils = {}
 --- 비율 고정된 최상위 윈도우 랩퍼
 function UIUtils.mkWindow(p)
 	local win = UIUtils.mkFrame(p)
-	local ratio = Instance.new("UIAspectRatioConstraint")
-	ratio.AspectRatio = p.ratio or 1.5 -- 가로 세로 비율
-	ratio.Parent = win
+	if p.ratio then
+		local ratio = Instance.new("UIAspectRatioConstraint")
+		ratio.AspectRatio = p.ratio
+		ratio.Parent = win
+	end
 	return win
 end
 
+--- 일반 UI용 Frame 또는 CanvasGroup 생성기
+--- @param p.useCanvas boolean 팝업이나 페이드 인/아웃(Fade in/out) 애니메이션을 위한 최상위 프레임에만 'true' 입력. 과도하게 사용할 경우 CanvasGroup 렌더링 한계로 인해 모바일 해상도가 깨지고 메모리 누수가 발생합니다. 인벤토리 목록 등엔 반드시 Frame을 유지하세요.
 function UIUtils.mkFrame(p)
 	local f = p.useCanvas and Instance.new("CanvasGroup") or Instance.new("Frame")
 	f.Name = p.name or "Frame"
@@ -281,6 +285,7 @@ function UIUtils.mkLine(p)
 		name = p.name or "Line",
 		bg = p.color or C.BORDER_DIM,
 		bgT = p.bgT or 0.4,
+		z = p.z or -1,
 		parent = p.parent
 	})
 	

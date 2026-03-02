@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
+local CollectionService = game:GetService("CollectionService")
 local NetClient = require(script.Parent.Parent.NetClient)
 
 local ResourceUIController = {}
@@ -116,14 +117,12 @@ end
 local function updateHPBar(nodeUID, remainingHits, maxHits)
 	local bg = activeBars[nodeUID]
 	if not bg then
-		-- 만약 없는 경우, 마침 타겟 근처면 생성 시도
-		local nodeFolder = workspace:FindFirstChild("ResourceNodes")
-		if nodeFolder then
-			for _, model in ipairs(nodeFolder:GetChildren()) do
-				if model:GetAttribute("NodeUID") == nodeUID then
-					bg = createHPBar(model, nodeUID, maxHits)
-					break
-				end
+		-- 만약 없는 경우, 스트리밍 등으로 레이스가 발생했을 수 있음.
+		-- CollectionService 태그된 것 중 매칭되는 UID 찾기 시도
+		for _, model in ipairs(CollectionService:GetTagged("ResourceNode")) do
+			if model:GetAttribute("NodeUID") == nodeUID then
+				bg = createHPBar(model, nodeUID, maxHits)
+				break
 			end
 		end
 	end
@@ -150,46 +149,40 @@ end
 function ResourceUIController.Init()
 	if initialized then return end
 	
-	-- 서버로부터 노드 스폰 알림 수신
-	NetClient.On("Harvest.Node.Spawned", function(data)
-		-- 이미 존재하는 노드인지 확인 후 GUI 부착
-		task.delay(0.5, function() -- 모델 복제 완료 대기
-			local nodeFolder = workspace:FindFirstChild("ResourceNodes")
-			if nodeFolder then
-				for _, model in ipairs(nodeFolder:GetChildren()) do
-					if model:GetAttribute("NodeUID") == data.nodeUID then
-						createHPBar(model, data.nodeUID, data.maxHits)
-						break
-					end
-				end
-			end
-		end)
-	end)
+	-- [UX 개선] StreamingEnabled 대응을 위한 CollectionService 기반 구조로 변경
+	local function onNodeAdded(model)
+		local nodeUID = model:GetAttribute("NodeUID")
+		if nodeUID then
+			createHPBar(model, nodeUID, 10) -- 기본 최대 타격 10 (Hit 이벤트 시 업데이트됨)
+		end
+	end
+	
+	local function onNodeRemoved(model)
+		local nodeUID = model:GetAttribute("NodeUID")
+		if nodeUID and activeBars[nodeUID] then
+			activeBars[nodeUID]:Destroy()
+			activeBars[nodeUID] = nil
+		end
+	end
+	
+	-- 1. 기존 노드 처리 및 태그 리스너 연결
+	for _, node in ipairs(CollectionService:GetTagged("ResourceNode")) do
+		task.spawn(onNodeAdded, node)
+	end
+	
+	CollectionService:GetInstanceAddedSignal("ResourceNode"):Connect(onNodeAdded)
+	CollectionService:GetInstanceRemovedSignal("ResourceNode"):Connect(onNodeRemoved)
 	
 	-- 서버로부터 노드 타격 알림 수신
 	NetClient.On("Harvest.Node.Hit", function(data)
 		updateHPBar(data.nodeUID, data.remainingHits, data.maxHits)
 	end)
 	
-	-- 서버로부터 노드 고갈 알림 수신
+	-- 서버로부터 노드 고갈 알림 수신 (모델 제거 전 UI 즉시 제거용)
 	NetClient.On("Harvest.Node.Depleted", function(data)
 		if activeBars[data.nodeUID] then
 			activeBars[data.nodeUID]:Destroy()
 			activeBars[data.nodeUID] = nil
-		end
-	end)
-	
-	-- 기존 노드들 전수 조사 (재접속/초기화 대응)
-	task.spawn(function()
-		task.wait(2)
-		local nodeFolder = workspace:FindFirstChild("ResourceNodes")
-		if nodeFolder then
-			for _, model in ipairs(nodeFolder:GetChildren()) do
-				local uid = model:GetAttribute("NodeUID")
-				if uid then
-					createHPBar(model, uid, 10) -- 기본값 10
-				end
-			end
 		end
 	end)
 	

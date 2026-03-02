@@ -105,17 +105,28 @@ local function playDodgeAnimation()
 		local dodgeDistance = Balance.DODGE_DISTANCE or 8
 		local dodgeDuration = Balance.DODGE_DURATION or 0.5
 
-		-- BodyVelocity로 구르기 이동 (투명도 효과 없음 - 애니메이션만 사용)
-		local bodyVel = Instance.new("BodyVelocity")
-		bodyVel.MaxForce = Vector3.new(50000, 0, 50000)
-		bodyVel.Velocity = moveDir * (dodgeDistance / dodgeDuration)
-		bodyVel.Parent = hrp
+		-- LinearVelocity로 구르기 이동 (BodyVelocity 대체)
+		local attachment = Instance.new("Attachment")
+		attachment.Parent = hrp
+		
+		-- 캐릭터 질량 계산 (안전한 MaxForce 설정을 위함)
+		local totalMass = 0
+		for _, p in ipairs(character:GetDescendants()) do
+			if p:IsA("BasePart") then totalMass += p:GetMass() end
+		end
 
-		-- 구르기 종료 후 BodyVelocity 제거
+		local linearVel = Instance.new("LinearVelocity")
+		-- [물리 최적화] 질량에 비례하는 힘을 사용하여 벽 충돌 시 맵 밖으로 튕기는 현상(Fling) 방지
+		linearVel.MaxForce = totalMass * 1200 
+		linearVel.VelocityConstraintMode = Enum.VelocityConstraintMode.Vector
+		linearVel.VectorVelocity = moveDir * (dodgeDistance / dodgeDuration)
+		linearVel.Attachment0 = attachment
+		linearVel.Parent = hrp
+
+		-- 구르기 종료 후 물리 객체 제거
 		task.delay(dodgeDuration, function()
-			if bodyVel.Parent then
-				bodyVel:Destroy()
-			end
+			linearVel:Destroy()
+			attachment:Destroy()
 		end)
 	end
 	
@@ -199,6 +210,7 @@ local function performDodge()
 				isDodging = false
 			end)
 		else
+			lastDodgeTime = 0 -- [FIX] 실패 시 쿨다운 리셋하여 서버와 동기화
 			isDodging = false -- 실패 시 복구
 		end
 	end)

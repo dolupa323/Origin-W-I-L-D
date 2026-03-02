@@ -22,8 +22,6 @@ NPCShopData.GENERAL_STORE = {
 		{ itemId = "RESIN", price = 10, stock = -1 },
 	},
 	
-	-- 구매 가격 배율 (플레이어가 판매 시)
-	sellMultiplier = 0.5,
 	
 	-- 특수 구매 목록 (플레이어가 상점에 팔 수 있는 아이템)
 	sellList = {
@@ -55,8 +53,7 @@ NPCShopData.TOOL_SHOP = {
 		{ itemId = "BRONZE_AXE", price = 250, stock = 10 },
 	},
 	
-	sellMultiplier = 0.3,
-	
+
 	sellList = {
 		{ itemId = "STONE_PICKAXE", price = 15 },
 		{ itemId = "STONE_AXE", price = 15 },
@@ -81,8 +78,7 @@ NPCShopData.PAL_SHOP = {
 		{ itemId = "BRONZE_BOLA", price = 300, stock = 10 },
 	},
 	
-	sellMultiplier = 0.4,
-	
+
 	sellList = {
 		{ itemId = "VINE_BOLA", price = 10 },
 		{ itemId = "BONE_BOLA", price = 40 },
@@ -104,8 +100,7 @@ NPCShopData.FOOD_SHOP = {
 		{ itemId = "BERRY", price = 5, stock = -1 },
 	},
 	
-	sellMultiplier = 0.5,
-	
+
 	sellList = {
 		{ itemId = "MEAT", price = 10 },
 		{ itemId = "BERRY", price = 2 },
@@ -127,8 +122,7 @@ NPCShopData.BUILDING_SHOP = {
 		{ itemId = "FIBER", price = 2, stock = -1 },
 	},
 	
-	sellMultiplier = 0.4,
-	
+
 	sellList = {
 		{ itemId = "WOOD", price = 1 },
 		{ itemId = "STONE", price = 1 },

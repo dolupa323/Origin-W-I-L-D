@@ -20,6 +20,7 @@ local FacilityService = nil
 local BaseClaimService = nil
 local PalboxService = nil
 local DataService = nil
+local BuildService = nil
 
 --========================================
 -- Internal State
@@ -120,39 +121,56 @@ local function processGatheringFacility(structureId: string, facilityData: any, 
 	local palInstance = PalboxService and PalboxService.getPal(ownerId, assignedPalUID)
 	if not palInstance then return end
 	
-	local palData = DataService and DataService.getById("PalData", palInstance.palId)
+	local palData = DataService and DataService.getById("PalData", palInstance.creatureId)
 	if not palData then return end
 	
-	-- 시설 위치 (근사값 - BuildService에서 가져와야 함)
-	-- FacilityService에서 시설 런타임 조회
-	local facilityInfo = FacilityService.getRuntime(structureId)
-	if not facilityInfo then return end
+	-- 주인 베이스 정보 (베이스 밖 노드는 채집 불가)
+	if not BaseClaimService then return end
 	
-	-- 베이스 내 자원 노드 검색
+	-- [OPTIMIZATION] 모든 노드 순회(O(N)) 대신 공간 쿼리(GetPartBoundsInRadius) 사용
 	local gatherRadius = facilityData.gatherRadius or 30
-	local allNodes = HarvestService and HarvestService.getAllNodes() or {}
+	local nodeFolder = workspace:FindFirstChild("ResourceNodes")
+	if not nodeFolder then return end
+	
+	-- 시설 위치 가져오기 (BuildService 참조)
+	local struct = BuildService and BuildService.get(structureId)
+	if not struct or not struct.position then return end
+	
+	local spatialParams = OverlapParams.new()
+	spatialParams.FilterDescendantsInstances = { nodeFolder }
+	spatialParams.FilterType = Enum.RaycastFilterType.Include
+	
+	local nearbyParts = workspace:GetPartBoundsInRadius(struct.position, gatherRadius, spatialParams)
+	local processedNodes = {} -- 중복 처리 방지 (모델 내 여러 파트 감지 대응)
 	
 	local harvestedCount = 0
-	local workPowerBonus = (palInstance.workPower or 1) * 0.5  -- workPower에 따른 수확량 보너스
 	
-	for _, node in ipairs(allNodes) do
+	for _, part in ipairs(nearbyParts) do
+		local nodeModel = part:FindFirstAncestorOfClass("Model")
+		if not nodeModel then continue end
+		
+		local nodeUID = nodeModel:GetAttribute("NodeUID")
+		if not nodeUID or processedNodes[nodeUID] then continue end
+		processedNodes[nodeUID] = true
+		
 		-- 노드 데이터 조회
-		local nodeData = DataService and DataService.getResourceNode(node.nodeId)
+		local nodeId = nodeModel:GetAttribute("NodeId")
+		local nodeData = DataService and DataService.getResourceNode(nodeId)
 		if not nodeData then continue end
 		
 		-- 팰이 해당 노드 수확 가능한지 확인
 		if not canPalHarvestNode(palData, nodeData) then continue end
 		
-		-- 베이스 내 노드인지 확인
-		if BaseClaimService and not BaseClaimService.isInBase(ownerId, node.position) then
+		-- 베이스 내 노드인지 확인 (다른 베이스 침범 방지)
+		if not BaseClaimService.isInBase(ownerId, nodeModel:GetPivot().Position) then
 			continue
 		end
 		
-		-- [FIX] 노드 데미지 적용하여 고갈 처리 (무한 자원 복사 방지)
-		local palDamage = 1 -- 팰의 기본 타격 데미지
-		local eff = (palInstance.workPower or 1) * 0.5 -- 팰의 효율
+		-- 노드 데미지 적용
+		local palDamage = 1
+		local eff = (palInstance.workPower or 1) * 0.5
 		
-		local success, _, drops = HarvestService.damageNode(node.nodeUID, palDamage, eff, ownerId)
+		local success, _, drops = HarvestService.damageNode(nodeUID, palDamage, eff, ownerId)
 		if not success then continue end
 		
 		for _, drop in ipairs(drops) do
@@ -243,11 +261,9 @@ end
 --========================================
 
 function AutoHarvestService.Init(
-	harvestService: any,
-	facilityService: any,
-	baseClaimService: any,
 	palboxService: any,
-	dataService: any
+	dataService: any,
+	buildService: any
 )
 	if initialized then return end
 	
@@ -256,6 +272,7 @@ function AutoHarvestService.Init(
 	BaseClaimService = baseClaimService
 	PalboxService = palboxService
 	DataService = dataService
+	BuildService = buildService
 	
 	-- Heartbeat 시작
 	startHeartbeat()

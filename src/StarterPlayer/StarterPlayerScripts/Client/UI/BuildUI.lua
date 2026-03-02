@@ -29,7 +29,8 @@ function BuildUI.Init(parent, UIManager, isMobile)
 	-- Main Window
 	local main = Utils.mkWindow({
 		name = "BuildWindow",
-		size = UDim2.new(isSmall and 0.95 or 0.9, 0, isSmall and 0.95 or 0.85, 0),
+		size = UDim2.new(isSmall and 0.98 or 0.9, 0, isSmall and 0.92 or 0.85, 0),
+		maxSize = Vector2.new(1200, 800),
 		pos = UDim2.new(0.5, 0, 0.5, 0),
 		anchor = Vector2.new(0.5, 0.5),
 		bg = C.BG_PANEL,
@@ -37,8 +38,8 @@ function BuildUI.Init(parent, UIManager, isMobile)
 		r = 0,
 		stroke = 2,
 		strokeC = C.BORDER_DIM,
-		parent = BuildUI.Refs.Frame,
-		ratio = isSmall and 1.3 or 1.6
+		parent = BuildUI.Refs.Frame
+		-- ratio removed: Responsive layout
 	})
 	
 	-- [Header]

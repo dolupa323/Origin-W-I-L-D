@@ -971,20 +971,63 @@ end
 function CreatureService._updateAILoop()
 	local now = tick()
 	
-	-- 0. 플레이어 위치 및 인스턴스 캐싱 (연산 최적화)
-	local playerCache = {}
-	for _, p in ipairs(Players:GetPlayers()) do
+	-- [OPTIMIZATION] Inverse proximity calculation (Player -> Creature)
+	-- O(P * log(C)) + O(NearbyCreatures) 대신 O(C * P) 연산 회피
+	
+	-- 1. 모든 크리처의 근접 데이터 초기화
+	for _, creature in pairs(activeCreatures) do
+		creature.minDist = 9999 -- DESPAWN_DIST보다 큰 기본값
+		creature.closestPlayerPos = nil
+		creature.closestPlayerRoot = nil
+		creature.closestPlayerHum = nil
+		creature.closestPlayerUserId = nil
+	end
+
+	-- 2. 공간 분할 색인(GetPartBoundsInRadius)을 통한 벌크 업데이트
+	-- 플레이어 관점에서 주변 크리처를 찾으므로 연산량이 대폭 감소함
+	local spatialParams = OverlapParams.new()
+	spatialParams.FilterDescendantsInstances = { creatureFolder }
+	spatialParams.FilterType = Enum.RaycastFilterType.Include
+	
+	local allPlayers = Players:GetPlayers()
+	for _, p in ipairs(allPlayers) do
 		local char = p.Character
-		if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Humanoid") then
-			table.insert(playerCache, {
-				userId = p.UserId,
-				root = char.HumanoidRootPart,
-				pos = char.HumanoidRootPart.Position,
-				humanoid = char.Humanoid
-			})
+		local hrp = char and char:FindFirstChild("HumanoidRootPart")
+		local hum = char and char:FindFirstChild("Humanoid")
+		
+		if hrp and hum and hum.Health > 0 then
+			local pPos = hrp.Position
+			-- 플레이어 주변 300스터드(DESPAWN_DIST) 내의 크리처 파트 탐색
+			local nearbyParts = workspace:GetPartBoundsInRadius(pPos, DESPAWN_DIST, spatialParams)
+			
+			-- 한 명의 플레이어가 같은 크리처의 여러 파트를 감지하는 것 방지
+			local processedForThisPlayer = {} 
+			
+			for _, part in ipairs(nearbyParts) do
+				local model = part:FindFirstAncestorOfClass("Model")
+				if model and model.Parent == creatureFolder then
+					local instanceId = model:GetAttribute("InstanceId")
+					if instanceId and not processedForThisPlayer[instanceId] then
+						processedForThisPlayer[instanceId] = true
+						
+						local creature = activeCreatures[instanceId]
+						if creature and creature.rootPart then
+							local d = (pPos - creature.rootPart.Position).Magnitude
+							if d < creature.minDist then
+								creature.minDist = d
+								creature.closestPlayerPos = pPos
+								creature.closestPlayerRoot = hrp
+								creature.closestPlayerHum = hum
+								creature.closestPlayerUserId = p.UserId
+							end
+						end
+					end
+				end
+			end
 		end
 	end
 	
+	-- 3. 각 크리처별 AI 로직 실행 (상태 머신)
 	for id, creature in pairs(activeCreatures) do
 		if not creature.model or not creature.model.Parent then
 			activeCreatures[id] = nil
@@ -995,23 +1038,12 @@ function CreatureService._updateAILoop()
 		local hrp = creature.rootPart
 		if not hrp then continue end
 		
-		-- 1. 가장 가까운 플레이어 찾기 (캐싱된 데이터 사용)
-		local minDist = 9999
-		local closestPlayerPos = nil
-		local closestPlayerRoot = nil
-		local closestPlayerHum = nil
-		local closestPlayerUserId = nil
-		
-		for _, pData in ipairs(playerCache) do
-			local d = (pData.pos - hrp.Position).Magnitude
-			if d < minDist then
-				minDist = d
-				closestPlayerPos = pData.pos
-				closestPlayerRoot = pData.root
-				closestPlayerHum = pData.humanoid
-				closestPlayerUserId = pData.userId
-			end
-		end
+		-- 위에서 미리 계산된 근접 데이터 활용
+		local minDist = creature.minDist
+		local closestPlayerPos = creature.closestPlayerPos
+		local closestPlayerRoot = creature.closestPlayerRoot
+		local closestPlayerHum = creature.closestPlayerHum
+		local closestPlayerUserId = creature.closestPlayerUserId
 		
 		-- 1.1 LOD 업데이트 주기 결정
 		local updateInterval = AI_UPDATE_INTERVAL -- 기본 0.3s

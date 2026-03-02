@@ -179,7 +179,7 @@ end
 
 -- CraftingService 초기화 (+ TechService, PlayerStatService 추가)
 local CraftingService = require(Services.CraftingService)
-CraftingService.Init(NetController, DataService, InventoryService, BuildService, RecipeService, TechService, PlayerStatService)
+CraftingService.Init(NetController, DataService, InventoryService, BuildService, RecipeService, TechService, PlayerStatService, WorldDropService, TimeService)
 
 -- CraftingService 핸들러 등록
 for command, handler in pairs(CraftingService.GetHandlers()) do
@@ -202,7 +202,7 @@ BuildService.SetFacilityService(FacilityService)
 
 -- DebuffService 초기화 (Phase 4-4) - CreatureService보다 먼저 초기화
 local DebuffService = require(Services.DebuffService)
-DebuffService.Init(NetController, TimeService)
+DebuffService.Init(NetController, TimeService, DataService, StaminaService)
 
 -- DebuffService 핸들러 등록
 for command, handler in pairs(DebuffService.GetHandlers()) do
@@ -259,7 +259,7 @@ end
 
 -- PartyService 초기화 (Phase 5-4)
 local PartyService = require(Services.PartyService)
-PartyService.Init(NetController, PalboxService, CreatureService)
+PartyService.Init(NetController, PalboxService, CreatureService, SaveService)
 
 -- PartyService 핸들러 등록
 for command, handler in pairs(PartyService.GetHandlers()) do
@@ -289,7 +289,7 @@ end
 
 -- AutoHarvestService 초기화 (Phase 7-3)
 local AutoHarvestService = require(Services.AutoHarvestService)
-AutoHarvestService.Init(HarvestService, FacilityService, BaseClaimService, PalboxService, DataService)
+AutoHarvestService.Init(HarvestService, FacilityService, BaseClaimService, PalboxService, DataService, BuildService)
 
 -- AutoDepositService 초기화 (Phase 7-4)
 local AutoDepositService = require(Services.AutoDepositService)

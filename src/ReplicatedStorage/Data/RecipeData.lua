@@ -77,7 +77,7 @@ local RecipeData = {
 		requiredFacility = "CRAFTING",
 		craftTime = 3,
 		techLevel = 2,
-		inputs = { { itemId = "WOOD", count = 10 }, { itemId = "FIBER", amount = 10 } },
+		inputs = { { itemId = "WOOD", count = 10 }, { itemId = "FIBER", count = 10 } },
 		outputs = { { itemId = "WOODEN_BOW", count = 1 } },
 	},
 	{
@@ -217,6 +217,20 @@ local RecipeData = {
 		techLevel = 4,
 		inputs = { { itemId = "IRON_INGOT", count = 5 }, { itemId = "STONE", count = 5 }, { itemId = "FIBER", count = 10 } },
 		outputs = { { itemId = "IRON_BOLA", count = 1 } },
+	},
+
+	--========================================
+	-- 요리 레시피 (COOKING facility)
+	--========================================
+	{
+		id = "CRAFT_COOKED_MEAT",
+		name = "고기 굽기",
+		category = "FOOD",
+		requiredFacility = "COOKING",
+		craftTime = 5,
+		techLevel = 1,
+		inputs = { { itemId = "MEAT", count = 1 } },
+		outputs = { { itemId = "COOKED_MEAT", count = 1 } },
 	},
 }
 

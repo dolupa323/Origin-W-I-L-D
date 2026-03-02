@@ -13,6 +13,22 @@ TechUI.Refs = {
 local currentCategory = "ALL"
 local nodeRefs = {} -- [techId] = slot object
 
+local function resolveNodeIcon(node, getItemIcon)
+	local icon = getItemIcon(node.id)
+	-- Fallback 값이 넘어왔다면 무시하고 해금 아이템 이미지로 탐색
+	if icon and icon ~= "" and not string.match(icon, "15573752528") then return icon end
+	
+	-- Fallback to first unlock
+	if node.unlocks then
+		if node.unlocks.facilities and #node.unlocks.facilities > 0 then
+			return getItemIcon(node.unlocks.facilities[1])
+		elseif node.unlocks.recipes and #node.unlocks.recipes > 0 then
+			return getItemIcon(node.unlocks.recipes[1])
+		end
+	end
+	return icon -- 최후의 보루로 기존 fallback 반환
+end
+
 function TechUI.Init(parent, UIManager, isMobile)
 	local isSmall = isMobile
 	TechUI.Refs.Frame = Utils.mkFrame({
@@ -26,14 +42,15 @@ function TechUI.Init(parent, UIManager, isMobile)
 	
 	local main = Utils.mkWindow({
 		name = "Main",
-		size = UDim2.new(isSmall and 0.95 or 0.9, 0, isSmall and 0.95 or 0.85, 0),
+		size = UDim2.new(isSmall and 0.98 or 0.9, 0, isSmall and 0.92 or 0.85, 0),
+		maxSize = Vector2.new(1200, 800),
 		pos = UDim2.new(0.5, 0, 0.5, 0),
 		anchor = Vector2.new(0.5, 0.5),
 		bg = C.BG_PANEL,
 		bgT = T.PANEL,
 		r = 0, stroke = 2, strokeC = C.BORDER_DIM,
-		ratio = isSmall and 1.3 or 1.6,
 		parent = TechUI.Refs.Frame
+		-- ratio removed: Responsive layout
 	})
 
 	local header = Utils.mkFrame({name="Header", size=UDim2.new(1,0,0,45), bgT=1, parent=main})
@@ -64,7 +81,7 @@ function TechUI.Init(parent, UIManager, isMobile)
 			fn = function() 
 				currentCategory = cat
 				for c, b in pairs(TechUI.Refs.Tabs) do b.TextColor3 = (c == cat) and C.GOLD_SEL or C.GRAY end
-				if TechUI.lastTechList then TechUI.Refresh(TechUI.lastTechList, TechUI.lastUnlocked, TechUI.lastTP, TechUI.lastIconFn, UIManager) end
+				if TechUI.lastTechList then TechUI.Refresh(TechUI.lastTechList, TechUI.lastUnlocked, TechUI.lastTP, TechUI.lastLevel, TechUI.lastIconFn, UIManager) end
 			end,
 			parent = tabArea
 		})
@@ -118,8 +135,8 @@ function TechUI.SetVisible(visible)
 	end
 end
 
-function TechUI.Refresh(techList, unlocked, tp, getItemIcon, UIManager)
-	TechUI.lastTechList = techList; TechUI.lastUnlocked = unlocked; TechUI.lastTP = tp; TechUI.lastIconFn = getItemIcon
+function TechUI.Refresh(techList, unlocked, tp, playerLevel, getItemIcon, UIManager)
+	TechUI.lastTechList = techList; TechUI.lastUnlocked = unlocked; TechUI.lastTP = tp; TechUI.lastLevel = playerLevel; TechUI.lastIconFn = getItemIcon
 	if TechUI.Refs.TPText then TechUI.Refs.TPText.Text = "보유 TP: " .. tp end
 	local scroll = TechUI.Refs.GridScroll
 	if not scroll then return end
@@ -131,35 +148,6 @@ function TechUI.Refresh(techList, unlocked, tp, getItemIcon, UIManager)
 	TechUI.Refs.LineContainer:ClearAllChildren()
 	nodeRefs = {}
 
-	-- Calculate Depth based on prerequisites
-	local depth = {}
-	local function getDepth(id, visited)
-		if depth[id] then return depth[id] end
-		if visited[id] then return 0 end -- Cyclic dep guard
-		visited[id] = true
-		
-		local node = nil
-		for _, n in ipairs(techList) do if n.id == id then node = n; break end end
-		if not node or not node.prerequisites or #node.prerequisites == 0 then
-			depth[id] = 1
-			return 1
-		end
-		
-		local maxD = 0
-		for _, pid in ipairs(node.prerequisites) do
-			maxD = math.max(maxD, getDepth(pid, visited))
-		end
-		depth[id] = maxD + 1
-		return depth[id]
-	end
-	
-	for _, node in ipairs(techList) do
-		getDepth(node.id, {})
-	end
-
-	local spacingX, spacingY = 180, 110
-	local levelOffsets = {} -- [depth] = lastY
-	
 	-- Filtered List
 	local filtered = {}
 	for _, node in ipairs(techList) do
@@ -168,17 +156,41 @@ function TechUI.Refresh(techList, unlocked, tp, getItemIcon, UIManager)
 		end
 	end
 
+	-- Extract unique levels to act as horizontal columns
+	local uniqueLevels = {}
+	local levelSet = {}
+	for _, node in ipairs(filtered) do
+		local lvl = node.requireLevel or 1
+		if not levelSet[lvl] then
+			levelSet[lvl] = true
+			table.insert(uniqueLevels, lvl)
+		end
+	end
+	table.sort(uniqueLevels)
+	
+	local levelToIndex = {}
+	for i, lvl in ipairs(uniqueLevels) do
+		levelToIndex[lvl] = i
+	end
+
+	local spacingX, spacingY = 180, 110
+	local levelOffsets = {} -- [colIndex] = current row Y index
+
 	-- Create Nodes
 	for _, node in ipairs(filtered) do
-		local d = depth[node.id] or 1
-		local yIdx = levelOffsets[d] or 0
-		levelOffsets[d] = yIdx + 1
+		local colIndex = levelToIndex[node.requireLevel or 1] or 1
+		local yIdx = levelOffsets[colIndex] or 0
+		levelOffsets[colIndex] = yIdx + 1
 		
-		local posX = (d - 1) * spacingX + 50
+		local posX = (colIndex - 1) * spacingX + 50
 		local posY = yIdx * spacingY + 50
 		
 		local isUnlocked = unlocked[node.id]
-		local canAfford = tp >= (node.cost or 0)
+		local canAfford = tp >= (node.techPointCost or node.cost or 0)
+		local reqLevel = tonumber(node.requireLevel) or 1
+		local lvl = type(playerLevel) == "number" and playerLevel or (tonumber(playerLevel) or 1)
+		local levelMet = lvl >= reqLevel
+		
 		-- Prerequisites check (logic from controller)
 		local preMet = true
 		if node.prerequisites then
@@ -191,13 +203,13 @@ function TechUI.Refresh(techList, unlocked, tp, getItemIcon, UIManager)
 			size = UDim2.new(0, slotSize, 0, slotSize),
 			pos = UDim2.new(0, posX, 0, posY),
 			r = 4, bgT = 0.3, 
-			strokeC = isUnlocked and C.GOLD_SEL or (preMet and C.WHITE or C.BORDER_DIM),
+			strokeC = isUnlocked and C.GOLD_SEL or ((preMet and levelMet and canAfford) and C.GOLD or (preMet and C.WHITE or C.BORDER_DIM)),
 			stroke = isUnlocked and 2 or 1,
 			parent = scroll
 		})
 		
 		nodeRefs[node.id] = slot
-		slot.icon.Image = getItemIcon(node.id)
+		slot.icon.Image = resolveNodeIcon(node, getItemIcon)
 		
 		if isUnlocked then
 			slot.icon.ImageColor3 = Color3.new(1, 1, 1)
@@ -206,8 +218,8 @@ function TechUI.Refresh(techList, unlocked, tp, getItemIcon, UIManager)
 			Utils.mkLabel({text = "완료", size = UDim2.new(1, 0, 0, 20), pos=UDim2.new(0,0,1,2), ts = 12, bold=true, color = C.GOLD_SEL, parent = slot.frame})
 		elseif preMet then
 			slot.icon.ImageColor3 = Color3.new(0.8, 0.8, 0.8)
-			if canAfford then
-				-- 해금 가능 발광 효과 (UIStroke 애니메이션 선호하지만 간단히 색상 강조)
+			if canAfford and levelMet then
+				-- 해금 가능 발광 효과
 				local st = slot.frame:FindFirstChildOfClass("UIStroke")
 				if st then st.Color = C.GOLD; st.Thickness = 2 end
 			end
@@ -245,12 +257,12 @@ function TechUI.Refresh(techList, unlocked, tp, getItemIcon, UIManager)
 	end
 	
 	-- Canvas size update
-	local maxLevel = 1; for _, n in ipairs(filtered) do maxLevel = math.max(maxLevel, n.requireLevel or 1) end
+	local maxCol = #uniqueLevels
 	local maxY = 0; for _, y in pairs(levelOffsets) do maxY = math.max(maxY, y) end
-	scroll.CanvasSize = UDim2.new(0, maxLevel * spacingX + 200, 0, maxY * spacingY + 200)
+	scroll.CanvasSize = UDim2.new(0, maxCol * spacingX + 200, 0, maxY * spacingY + 200)
 end
 
-function TechUI.UpdateDetail(node, isUnlocked, canAfford, UIManager, getItemIcon)
+function TechUI.UpdateDetail(node, isUnlocked, canAfford, playerLevel, UIManager, getItemIcon)
 	local d = TechUI.Refs.Detail
 	if not d.Frame then return end
 	
@@ -267,7 +279,7 @@ function TechUI.UpdateDetail(node, isUnlocked, canAfford, UIManager, getItemIcon
 	end
 
 	d.Name.Text = (isUnlocked and "[연구 완료] " or "") .. (node.name or node.id)
-	d.Icon.Image = getItemIcon(node.id)
+	d.Icon.Image = resolveNodeIcon(node, getItemIcon)
 	d.Icon.Visible = true
 
 	d.Desc.Text = node.desc or "새로운 능력을 해금합니다."
@@ -280,8 +292,9 @@ function TechUI.UpdateDetail(node, isUnlocked, canAfford, UIManager, getItemIcon
 		local l = Instance.new("UIListLayout"); l.FillDirection=Enum.FillDirection.Horizontal; l.Padding=UDim.new(0,5); l.Parent=d.UnlockList
 	end
 	d.UnlockList.Visible = true
-	d.UnlockList:ClearAllChildren()
-	Instance.new("UIListLayout", d.UnlockList).FillDirection = Enum.FillDirection.Horizontal
+	for _, child in ipairs(d.UnlockList:GetChildren()) do
+		if child:IsA("GuiObject") then child:Destroy() end
+	end
 	
 	if node.unlocks then
 		local all = {}
@@ -307,8 +320,16 @@ function TechUI.UpdateDetail(node, isUnlocked, canAfford, UIManager, getItemIcon
 			for _, pid in ipairs(node.prerequisites) do if not UIManager.isTechUnlocked(pid) then preMet = false; break end end
 		end
 		
+		local reqLevel = tonumber(node.requireLevel) or 1
+		local lvl = type(playerLevel) == "number" and playerLevel or (tonumber(playerLevel) or 1)
+		local levelMet = lvl >= reqLevel
+		
 		if not preMet then
 			d.ReqText.Text = "선행 기술 연구가 먼저 필요합니다."
+			d.ReqText.TextColor3 = C.RED
+			d.BtnUnlock.Visible = false
+		elseif not levelMet then
+			d.ReqText.Text = string.format("캐릭터 레벨 %d 달성 시 연구 가능합니다.", reqLevel)
 			d.ReqText.TextColor3 = C.RED
 			d.BtnUnlock.Visible = false
 		else
@@ -342,7 +363,7 @@ function TechUI.ShowUnlockSuccessPopup(node, getItemIcon, parent)
 	icon.Position = UDim2.new(0.5, 0, 0, 85)
 	icon.AnchorPoint = Vector2.new(0.5, 0)
 	icon.BackgroundTransparency = 1
-	icon.Image = getItemIcon(node.id)
+	icon.Image = resolveNodeIcon(node, getItemIcon)
 	icon.Parent = popup
 	
 	popup.GroupTransparency = 1

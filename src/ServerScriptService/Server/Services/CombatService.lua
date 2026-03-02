@@ -3,6 +3,7 @@
 -- 플레이어와 크리처 간의 데미지 처리 및 사망 로직, 드롭 아이템 생성
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Enums = require(Shared.Enums.Enums)
 local Balance = require(Shared.Config.Balance)
@@ -22,8 +23,12 @@ local PlayerStatService
 local HungerService -- Cached (Phase 11)
 
 -- Constants
-local DEFAULT_ATTACK_RANGE = 5 -- 맨손 사거리
+local DEFAULT_ATTACK_RANGE = 15 -- 맨손 사거리 (Balance.COMBAT_HITBOX_SIZE(12) 고려)
+local MIN_ATTACK_COOLDOWN = 0.35 -- 서버 측 최소 공격 쿨다운 보안 검증 (클라이언트 0.4~0.5초 대비 타이트하게)
 local PVP_ENABLED = false       -- PvP 비활성화
+
+-- State
+local playerAttackCooldowns = {} -- [userId] = lastAttackTime
 
 -- Quest callback (Phase 8)
 local questCallback = nil
@@ -62,6 +67,11 @@ function CombatService.Init(_NetController, _DataService, _CreatureService, _Inv
 	local HSuccess, HService = pcall(function() return require(game:GetService("ServerScriptService").Server.Services.HungerService) end)
 	if HSuccess then HungerService = HService end
 	
+	-- 플레이어 퇴장 시 데이터 정리
+	Players.PlayerRemoving:Connect(function(player)
+		playerAttackCooldowns[player.UserId] = nil
+	end)
+	
 	print("[CombatService] Initialized")
 end
 
@@ -71,45 +81,64 @@ function CombatService.processPlayerAttack(player: Player, targetId: string, too
 		return false, Enums.ErrorCode.BAD_REQUEST 
 	end
 
-	local char = player.Character
-	if not char then return false, Enums.ErrorCode.INTERNAL_ERROR end
-	
-	local hrp = char:FindFirstChild("HumanoidRootPart")
-	if not hrp then return false, Enums.ErrorCode.INTERNAL_ERROR end
-
-	-- 1. 무기(도구) 검증
+	-- 0. 무기(도구) 및 동적 쿨다운 데이터 로드
+	local userId = player.UserId
 	local baseDamage = 5 -- 맨손 기본 데미지
 	local range = DEFAULT_ATTACK_RANGE
+	local dynamicCooldown = MIN_ATTACK_COOLDOWN -- 기본 0.35초
+	local itemData = nil
 	local toolItem = nil
 	local isBlunt = false
 	
 	if toolSlot then
-		local slotData = InventoryService.getSlot(player.UserId, toolSlot)
+		local slotData = InventoryService.getSlot(userId, toolSlot)
 		if slotData then
-			local itemData = DataService.getItem(slotData.itemId)
+			itemData = DataService.getItem(slotData.itemId)
 			if itemData then
 				baseDamage = itemData.damage or 5
 				range = itemData.range or DEFAULT_ATTACK_RANGE
 				isBlunt = itemData.isBlunt == true
 				toolItem = slotData
+				
+				-- 아이템에 명시된 attackSpeed가 있다면 이를 기반으로 쿨다운 설정 (+ 레이턴시 보정)
+				if itemData.attackSpeed then
+					dynamicCooldown = math.max(0.15, itemData.attackSpeed - 0.05)
+				end
 			end
 		end
 	end
+
+	-- 1. 서버 측 공격 쿨다운 검증 (Exploit 방지)
+	local now = tick()
+	if playerAttackCooldowns[userId] and (now - playerAttackCooldowns[userId]) < dynamicCooldown then
+		return false, Enums.ErrorCode.COOLDOWN
+	end
+	playerAttackCooldowns[userId] = now
+
+	local char = player.Character
+	if not char then return false, Enums.ErrorCode.INTERNAL_ERROR end
+	
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return false, Enums.ErrorCode.INTERNAL_ERROR end
 	
 	-- 2. 플레이어 공격력 스탯 보너스 적용
 	local calculated = PlayerStatService.GetCalculatedStats(player.UserId)
 	local attackMult = calculated.attackMult or 1.0
 	local totalDamage = baseDamage * attackMult
 	
-	-- 3. 대상(크리처) 확인 및 거리 검증
+	-- 3. 대상(크리처) 확인 및 거리 검증 (Y축 무시 평면 거리 계산)
 	local creature = CreatureService.getCreatureRuntime(targetId)
 	if not creature or not creature.rootPart then
 		return false, Enums.ErrorCode.NOT_FOUND
 	end
 	
-	local dist = (hrp.Position - creature.rootPart.Position).Magnitude
-	if dist > range + 2 then -- 약간의 오차 허용
-		warn(string.format("[CombatService] Out of range: %.1f > %.1f", dist, range))
+	local p1 = Vector2.new(hrp.Position.X, hrp.Position.Z)
+	local p2 = Vector2.new(creature.rootPart.Position.X, creature.rootPart.Position.Z)
+	local dist = (p1 - p2).Magnitude
+	
+	-- 서버 측 검증은 클라이언트보다 약간 더 여유를 둡니다 (네트워크 레이턴시 고려)
+	if dist > range + 10 then 
+		warn(string.format("[CombatService] Out of range (2D): %.1f > %.1f", dist, range))
 		return false, Enums.ErrorCode.OUT_OF_RANGE
 	end
 	

@@ -63,6 +63,11 @@ local function _getDefaultPlayerSave()
 		craftingQueue = {},
 		-- 팰 보관함 (Phase 5)
 		palbox = {},
+		-- 파티 정보 (Phase 5-4)
+		party = {
+			slots = {},
+			summonedSlot = nil,
+		},
 		-- 통계 및 스탯 (Phase 6)
 		stats = {
 			playTime = 0,
@@ -340,20 +345,39 @@ end
 --- PlayerRemoving 이벤트
 local function onPlayerRemoving(player: Player)
 	local userId = player.UserId
+	print(string.format("[SaveService] Handling PlayerRemoving for %d...", userId))
 	
-	-- 저장
-	local ok, err = SaveService.savePlayer(userId)
-	if not ok then
-		warn(string.format("[SaveService] PlayerRemoving save failed: %d - %s", userId, tostring(err)))
+	-- 1. [CRITICAL] 시스템별 순차 정리 시작
+	-- (상태 변경 -> 데이터 동기화 -> 최종 저장 순서 엄수)
+	
+	-- A. 파티/소환 정리 (PalboxState 변경을 수반하므로 먼저 실행)
+	local partyOk, PartyService = pcall(function() return require(game:GetService("ServerScriptService").Server.Services.PartyService) end)
+	if partyOk and PartyService and PartyService.prepareLogout then
+		PartyService.prepareLogout(userId)
+	end
+
+	-- B. 팰 보관함 정리 (메모리 캐시를 playerState로 반영)
+	local palOk, PalboxService = pcall(function() return require(game:GetService("ServerScriptService").Server.Services.PalboxService) end)
+	if palOk and PalboxService and PalboxService.prepareLogout then
+		PalboxService.prepareLogout(player)
 	end
 	
-	-- 인벤토리 서비스 정리 (무결성 보장: 저장 시도 후 메모리 데이터 제거)
-	local ISuccess, InventoryService = pcall(function() return require(game:GetService("ServerScriptService").Server.Services.InventoryService) end)
-	if ISuccess and InventoryService then
+	-- 2. 최종 저장 (모든 서비스의 상태가 메모리에 반영된 시점)
+	local ok, err = SaveService.savePlayer(userId)
+	if not ok then
+		warn(string.format("[SaveService] PlayerRemoving save failed for %d: %s", userId, tostring(err)))
+	else
+		print(string.format("[SaveService] Successfully saved player %d on logout", userId))
+	end
+	
+	-- 3. 메모리 정리
+	-- 인벤토리 서비스 정리
+	local invOk, InventoryService = pcall(function() return require(game:GetService("ServerScriptService").Server.Services.InventoryService) end)
+	if invOk and InventoryService and InventoryService.removeInventory then
 		InventoryService.removeInventory(userId)
 	end
 	
-	-- 메모리에서 제거
+	-- 캐시 제거
 	playerStates[userId] = nil
 end
 

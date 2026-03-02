@@ -154,7 +154,7 @@ function CraftingUI.Refresh(items, playerItemCounts, getItemIcon, mode, UIManage
 	end
 end
 
-function CraftingUI.UpdateDetail(item, mode, isLocked, canMake, playerItemCounts, DataHelper)
+function CraftingUI.UpdateDetail(item, mode, isLocked, canMake, playerItemCounts, DataHelper, getItemIcon)
 	local d = CraftingUI.Refs.Detail
 	if not d.Frame then return end
 	
@@ -169,10 +169,14 @@ function CraftingUI.UpdateDetail(item, mode, isLocked, canMake, playerItemCounts
 	end
 
 	d.Name.Text = (item.name or item.id)
-	d.Icon.Image = item.id -- Needs getItemIcon pass, handled in Controller ideally, but we'll adapt.
+	d.Icon.Image = getItemIcon and getItemIcon(item.id) or item.id
 	if DataHelper then
 		local data = DataHelper.GetData("ItemData", item.id)
-		if data then d.Icon.Image = data.icon or d.Icon.Image end
+		if data and data.icon then 
+			d.Icon.Image = data.icon 
+		elseif data and data.itemId then
+			d.Icon.Image = getItemIcon and getItemIcon(data.itemId) or d.Icon.Image
+		end
 	end
 	d.Icon.Visible = true
 

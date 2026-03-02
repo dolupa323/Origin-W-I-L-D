@@ -39,8 +39,8 @@ local function calculateCaptureRate(palDef, creature, captureMultiplier: number)
 	
 	local rate = palDef.captureRate * hpBonus * captureMultiplier
 	
-	-- 최대 95%로 제한 (100%는 없음)
-	return math.clamp(rate, 0, 0.95)
+	-- 최대 1.0(100%)까지 허용하여 UX 개선
+	return math.clamp(rate, 0, 1.0)
 end
 
 --========================================

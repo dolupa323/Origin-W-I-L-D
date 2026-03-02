@@ -30,14 +30,15 @@ function EquipmentUI.Init(parent, UIManager, Enums, isMobile)
 	_UIManager = UIManager
 	EquipmentUI.Refs.Frame = Utils.mkWindow({
 		name = "EquipmentMenu",
-		size = UDim2.new(0.6, 0, 0.7, 0), -- 가로 크기 축소
+		size = UDim2.new(isSmall and 0.8 or 0.6, 0, isSmall and 0.85 or 0.75, 0),
+		maxSize = Vector2.new(800, 700),
 		pos = UDim2.new(0.5, 0, 0.5, 0),
 		anchor = Vector2.new(0.5, 0.5),
 		bg = C.BG_PANEL,
 		r = 0, stroke = 2,
 		vis = false,
-		ratio = 1.1, -- 가로 세로 비율 조정
 		parent = parent
+		-- ratio removed: Responsive layout
 	})
 	
 	local header = Utils.mkFrame({name="Header", size=UDim2.new(1,0,0,45), bgT=1, parent=EquipmentUI.Refs.Frame})

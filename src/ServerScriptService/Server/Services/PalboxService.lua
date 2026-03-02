@@ -43,13 +43,14 @@ function PalboxService.Init(_NetController, _DataService, _SaveService)
 		PalboxService._loadPlayerPals(player)
 	end)
 	
-	-- 플레이어 로그아웃 시 정리
-	Players.PlayerRemoving:Connect(function(player)
-		PalboxService._savePlayerPals(player)
-		playerPalboxes[player.UserId] = nil
-	end)
-	
 	print("[PalboxService] Initialized")
+end
+
+--- 로그아웃 전 정리 (SaveService에서 순차적으로 호출)
+function PalboxService.prepareLogout(player: Player)
+	PalboxService._savePlayerPals(player)
+	playerPalboxes[player.UserId] = nil
+	print(string.format("[PalboxService] Prepared logout for player %d", player.UserId))
 end
 
 --- 팰 추가 (포획 성공 시 CaptureService에서 호출)
@@ -142,26 +143,50 @@ function PalboxService.updatePalState(userId: number, palUID: string, newState: 
 	return true
 end
 
+local TextService = game:GetService("TextService")
+
 --- 팰 닉네임 변경
 function PalboxService.renamePal(userId: number, palUID: string, newName: string): boolean
 	local palbox = getOrCreatePalbox(userId)
 	local pal = palbox[palUID]
 	if not pal then return false end
 	
-	-- 닉네임 길이 제한 (UTF-8 문자 기준)
+	-- 1. 기초 길이 검증 (한글/특수문자 고려 12자 제한)
 	local charLen = utf8.len(newName)
-	if not charLen or charLen == 0 or charLen > 20 then
+	if not charLen or charLen == 0 or charLen > 12 then
 		return false
 	end
 	
-	pal.nickname = newName
-	
+	-- 2. 비속어 필터링 (Roblox 필수)
 	local player = Players:GetPlayerByUserId(userId)
-	if player and NetController then
+	if not player then return false end
+	
+	local success, filterResult = pcall(function()
+		return TextService:FilterStringAsync(newName, userId)
+	end)
+	
+	if not success or not filterResult then
+		warn("[PalboxService] Text filtering failed:", tostring(filterResult))
+		return false
+	end
+	
+	local filteredName = ""
+	local success2, err2 = pcall(function()
+		filteredName = filterResult:GetChatForUserAsync(userId)
+	end)
+	
+	if not success2 or filteredName == "" then
+		warn("[PalboxService] Failed to get filtered string:", tostring(err2))
+		return false
+	end
+	
+	pal.nickname = filteredName
+	
+	if NetController then
 		NetController.FireClient(player, "Palbox.Updated", {
 			action = "RENAME",
 			palUID = palUID,
-			nickname = newName,
+			nickname = filteredName,
 		})
 	end
 	
