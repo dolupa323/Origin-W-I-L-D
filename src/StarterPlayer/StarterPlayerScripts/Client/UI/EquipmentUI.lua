@@ -70,6 +70,13 @@ function EquipmentUI.Init(parent, UIManager, Enums, isMobile)
 			stroke = 1, 
 			parent = slotsContainer
 		})
+		slot.click.MouseButton1Click:Connect(function()
+			if UIManager.onEquipmentSlotClick then UIManager.onEquipmentSlotClick(conf.id) end
+		end)
+		slot.click.MouseButton2Click:Connect(function()
+			if UIManager.onEquipmentSlotRightClick then UIManager.onEquipmentSlotRightClick(conf.id) end
+		end)
+		
 		EquipmentUI.Refs.Slots[conf.id] = slot
 	end
 	
@@ -82,11 +89,12 @@ function EquipmentUI.Init(parent, UIManager, Enums, isMobile)
 	local sLayout = Instance.new("UIListLayout"); sLayout.Padding=UDim.new(0, 5); sLayout.Parent=statsScroll
 	
 	local stats = {
-		{id=Enums.StatId.MAX_HEALTH, name="최대 체력"}, 
-		{id=Enums.StatId.MAX_STAMINA, name="최대 스태미나"}, 
-		{id=Enums.StatId.WEIGHT, name="최대 소지 무게"}, 
-		{id=Enums.StatId.WORK_SPEED, name="작업 속도"}, 
-		{id=Enums.StatId.ATTACK, name="공격력"}
+		{id=Enums.StatId.MAX_HEALTH, name="최대 체력", up=true}, 
+		{id=Enums.StatId.MAX_STAMINA, name="최대 스태미나", up=true}, 
+		{id=Enums.StatId.WEIGHT, name="최대 소지 무게", up=true}, 
+		{id=Enums.StatId.WORK_SPEED, name="작업 속도", up=true}, 
+		{id=Enums.StatId.ATTACK, name="공격력", up=true},
+		{id=Enums.StatId.DEFENSE, name="방어력", up=false}
 	}
 	for _, s in ipairs(stats) do
 		-- 스텟 라인 크기 비율화 (0.18 Scale)
@@ -94,24 +102,31 @@ function EquipmentUI.Init(parent, UIManager, Enums, isMobile)
 		Utils.mkLabel({text=s.name, size=UDim2.new(0.4,0,1,0), pos=UDim2.new(0,10,0,0), ts=14, ax=Enum.TextXAlignment.Left, parent=line})
 		local val = Utils.mkLabel({text="0", size=UDim2.new(0.4,0,1,0), pos=UDim2.new(0.8,-40,0,0), anchor=Vector2.new(1,0), ts=15, font=F.NUM, ax=Enum.TextXAlignment.Right, parent=line})
 		
-		-- 강화 버튼: 가로 크기를 확실하게 확보 (35px, 모바일 40px)
-		local bSize = isSmall and 40 or 35
-		local btn = Utils.mkBtn({
-			text="+", 
-			size=UDim2.new(0, bSize, 0.8, 0), -- 가로 오프셋 고정, 세로 비율 유지
-			pos=UDim2.new(1, -10, 0.5, 0), 
-			anchor=Vector2.new(1, 0.5), 
-			bg=C.GOLD_SEL, 
-			ts=isSmall and 24 or 20, 
-			font=F.NUM, 
-			parent=line
-		})
+		-- 강화 버튼: 필요한 스탯에만 노출
+		local btn = nil
+		if s.up then
+			local bSize = isSmall and 40 or 35
+			btn = Utils.mkBtn({
+				text="+", 
+				size=UDim2.new(0, bSize, 0.8, 0), -- 가로 오프셋 고정, 세로 비율 유지
+				pos=UDim2.new(1, -10, 0.5, 0), 
+				anchor=Vector2.new(1, 0.5), 
+				bg=C.GOLD_SEL, 
+				ts=isSmall and 24 or 20, 
+				font=F.NUM, 
+				parent=line
+			})
+			
+			-- 텍스트가 잘리지 않도록 설정
+			btn.TextScaled = false
+			btn.TextWrapped = false
+	
+			btn.MouseButton1Click:Connect(function() UIManager.addPendingStat(s.id) end)
+		else
+			-- 강화 불가 스탯은 값 라벨을 오른쪽 끝으로 정렬
+			val.Position = UDim2.new(1, -10, 0, 0)
+		end
 		
-		-- 텍스트가 잘리지 않도록 설정
-		btn.TextScaled = false
-		btn.TextWrapped = false
-
-		btn.MouseButton1Click:Connect(function() UIManager.addPendingStat(s.id) end)
 		EquipmentUI.Refs.StatLines[s.id] = {val=val, btn=btn}
 	end
 	
@@ -176,7 +191,8 @@ function EquipmentUI.Refresh(cachedStats, totalPending, equipmentData, getItemIc
 		elseif statId == Enums.StatId.MAX_STAMINA then baseValue = calc.maxStamina or 100; valText = string.format("%d STA", baseValue)
 		elseif statId == Enums.StatId.WEIGHT then baseValue = calc.maxWeight or 300; valText = string.format("%.1f kg", baseValue)
 		elseif statId == Enums.StatId.WORK_SPEED then baseValue = calc.workSpeed or 100; valText = string.format("%d%%", baseValue)
-		elseif statId == Enums.StatId.ATTACK then baseValue = (calc.attackMult or 1.0) * 100; valText = string.format("%.0f%%", baseValue) end
+		elseif statId == Enums.StatId.ATTACK then baseValue = (calc.attackMult or 1.0) * 100; valText = string.format("%.0f%%", baseValue)
+		elseif statId == Enums.StatId.DEFENSE then baseValue = calc.defense or 0; valText = string.format("%d", baseValue) end
 		
 		-- PendingStats: 저장된 UIManager 참조 사용
 		local added = _UIManager and _UIManager.getPendingStatCount(statId) or 0
@@ -187,10 +203,13 @@ function EquipmentUI.Refresh(cachedStats, totalPending, equipmentData, getItemIc
 			line.val.Text = valText
 			line.val.RichText = false
 		end
-		line.btn.Visible = true
-		line.btn.BackgroundTransparency = (available > 0) and 0 or 0.6
-		line.btn.TextTransparency = (available > 0) and 0 or 0.6
-		line.btn.Active = (available > 0)
+		
+		if line.btn then
+			line.btn.Visible = true
+			line.btn.BackgroundTransparency = (available > 0) and 0 or 0.6
+			line.btn.TextTransparency = (available > 0) and 0 or 0.6
+			line.btn.Active = (available > 0)
+		end
 	end
 	
 	refs.ActionFrame.Visible = (totalPending > 0)

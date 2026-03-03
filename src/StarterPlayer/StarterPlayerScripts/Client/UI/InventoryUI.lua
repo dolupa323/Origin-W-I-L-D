@@ -438,7 +438,8 @@ function InventoryUI.UpdateDetail(data, getItemIcon, Enums, DataHelper)
 		d.BtnMain.Visible = true
 		d.BtnDrop.Visible = true
 		
-		d.BtnMain.Text = (itemData and itemData.type == Enums.ItemType.WEARABLE) and "장착" or "사용"
+		local isEquippable = (itemData and (itemData.type == Enums.ItemType.ARMOR or itemData.type == Enums.ItemType.WEAPON or itemData.type == Enums.ItemType.TOOL))
+		d.BtnMain.Text = isEquippable and "장착" or "사용"
 	else
 		d.Name.Text = "선택된 아이템 없음"
 		d.Icon.Image = ""

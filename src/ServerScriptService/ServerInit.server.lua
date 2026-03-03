@@ -10,6 +10,10 @@ local Services = Server:WaitForChild("Services")
 
 local PhysicsService = game:GetService("PhysicsService")
 
+-- Balance: DurabilityService.Init 등에서 필요하므로 최상단에서 require
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Balance = require(Shared.Config.Balance)
+
 --========================================
 -- Collision Groups 초기화 (성능 최적화)
 --========================================
@@ -71,9 +75,8 @@ for command, handler in pairs(InventoryService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)
 end
 
--- DurabilityService 초기화 (Phase 2-4)
+-- DurabilityService require + 핸들러 등록 (Init은 BuildService 초기화 후 수행)
 local DurabilityService = require(Services.DurabilityService)
-DurabilityService.Init(NetController, InventoryService)
 
 -- DurabilityService 핸들러 등록
 for command, handler in pairs(DurabilityService.GetHandlers()) do
@@ -177,6 +180,9 @@ for command, handler in pairs(BuildService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)
 end
 
+-- DurabilityService 초기화 (BuildService & Balance 준비 완료 후 호출)
+DurabilityService.Init(NetController, InventoryService, DataService, BuildService, Balance)
+
 -- CraftingService 초기화 (+ TechService, PlayerStatService 추가)
 local CraftingService = require(Services.CraftingService)
 CraftingService.Init(NetController, DataService, InventoryService, BuildService, RecipeService, TechService, PlayerStatService, WorldDropService, TimeService)
@@ -187,8 +193,6 @@ for command, handler in pairs(CraftingService.GetHandlers()) do
 end
 
 -- FacilityService 초기화
-local Shared = ReplicatedStorage:WaitForChild("Shared")
-local Balance = require(Shared.Config.Balance)
 local FacilityService = require(Services.FacilityService)
 FacilityService.Init(NetController, DataService, InventoryService, BuildService, Balance, RecipeService, WorldDropService)
 

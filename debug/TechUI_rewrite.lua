@@ -1,4 +1,4 @@
--- TechUI.lua (Durango Style Full Rewrite)
+﻿-- TechUI.lua (Durango Style Full Rewrite)
 -- 탭 분류, 화살표 트리형 디자인, 상세 텍스트를 줄이고 시각적 기호에 집중
 
 local TweenService = game:GetService("TweenService")
@@ -55,7 +55,7 @@ local function drawLine(parent, ptA, ptB, isRed, zIndex)
 	f.Position = UDim2.new(0, center.X, 0, center.Y)
 	f.Size = UDim2.new(0, len, 0, 3)
 	f.Rotation = angle
-	f.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+	f.BackgroundColor3 = isRed and Color3.fromRGB(180, 50, 50) or Color3.fromRGB(100, 100, 100)
 	f.BorderSizePixel = 0
 	f.ZIndex = zIndex
 	f.Parent = parent
@@ -118,35 +118,13 @@ local function renderTree(techList, unlocked, playerLevel, getItemIcon, UIManage
 	TechUI.Refs.Nodes = {}
 	TechUI.Refs.Lines = {}
 	
-	-- 존재하는 레벨 수집 및 정렬 (빈 레벨 스킵)
 	local currentKeys = CATEGORY_TABS[activeTab].keys
 	local filteredReqs = {}
+	
 	local nodePositions = {}
 	local nodeSize = Vector2.new(78, 78)
 	local xSpacing = 160
 	local ySpacing = 120
-	
-	local levelSet = {}
-	for _, node in ipairs(techList) do
-		local inTab = false
-		for _, k in ipairs(currentKeys) do
-			if node.category == k then inTab = true; break end
-		end
-		if inTab then
-			table.insert(filteredReqs, node)
-			local lvl = tonumber(node.requireLevel) or 1
-			levelSet[lvl] = true
-		end
-	end
-	
-	local activeLevels = {}
-	for l, _ in pairs(levelSet) do table.insert(activeLevels, l) end
-	table.sort(activeLevels)
-	
-	local levelToCol = {}
-	for col, l in ipairs(activeLevels) do
-		levelToCol[l] = col
-	end
 	
 	local lvlCols = {} -- lvlCols[lvl] = current_row
 	
@@ -154,24 +132,32 @@ local function renderTree(techList, unlocked, playerLevel, getItemIcon, UIManage
 	local maxX = 0
 	local maxY = 0
 	
-	for _, node in ipairs(filteredReqs) do
-		local lvl = tonumber(node.requireLevel) or 1
-		local col = levelToCol[lvl] or 1
+	for _, node in ipairs(techList) do
+		local inTab = false
+		for _, k in ipairs(currentKeys) do
+			if node.category == k then inTab = true; break end
+		end
 		
-		local row = (lvlCols[lvl] or 0)
-		local cx = (col - 1) * xSpacing + 70
-		local cy = row * ySpacing + 80
-		
-		nodePositions[node.id] = Vector2.new(cx, cy)
-		lvlCols[lvl] = row + 1
-		
-		if cx > maxX then maxX = cx end
-		if cy > maxY then maxY = cy end
+		if inTab then
+			table.insert(filteredReqs, node)
+			local lvl = tonumber(node.requireLevel) or 1
+			
+			local row = (lvlCols[lvl] or 0)
+			local cx = (lvl - 1) * xSpacing + 70
+			local cy = row * ySpacing + 80
+			
+			nodePositions[node.id] = Vector2.new(cx, cy)
+			lvlCols[lvl] = row + 1
+			
+			if cx > maxX then maxX = cx end
+			if cy > maxY then maxY = cy end
+		end
 	end
 	
-	-- 배경 그리선 배치 (존재하는 Lv 표시)
-	for col, l in ipairs(activeLevels) do
-		local cx = (col - 1) * xSpacing + 70 + nodeSize.X/2
+	-- 배경 그리선 배치 (Lv 표시)
+	local maxLevelMark = maxX > 0 and math.floor(maxX / xSpacing) + 2 or 10
+	for l = 1, maxLevelMark do
+		local cx = (l - 1) * xSpacing + 70 + nodeSize.X/2
 		-- 선
 		local line = Instance.new("Frame")
 		line.Name = "VLine"
@@ -182,17 +168,19 @@ local function renderTree(techList, unlocked, playerLevel, getItemIcon, UIManage
 		line.ZIndex = 0
 		line.Parent = bgGrid
 		-- 글씨
-		local txt = Instance.new("TextLabel")
-		txt.Name = "VLine" -- 같이 삭제되게
-		txt.Size = UDim2.new(0, 50, 0, 20)
-		txt.Position = UDim2.new(0, cx - 25, 0, 8)
-		txt.BackgroundTransparency = 1
-		txt.Text = "Lv. " .. l
-		txt.Font = F.TITLE
-		txt.TextSize = 13
-		txt.TextColor3 = Color3.fromRGB(150, 150, 150)
-		txt.ZIndex = 1
-		txt.Parent = bgGrid
+		if true then -- 매 레벨마다 선 표시
+			local txt = Instance.new("TextLabel")
+			txt.Name = "VLine" -- 같이 삭제되게
+			txt.Size = UDim2.new(0, 50, 0, 20)
+			txt.Position = UDim2.new(0, cx - 25, 0, 8)
+			txt.BackgroundTransparency = 1
+			txt.Text = "Lv. " .. l
+			txt.Font = F.TITLE
+			txt.TextSize = 13
+			txt.TextColor3 = Color3.fromRGB(150, 150, 150)
+			txt.ZIndex = 1
+			txt.Parent = bgGrid
+		end
 	end
 	
 	canvas.CanvasSize = UDim2.new(0, maxX + 300, 0, maxY + 200)
@@ -217,6 +205,32 @@ local function renderTree(techList, unlocked, playerLevel, getItemIcon, UIManage
 					local ptA = pPos + Vector2.new(nodeSize.X, nodeSize.Y/2)
 					local ptB = pos + Vector2.new(0, nodeSize.Y/2)
 					-- 꺾인 선 보단 직관적인 직선 사용
+					drawLine(canvas, ptA, ptB, not pDone, 100)
+				else
+					-- 타 탭의 선행 (유령 노드)
+					local pname = pid
+					for _, tn in ipairs(techList) do if tn.id == pid then pname = tn.name or pid break end end
+					
+					local gIdx = math.random(1, 1000)
+					local gx = pos.X - 90
+					local gy = pos.Y + 15
+					
+					local g = Instance.new("TextLabel")
+					g.Size = UDim2.new(0, 70, 0, 22)
+					g.Position = UDim2.new(0, gx, 0, gy)
+					g.BackgroundColor3 = Color3.fromRGB(30, 20, 20)
+					g.BorderSizePixel = 0
+					g.Text = "선행: " .. pname
+					g.TextColor3 = pDone and Color3.fromRGB(150,150,150) or Color3.fromRGB(200, 80, 80)
+					g.TextSize = 10
+					g.Font = F.TITLE
+					g.ZIndex = 110
+					local gc = Instance.new("UICorner"); gc.CornerRadius = UDim.new(0,3); gc.Parent = g
+					local gs = Instance.new("UIStroke"); gs.Color = pDone and Color3.fromRGB(60,60,60) or Color3.fromRGB(120,50,50); gs.Parent = g
+					g.Parent = canvas
+					
+					local ptA = Vector2.new(gx + 70, gy + 11)
+					local ptB = pos + Vector2.new(0, nodeSize.Y/2)
 					drawLine(canvas, ptA, ptB, not pDone, 100)
 				end
 			end
@@ -258,8 +272,7 @@ local function renderTree(techList, unlocked, playerLevel, getItemIcon, UIManage
 		icon.AnchorPoint = Vector2.new(0.5, 0.5)
 		icon.BackgroundTransparency = 1
 		icon.Image = resolveNodeIcon(node, getItemIcon)
-		-- [FIX] 모든 아이콘이 원래 색상으로 보이도록, 회색조 필터 제거
-		icon.ImageColor3 = Color3.fromRGB(255, 255, 255) 
+		if not isUnlocked and not preMet then icon.ImageColor3 = Color3.fromRGB(80, 80, 80) end
 		icon.ZIndex = 200
 		icon.Parent = cell
 		
@@ -592,7 +605,6 @@ end
 
 function TechUI.ShowUnlockSuccessPopup(node, getItemIcon, parent)
 	local popup = Utils.mkFrame({
-		useCanvas = true,
 		name="UnlockPopup", size=UDim2.new(0,250,0,80),
 		pos=UDim2.new(0.5,0,0.85,0), anchor=Vector2.new(0.5,0.5),
 		bg=Color3.fromRGB(20,50,20), stroke=1, strokeC=Color3.fromRGB(100,200,100), r=8, z=1000, parent=parent,

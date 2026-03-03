@@ -234,8 +234,8 @@ function StaminaService._updatePlayerSpeed(player: Player, sprinting: boolean)
 	local humanoid = character:FindFirstChild("Humanoid")
 	if not humanoid then return end
 	
-	-- 기본 속도 (default 16)
-	local baseSpeed = 16
+	-- 기본 속도
+	local baseSpeed = Balance.BASE_WALK_SPEED
 	
 	if sprinting then
 		humanoid.WalkSpeed = baseSpeed * Balance.SPRINT_SPEED_MULT

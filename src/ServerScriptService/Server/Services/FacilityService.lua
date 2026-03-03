@@ -33,7 +33,7 @@ local Enums = require(Shared.Enums.Enums)
 --   state: Enums.FacilityState,
 --   inputSlot: { itemId: string, count: number }?,
 --   fuelSlot: { itemId: string, count: number }?,
---   outputSlot: { itemId: string, count: number }?,
+--   outputSlot: { [itemId: string]: number }?, -- 다중 결과물 지원을 위한 테이블 { itemId = count }
 --   currentFuel: number,    -- 남은 가동 시간(초)
 --   lastUpdateAt: number,   -- 마지막 Lazy Update 시각 (os.time())
 --   processProgress: number, -- 현재 제작 진행률(초)
@@ -63,7 +63,7 @@ local function createFacilityRuntime(structureId: string, facilityId: string, ow
 		state = Enums.FacilityState.IDLE,
 		inputSlot = nil,
 		fuelSlot = nil,
-		outputSlot = nil,
+		outputSlot = {}, -- 다중 결과물 수용을 위한 빈 테이블 초기화
 		currentFuel = 0,
 		lastUpdateAt = os.time(),
 		processProgress = 0,
@@ -101,9 +101,13 @@ local function determineState(runtime: any): number
 	local facilityData = DataService.getFacility(runtime.facilityId)
 	if not facilityData then return Enums.FacilityState.IDLE end
 
-	-- Output 슬롯이 꽉 찼으면 → FULL
+	-- Output 슬롯이 꽉 찼으면 → FULL (총 아이템 개수가 한도를 넘으면)
 	if facilityData.hasOutputSlot and runtime.outputSlot then
-		if runtime.outputSlot.count >= (Balance.MAX_FACILITY_OUTPUT or 1000) then
+		local totalOutput = 0
+		for _, count in pairs(runtime.outputSlot) do
+			totalOutput = totalOutput + count
+		end
+		if totalOutput >= (Balance.MAX_FACILITY_OUTPUT or 1000) then
 			return Enums.FacilityState.FULL
 		end
 	end
@@ -204,23 +208,21 @@ local function lazyUpdate(runtime)
 						runtime.inputSlot = nil
 					end
 					
-					-- [FIX] 가상 인벤토리(outputSlot)에 누적 (월드 드롭 스파이크 방지)
+					-- [FIX] 다중 결과물 수집 (Multiple Outputs)
 					if facilityData.hasOutputSlot then
 						if recipe.outputs and #recipe.outputs > 0 then
-							local outputItem = recipe.outputs[1]
-							local count = outputItem.count or 1
+							runtime.outputSlot = runtime.outputSlot or {}
 							
-							if runtime.outputSlot then
-								if runtime.outputSlot.itemId == outputItem.itemId then
-									runtime.outputSlot.count = runtime.outputSlot.count + count
-								end
-								-- 다른 아이템일 경우(레시피 변경 등)는 덮어쓰거나 꽉 찬 것으로 처리
-							else
-								runtime.outputSlot = { itemId = outputItem.itemId, count = count }
+							for _, outputItem in ipairs(recipe.outputs) do
+								local itemId = outputItem.itemId
+								local addCount = outputItem.count or 1
+								runtime.outputSlot[itemId] = (runtime.outputSlot[itemId] or 0) + addCount
 							end
 							
-							-- Output 캡 체크 (FULL 상태 전이용)
-							if runtime.outputSlot.count >= (Balance.MAX_FACILITY_OUTPUT or 1000) then
+							-- Output 캡 체크 (전체 개수 기준)
+							local totalOutput = 0
+							for _, count in pairs(runtime.outputSlot) do totalOutput = totalOutput + count end
+							if totalOutput >= (Balance.MAX_FACILITY_OUTPUT or 1000) then
 								break
 							end
 						end
@@ -504,24 +506,34 @@ function FacilityService.collectOutput(player: Player, structureId: string)
 	-- Lazy Update 선행
 	lazyUpdate(runtime)
 	
-	if not runtime.outputSlot or runtime.outputSlot.count <= 0 then
-		return false, Enums.ErrorCode.SLOT_EMPTY, nil
+	-- 다중 아이템 수거 처리
+	local anyCollected = false
+	local firstError = nil
+	local totalAdded = 0
+	
+	-- 복사본을 만들어 순회 (수집 중 테이블 변경 방지)
+	local currentOutputs = {}
+	for id, count in pairs(runtime.outputSlot) do currentOutputs[id] = count end
+	
+	for itemId, totalToCollect in pairs(currentOutputs) do
+		if totalToCollect > 0 then
+			local added, remaining = InventoryService.addItem(userId, itemId, totalToCollect)
+			
+			if added > 0 then
+				anyCollected = true
+				totalAdded = totalAdded + added
+				if remaining <= 0 then
+					runtime.outputSlot[itemId] = nil
+				else
+					runtime.outputSlot[itemId] = remaining
+				end
+			else
+				firstError = Enums.ErrorCode.INV_FULL
+			end
+		end
 	end
 	
-	local userId = player.UserId
-	local itemId = runtime.outputSlot.itemId
-	local totalToCollect = runtime.outputSlot.count
-	
-	-- 인벤토리에 추가
-	local added, remaining = InventoryService.addItem(userId, itemId, totalToCollect)
-	
-	if added > 0 then
-		if remaining <= 0 then
-			runtime.outputSlot = nil
-		else
-			runtime.outputSlot.count = remaining
-		end
-		
+	if anyCollected then
 		-- 상태 재판정
 		runtime.state = determineState(runtime)
 		
@@ -531,11 +543,9 @@ function FacilityService.collectOutput(player: Player, structureId: string)
 			outputSlot = runtime.outputSlot,
 		})
 		
-		print(string.format("[FacilityService] Player %d collected %s x%d from %s", 
-			userId, itemId, added, structureId))
-		return true, nil, { added = added, remaining = remaining }
+		return true, nil, { added = totalAdded }
 	else
-		return false, Enums.ErrorCode.INV_FULL, nil
+		return false, firstError or Enums.ErrorCode.SLOT_EMPTY, nil
 	end
 end
 

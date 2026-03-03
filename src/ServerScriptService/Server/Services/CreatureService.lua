@@ -23,14 +23,15 @@ local creatureCount = 0
 
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
+local PathfindingService = game:GetService("PathfindingService")
 
 -- AI Constants
 local SPAWN_INTERVAL = 30 -- 30초마다 스폰 시도
-local AI_UPDATE_INTERVAL = 0.3 -- 0.3초마다 AI 로직 수행 (더 부드러운 이동)
+local AI_UPDATE_INTERVAL = Balance.CREATURE_AI_TICK or 0.3 -- 0.3초마다 AI 로직 수행 (더 부드러운 이동)
 local MIN_SPAWN_DIST = 40
 local MAX_SPAWN_DIST = 80
 local WANDER_RADIUS = 18
-local DESPAWN_DIST = 300 -- 150 -> 300 (LOD가 있으므로 시야 상향)
+local DESPAWN_DIST = Balance.CREATURE_DESPAWN_DIST or 300 -- 150 -> 300 (LOD가 있으므로 시야 상향)
 local CREATURE_ATTACK_COOLDOWN = 2 -- 크리처 공격 쿨다운 (초)
 
 -- LOD (Level of Detail) 상수
@@ -58,6 +59,10 @@ local WATER_CHECK_DISTANCE = 5 -- 이동 전 물 체크 거리
 -- Torpor 관련 (Phase 6)
 local TORPOR_DECAY_RATE = 2 -- 초당 Torpor 감소량
 local STUN_RECOVERY_THRESHOLD = 0 -- Torpor가 이 이하로 내려가면 깨어남
+
+-- Pathfinding Constants
+local PATH_RECALC_DIST = 8 -- 목표가 이 거리 이상 움직이면 경로 재계산
+local WAYPOINT_REACH_DIST = 4 -- 웨이포인트 도달 판정 거리
 
 local creatureFolder = workspace:FindFirstChild("Creatures") or Instance.new("Folder", workspace)
 creatureFolder.Name = "Creatures"
@@ -842,10 +847,11 @@ function CreatureService._findMapSpawnPosition(center: Vector3, radius: number):
 	return nil
 end
 
---- ★ 초기 대량 스폰 (서버 시작 시 맵 전체에 크리처 배치)
+	-- ★ 초기 대량 스폰 (서버 시작 시 맵 전체에 크리처 배치)
 function CreatureService._initialSpawn()
 	local INITIAL_COUNT = Balance.INITIAL_CREATURE_COUNT or 80
-	local SPAWN_RADIUS = Balance.MAP_EXTENT or 1500
+	-- [FIX] 초기 스폰 즉시 증발 방지를 위해 반경을 DESPAWN_DIST(300) 이내로 제한
+	local SPAWN_RADIUS = Balance.CREATURE_INITIAL_SPAWN_RADIUS or 300 
 	local MAP_CENTER = Vector3.new(0, 0, 0)
 	
 	-- 맵 중심 찾기
@@ -1039,7 +1045,7 @@ function CreatureService._updateAILoop()
 		if not hrp then continue end
 		
 		-- 위에서 미리 계산된 근접 데이터 활용
-		local minDist = creature.minDist
+		local minDist = creature.minDist or 9999
 		local closestPlayerPos = creature.closestPlayerPos
 		local closestPlayerRoot = creature.closestPlayerRoot
 		local closestPlayerHum = creature.closestPlayerHum
@@ -1061,7 +1067,9 @@ function CreatureService._updateAILoop()
 		creature.lastUpdate = now
 		
 		-- 2. Despawn Check
-		if minDist > DESPAWN_DIST then
+		-- [FIX] 플레이어가 1명이라도 있을 때만 Despawn 체크 수행 (서버 시작 시 멸종 방지)
+		-- 또한 minDist가 9999(초기값)라는 것은 주변에 플레이어가 아예 없다는 뜻임.
+		if #allPlayers > 0 and minDist > DESPAWN_DIST then
 			creature.model:Destroy()
 			activeCreatures[id] = nil
 			creatureCount = creatureCount - 1
@@ -1200,77 +1208,106 @@ function CreatureService._updateAILoop()
 				hrp.CFrame = hrp.CFrame + Vector3.new(0, 10, 0)
 			end
 			humanoid:MoveTo(hrp.Position) -- 정지
-		elseif creature.state == "CHASE" and closestPlayerPos then
-			-- 추격: 목표가 물이면 추격 포기
-			if CreatureService._isWaterPosition(closestPlayerPos) then
-				creature.state = "WANDER"
-				creature.lastStateChange = now
-				creature.stateDuration = getRandomDuration(WANDER_MIN_TIME, WANDER_MAX_TIME)
-				creature.chaseStartTime = nil
-				humanoid:MoveTo(hrp.Position) -- 정지
-			else
-				local safeTarget = CreatureService._getSafeTarget(hrp.Position, closestPlayerPos)
-				humanoid:MoveTo(safeTarget)
+			humanoid:MoveTo(hrp.Position) -- 정지
+		elseif creature.state == "CHASE" or creature.state == "WANDER" or creature.state == "FLEE" then
+			-- [목적지 결정]
+			local target = nil
+			if creature.state == "CHASE" and closestPlayerPos then
+				-- 추격: 목표가 물이면 추격 포기
+				if CreatureService._isWaterPosition(closestPlayerPos) then
+					creature.state = "WANDER"; creature.lastStateChange = now
+					creature.stateDuration = getRandomDuration(WANDER_MIN_TIME, WANDER_MAX_TIME)
+					creature.targetPosition = nil
+				else
+					target = closestPlayerPos
+				end
+			elseif creature.state == "WANDER" then
+				if not creature.targetPosition or (hrp.Position - creature.targetPosition).Magnitude < 6 then
+					local currentDir = creature.lastMoveDir or Vector3.zero
+					local wTarget
+					local attempts = 0
+					repeat
+						wTarget = getSmartWanderTarget(hrp.Position, currentDir, WANDER_RADIUS)
+						attempts = attempts + 1
+					until not CreatureService._isWaterPosition(wTarget) or attempts >= 5
+					creature.targetPosition = CreatureService._getSafeTarget(hrp.Position, wTarget)
+					
+					local diff = creature.targetPosition - hrp.Position
+					if diff.Magnitude > 0.1 then creature.lastMoveDir = Vector3.new(diff.X, 0, diff.Z).Unit end
+					creature.wanderSpeed = getVariedSpeed(creature.data.walkSpeed or 10)
+				end
+				target = creature.targetPosition
+			elseif creature.state == "FLEE" and closestPlayerPos then
+				-- 도망: 플레이어 반대 방향으로 주기적 갱신
+				if not creature.targetPosition or (now - (creature.lastFleeUpdate or 0) > 1.0) then
+					creature.lastFleeUpdate = now
+					local diff = hrp.Position - closestPlayerPos
+					local dir = diff.Magnitude > 0.1 and diff.Unit or Vector3.new(1,0,0)
+					local fTarget = hrp.Position + dir * WANDER_RADIUS * 2
+					if CreatureService._isWaterPosition(fTarget) then
+						local rot = Vector3.new(dir.Z, 0, -dir.X)
+						fTarget = hrp.Position + rot * WANDER_RADIUS * 2
+					end
+					creature.targetPosition = CreatureService._getSafeTarget(hrp.Position, fTarget)
+				end
+				target = creature.targetPosition
+			end
+
+			-- [이동 실행 (Pathfinding)]
+			if target then
+				-- 1. 경로 재계산 조건 체크
+				local needsNewPath = false
+				if not creature.pathData then
+					needsNewPath = true
+				elseif (creature.pathData.targetPos - target).Magnitude > PATH_RECALC_DIST then
+					needsNewPath = true
+				elseif creature.pathData.currentIndex > #creature.pathData.waypoints then
+					needsNewPath = true
+				elseif now - creature.pathData.lastRecalc > 2.0 then
+					needsNewPath = true
+				end
+
+				if needsNewPath then
+					local rayParams = RaycastParams.new()
+					rayParams.FilterDescendantsInstances = { creature.model, creatureFolder }
+					rayParams.FilterType = Enum.RaycastFilterType.Exclude
+					local rayResult = workspace:Raycast(hrp.Position, (target - hrp.Position), rayParams)
+					
+					local isObstructed = false
+					if rayResult and (rayResult.Position - target).Magnitude > 3 then isObstructed = true end
+
+					if isObstructed then
+						local path = PathfindingService:CreatePath({ AgentRadius = 3, AgentHeight = 6, AgentCanJump = true })
+						path:ComputeAsync(hrp.Position, target)
+						if path.Status == Enum.PathStatus.Success then
+							creature.pathData = { waypoints = path:GetWaypoints(), currentIndex = 2, targetPos = target, lastRecalc = now }
+						else
+							creature.pathData = { waypoints = {{Position = target}}, currentIndex = 1, targetPos = target, lastRecalc = now }
+						end
+					else
+						creature.pathData = { waypoints = {{Position = target}}, currentIndex = 1, targetPos = target, lastRecalc = now }
+					end
+				end
+
+				-- 2. 웨이포인트 이동
+				if creature.pathData and creature.pathData.currentIndex <= #creature.pathData.waypoints then
+					local wp = creature.pathData.waypoints[creature.pathData.currentIndex]
+					humanoid:MoveTo(wp.Position)
+					if wp.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
+					if (hrp.Position - wp.Position).Magnitude < WAYPOINT_REACH_DIST then
+						creature.pathData.currentIndex = creature.pathData.currentIndex + 1
+					end
+				end
+			end
+
+			-- 3. 속도 설정
+			if creature.state == "CHASE" then
 				humanoid.WalkSpeed = creature.data.runSpeed or 20
-			end
-			
-		elseif creature.state == "WANDER" then
-			-- 목적지 도착했거나 아직 없음
-			if not creature.targetPosition or (hrp.Position - creature.targetPosition).Magnitude < 6 then
-				-- 현재 이동 방향 계산
-				local currentDir = creature.lastMoveDir or Vector3.zero
-				
-				-- 자연스러운 새 목적지 (급격한 U턴 방지)
-				local attempts = 0
-				local target
-				repeat
-					target = getSmartWanderTarget(hrp.Position, currentDir, WANDER_RADIUS)
-					attempts = attempts + 1
-				until not CreatureService._isWaterPosition(target) or attempts >= 5
-				
-				-- 안전한 위치 찾기
-				target = CreatureService._getSafeTarget(hrp.Position, target)
-				
-				-- 이동 방향 기록
-				local diff = target - hrp.Position
-				if diff.Magnitude > 0.1 then
-					creature.lastMoveDir = Vector3.new(diff.X, 0, diff.Z).Unit
-				end
-				
-				creature.targetPosition = target
-				humanoid:MoveTo(target)
-				-- 속도 자연스럽게 변동 (매번 조금씩 다르게)
-				humanoid.WalkSpeed = getVariedSpeed(creature.data.walkSpeed or 10)
-			end
-			
-		elseif creature.state == "FLEE" and closestPlayerPos then
-			-- 가장 가까운 플레이어 반대 방향으로 도주
-			local diff = hrp.Position - closestPlayerPos
-			local dir
-			if diff.Magnitude > 0.1 then
-				dir = diff.Unit
+			elseif creature.state == "FLEE" then
+				humanoid.WalkSpeed = (creature.data.runSpeed or 20) * 1.2
 			else
-				-- 동일 위치일 때 랜덤 방향
-				local a = math.rad(math.random(1, 360))
-				dir = Vector3.new(math.sin(a), 0, math.cos(a))
+				humanoid.WalkSpeed = creature.wanderSpeed or (creature.data.walkSpeed or 10)
 			end
-			local fleeTarget = hrp.Position + dir * WANDER_RADIUS * 2
-			
-			-- 도주 방향이 물이면 다른 방향 찾기
-			if CreatureService._isWaterPosition(fleeTarget) then
-				-- 90도 회전해서 시도
-				local rotatedDir = Vector3.new(dir.Z, 0, -dir.X)
-				fleeTarget = hrp.Position + rotatedDir * WANDER_RADIUS * 2
-				if CreatureService._isWaterPosition(fleeTarget) then
-					-- 반대 방향
-					fleeTarget = hrp.Position + (-rotatedDir) * WANDER_RADIUS * 2
-				end
-			end
-			
-			fleeTarget = CreatureService._getSafeTarget(hrp.Position, fleeTarget)
-			creature.targetPosition = fleeTarget
-			humanoid:MoveTo(fleeTarget)
-			humanoid.WalkSpeed = (creature.data.runSpeed or 20) * 1.2
 			
 		elseif creature.state == "IDLE" then
 			creature.targetPosition = nil
@@ -1310,8 +1347,8 @@ function CreatureService._updateAILoop()
 					
 					-- 플레이어 Humanoid에 데미지
 					if closestPlayerHum and closestPlayerHum.Health > 0 then
-						closestPlayerHum:TakeDamage(dmg)
-						print(string.format("[CreatureService] %s attacked player for %d dmg", creature.creatureId, dmg))
+						local CombatService = require(game:GetService("ServerScriptService").Server.Services.CombatService)
+						CombatService.damagePlayer(closestPlayerUserId, dmg)
 					end
 				end
 			end

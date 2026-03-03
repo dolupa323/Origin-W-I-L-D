@@ -51,8 +51,6 @@ local function getEquippedToolType(): string?
 	return nil
 end
 
-local AnimationManager = require(Client.Utils.AnimationManager)
-
 --- 공격 애니메이션 재생
 local function playAttackAnimation(isHit: boolean)
 	local character = player.Character
@@ -269,27 +267,53 @@ function CombatController.attack()
 			return
 		end
 		
-		-- 공격 성공 애니메이션 (타격)
+		-- [FIX] 타격 타이밍(Windup) 보정: 애니메이션 피격 시점에 맞춰 Request 전송
 		playAttackAnimation(true)
 		
-		if targetType == "resource" then
-			-- 자원 채집 처리 (좌클릭 공격으로 수확!)
-			local success, result = NetClient.Request("Harvest.Hit.Request", {
-				nodeUID = targetId,
-				toolSlot = UIManager.getSelectedSlot(),
-			})
-			if not success then
-				if result == Enums.ErrorCode.WRONG_TOOL or result == "WRONG_TOOL" then
-					UIManager.notify("이 자원을 채집하려면 도구가 필요합니다!", Color3.fromRGB(255, 100, 100))
-				end
-			end
-		else
-			-- 크리처 공격 처리
-			local success, data = NetClient.Request("Combat.Hit.Request", {
-				targetInstanceId = targetId,
-				toolSlot = UIManager.getSelectedSlot(),
-			})
+		local toolType = getEquippedToolType() -- 도구 타입 (windup 계산용)
+		local windupTime = 0.2 -- 기본 0.2초 딜레이
+		if itm and itm.windup then
+			windupTime = itm.windup
+		elseif toolType == "SPEAR" then
+			windupTime = 0.3
+		elseif toolType == "CLUB" or toolType == "AXE" then
+			windupTime = 0.4
 		end
+		
+		-- 애니메이션 트랙에서 직접 'Hit' 마커를 기다리거나, 타임아웃 딜레이 사용
+		task.spawn(function()
+			local hitTriggered = false
+			local conn
+			
+			if currentAttackTrack then
+				conn = currentAttackTrack:GetMarkerReachedSignal("Hit"):Connect(function()
+					hitTriggered = true
+					if conn then conn:Disconnect(); conn = nil end
+				end)
+			end
+			
+			-- 마커가 없거나 안 불릴 경우를 대비해 windup만큼 대기 (또는 마커 불릴 때까지 대기)
+			local startWait = tick()
+			while tick() - startWait < windupTime and not hitTriggered do
+				task.wait()
+			end
+			
+			if conn then conn:Disconnect() end
+
+			if targetType == "resource" then
+				-- 자원 채집 처리
+				NetClient.Request("Harvest.Hit.Request", {
+					nodeUID = targetId,
+					toolSlot = UIManager.getSelectedSlot(),
+				})
+			else
+				-- 크리처 공격 처리
+				NetClient.Request("Combat.Hit.Request", {
+					targetInstanceId = targetId,
+					toolSlot = UIManager.getSelectedSlot(),
+				})
+			end
+		end)
 	else
 		-- 대상 없이 빈 공격 (공기 스윙)
 		playAttackAnimation(false)

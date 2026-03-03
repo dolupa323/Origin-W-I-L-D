@@ -68,6 +68,7 @@ local selectedSlot = 1
 local inventoryFrame, craftingOverlay, shopFrame, techOverlay, interactPrompt
 local actionContainer, hotbarFrame -- Store refs for visibility control
 local craftDetailPanel, progFill, craftSpinner
+local equipSlots = {}
 local isInvOpen, isCraftOpen, isShopOpen, isTechOpen, isBuildOpen, isEquipmentOpen = false, false, false, false, false, false
 local cachedStats = {}
 local pendingStats = {}
@@ -96,36 +97,7 @@ local function closeAllWindows(except)
 	if isEquipmentOpen and except ~= "EQUIP" then UIManager.closeEquipment() end
 end
 
-----------------------------------------------------------------
--- Public API: Tech (K키)
-----------------------------------------------------------------
-function UIManager.openTechTree()
-	if isTechOpen then return end
-	closeAllWindows("TECH")
-	isTechOpen = true
-	InputManager.setUIOpen(true)
-	UIManager._setMainHUDVisible(false)
-	
-	-- Blur
-	if not blurEffect then
-		blurEffect = Instance.new("BlurEffect"); blurEffect.Size = 15; blurEffect.Parent = Lighting
-	end
-	
-	TechUI.SetVisible(true)
-	UIManager.refreshTechTree()
-end
-
-function UIManager.closeTechTree()
-	if not isTechOpen then return end
-	if blurEffect then blurEffect:Destroy(); blurEffect = nil end
-	isTechOpen = false
-	TechUI.SetVisible(false)
-	updateUIMode()
-end
-
-function UIManager.toggleTechTree()
-	if isTechOpen then UIManager.closeTechTree() else UIManager.openTechTree() end
-end
+-- [중복 제거] openTechTree/closeTechTree/toggleTechTree는 하단에서 올바르게 정의됩니다.
 
 function UIManager._setMainHUDVisible(visible)
 	HUDUI.SetVisible(visible)
@@ -157,13 +129,7 @@ function UIManager.getPendingStatCount(statId)
 	return pendingStats[statId] or 0
 end
 
-function UIManager.refreshStats()
-	if not cachedStats then return end
-	local equipmentData = InventoryController.getEquipment and InventoryController.getEquipment() or {}
-	local totalPending = 0
-	for _, v in pairs(pendingStats) do totalPending = totalPending + (v or 0) end
-	EquipmentUI.Refresh(cachedStats, totalPending, equipmentData, getItemIcon, Enums)
-end
+-- refreshStats는 하단에 isEquipmentOpen 가드와 함께 올바르게 정의됩니다.
 
 function UIManager.addPendingStat(statId)
 	local available = (cachedStats and cachedStats.statPointsAvailable or 0)
@@ -251,6 +217,8 @@ local techLines = {} -- 연결선용
 -- Notification State
 local notifyConn
 local notifyQueue = {}
+local sideNotifyStack = {} -- [frame] = { startTime, label }
+local sideNotifyContainer = nil
 
 -- Drag & Drop
 local isDragging = false
@@ -261,6 +229,7 @@ local dragStartPos = Vector2.zero
 local dragDummy = nil
 
 local cachedPersonalRecipes = nil
+local activeShopId = nil
 
 
 ----------------------------------------------------------------
@@ -282,39 +251,6 @@ function UIManager.upgradeStat(statId)
 	UIManager.addPendingStat(statId)
 end
 
-function UIManager.confirmPendingStats()
-	local toUpgrade = {}
-	for statId, amount in pairs(pendingStats) do
-		if amount > 0 then
-			for i=1, amount do table.insert(toUpgrade, statId) end
-		end
-	end
-	
-	if #toUpgrade == 0 then return end
-	
-	task.spawn(function()
-		local allOk = true
-		for _, statId in ipairs(toUpgrade) do
-			local ok, _ = NetClient.Request("Player.Stats.Upgrade.Request", {statId = statId})
-			if not ok then allOk = false break end
-		end
-		
-		if allOk then
-			local ok2, stats = NetClient.Request("Player.Stats.Request", {})
-			if ok2 and stats then
-				cachedStats = stats
-				pendingStats = {}
-				UIManager.refreshStats()
-			end
-			UIManager.notify("추가 완료!", C.GOLD)
-		else
-			pendingStats = {}
-			UIManager.refreshStats()
-			UIManager.notify("일부 적용에 실패했습니다.", C.RED)
-		end
-	end)
-end
-
 function UIManager.updateStatPoints(available)
 	HUDUI.SetStatPointAlert(available)
 end
@@ -334,9 +270,7 @@ function UIManager.selectHotbarSlot(idx, skipSync)
 	HUDUI.SelectHotbarSlot(idx, skipSync, UIManager, C)
 	
 	if not skipSync then
-		task.spawn(function()
-			NetClient.Request("Inventory.ActiveSlot.Request", {slot = idx})
-		end)
+		InventoryController.requestSetActiveSlot(idx)
 	end
 end
 
@@ -490,6 +424,24 @@ function UIManager.refreshStats()
 	end
 end
 
+function UIManager.onEquipmentSlotClick(slotName)
+	local equip = InventoryController.getEquipment()
+	local item = equip[slotName]
+	if item then
+		local itemData = DataHelper.GetData("ItemData", item.itemId)
+		if itemData then
+			UIManager.notify(string.format("[%s] %s", slotName, itemData.name), C.GOLD)
+		end
+	end
+end
+
+function UIManager.onEquipmentSlotRightClick(slotName)
+	local equip = InventoryController.getEquipment()
+	if equip[slotName] then
+		InventoryController.requestUnequip(slotName)
+	end
+end
+
 ----------------------------------------------------------------
 -- Inventory Drag & Drop Logic
 ----------------------------------------------------------------
@@ -587,11 +539,30 @@ function UIManager.handleDragEnd(input)
 			end
 		end
 		if foundSlot then break end
+
+		-- 3. 장비 슬롯 확인
+		if isEquipmentOpen and equipSlots then
+			for slotName, s in pairs(equipSlots) do
+				if s.frame == obj or obj:IsDescendantOf(s.frame) then
+					foundSlot = slotName
+					foundType = "equip"
+					break
+				end
+			end
+		end
+		if foundSlot then break end
 	end
 
-	if foundSlot and foundSlot ~= draggingSlotIdx then
-		print("[UIManager] Swapping:", draggingSlotIdx, "->", foundSlot)
-		InventoryController.swapSlots(draggingSlotIdx, foundSlot)
+	if foundSlot then
+		if foundType == "equip" then
+			-- 장비창으로 드래그: 장착 요청
+			print("[UIManager] Equipping item to slot:", foundSlot)
+			InventoryController.requestEquip(draggingSlotIdx, foundSlot)
+		elseif foundSlot ~= draggingSlotIdx then
+			-- 인벤토리/핫바 내 이동
+			print("[UIManager] Swapping:", draggingSlotIdx, "->", foundSlot)
+			InventoryController.swapSlots(draggingSlotIdx, foundSlot)
+		end
 	else
 		print("[UIManager] No valid target slot found")
 	end
@@ -962,7 +933,7 @@ function UIManager._doCraft()
 		UIManager.showCraftingProgress(recipe.craftTime or 3)
 		
 		task.spawn(function()
-			local resultOk, response = NetClient.Request("Recipe.Craft.Request", {
+			local resultOk, response = NetClient.Request("Craft.Start.Request", {
 				recipeId = selectedPersonalRecipeId
 			})
 			
@@ -994,6 +965,11 @@ function UIManager.openTechTree()
 		blurEffect = Instance.new("BlurEffect"); blurEffect.Size = 15; blurEffect.Parent = Lighting
 	end
 	
+	-- techPoints는 서버에서 받아야 하므로 백그라운드로 요청
+	task.spawn(function()
+		TechController.requestTechInfo()
+	end)
+	
 	UIManager.refreshTechTree()
 end
 
@@ -1019,13 +995,26 @@ function UIManager.refreshTechTree()
 	local unlocked = TechController.getUnlockedTech()
 	local playerLevel = (cachedStats and cachedStats.level) or 1
 	
+	-- techTreeData가 비어있으면 TechUnlockData를 클라이언트에서 직접 로드 (서버 응답 대기 불필요)
+	local isEmpty = true
+	for _ in pairs(tree) do isEmpty = false; break end
+	
+	if isEmpty then
+		local TechUnlockData = require(ReplicatedStorage.Data.TechUnlockData)
+		tree = {}
+		for _, techEntry in ipairs(TechUnlockData) do
+			tree[techEntry.id] = techEntry
+		end
+		print("[UIManager] Tech tree loaded from local data (", 0 + #TechUnlockData, "entries)")
+	end
+	
 	local techList = {}
 	for id, data in pairs(tree) do table.insert(techList, data) end
 	table.sort(techList, function(a,b) 
 		local al = a.requireLevel or 1
 		local bl = b.requireLevel or 1
 		if al ~= bl then return al < bl end
-		return a.id < b.id
+		return (a.id or "") < (b.id or "")
 	end)
 	
 	TechUI.Refresh(techList, unlocked, tp, playerLevel, getItemIcon, UIManager)
@@ -1036,6 +1025,12 @@ function UIManager.isTechUnlocked(techId)
 end
 
 function UIManager._onTechNodeClick(node)
+	if not node then
+		selectedTechId = nil
+		TechUI.UpdateDetail(nil, false, false, 1, UIManager, getItemIcon)
+		return
+	end
+	
 	selectedTechId = node.id
 	local unlocked = TechController.getUnlockedTech()
 	local tp = TechController.getTechPoints()
@@ -1064,7 +1059,10 @@ function UIManager._doResetTech()
 		if success then
 			UIManager.notify("기술 트리가 초기화되었습니다.", C.GOLD)
 			UIManager.refreshTechTree()
-			if isCraftOpen then UIManager.refreshCrafting() end
+			if isInvOpen and invCraftContainer and invCraftContainer.Visible then
+				UIManager.refreshPersonalCrafting(true)
+			end
+			if isBuildOpen then UIManager.refreshBuild() end
 		end
 	end)
 end
@@ -1076,6 +1074,7 @@ function UIManager.openShop(shopId)
 	if isShopOpen then return end
 	closeAllWindows("SHOP")
 	isShopOpen = true
+	activeShopId = shopId
 	ShopUI.SetVisible(true)
 	InputManager.setUIOpen(true)
 	UIManager._setMainHUDVisible(false)
@@ -1090,21 +1089,23 @@ end
 function UIManager.closeShop()
 	if not isShopOpen then return end
 	isShopOpen = false
+	activeShopId = nil
 	ShopUI.SetVisible(false)
 	updateUIMode()
 end
 
 function UIManager.refreshShop(shopId)
-	local shopInfo = ShopController.getShopItems(shopId)
+	local sid = shopId or activeShopId
+	local shopInfo = ShopController.getShopInfo(sid)
 	local playerItems = InventoryController.getItems()
-	local gold = InventoryController.getGold()
+	local gold = ShopController.getGold()
 	
 	ShopUI.UpdateGold(gold)
 	ShopUI.Refresh(shopInfo, playerItems, getItemIcon, C, UIManager)
 end
 
-function UIManager.requestBuy(itemId)
-	ShopController.requestBuy(itemId, function(ok, err)
+function UIManager.requestBuy(itemId, count)
+	ShopController.requestBuy(activeShopId, itemId, count or 1, function(ok, err)
 		if ok then
 			UIManager.notify("구매 완료!", C.GOLD)
 			UIManager.refreshShop()
@@ -1114,8 +1115,8 @@ function UIManager.requestBuy(itemId)
 	end)
 end
 
-function UIManager.requestSell(slotIdx)
-	ShopController.requestSell(slotIdx, function(ok, err)
+function UIManager.requestSell(slotIdx, count)
+	ShopController.requestSell(activeShopId, slotIdx, count or 1, function(ok, err)
 		if ok then
 			UIManager.notify("판매 완료!", C.GOLD)
 			UIManager.refreshShop()
@@ -1160,7 +1161,7 @@ function UIManager.refreshBuild()
 	
 	local CatFacMap = {
 		STRUCTURES = {"BUILDING"},
-		PRODUCTION = {"CRAFTING", "SMELTING", "COOKING", "REPAIR"},
+		PRODUCTION = {"CRAFTING_T1", "CRAFTING_T2", "CRAFTING_T3", "SMELTING_T1", "SMELTING_T2", "COOKING", "REPAIR"},
 		SURVIVAL = {"STORAGE", "BASE_CORE", "FARMING", "FEEDING", "RESTING"}
 	}
 	
@@ -1237,9 +1238,6 @@ function UIManager.showBuildPrompt(visible)
 	InteractUI.SetBuildVisible(visible)
 end
 
--- 알림 표시 (중개 하단 -> 중앙 상단 토스트 스타일)
-local currentToast = nil
-
 function UIManager.notify(text, color)
 	if not mainGui then return end
 	
@@ -1263,7 +1261,7 @@ function UIManager.notify(text, color)
 	local label = Utils.mkLabel({
 		text = text,
 		ts = 16,
-		color = color or C.WHITE, -- 기존처럼 컬러를 받되 흰색 베이스 유지
+		color = color or C.WHITE,
 		font = F.TITLE,
 		parent = toast
 	})
@@ -1281,6 +1279,73 @@ function UIManager.notify(text, color)
 		TweenService:Create(label, TweenInfo.new(0.5), {TextTransparency = 1}):Play()
 		fade:Play()
 		fade.Completed:Connect(function() toast:Destroy() end)
+	end)
+end
+
+-- [New] Side Notification (Corner stack)
+function UIManager.sideNotify(text, color, icon)
+	if not mainGui then return end
+	
+	if not sideNotifyContainer then
+		sideNotifyContainer = Utils.mkFrame({
+			name = "SideNotifyContainer",
+			size = UDim2.new(0, 250, 0.6, 0),
+			pos = UDim2.new(1, -20, 0.5, 0),
+			anchor = Vector2.new(1, 0.5),
+			bgT = 1,
+			parent = mainGui
+		})
+		local layout = Instance.new("UIListLayout")
+		layout.Padding = UDim.new(0, 5)
+		layout.VerticalAlignment = Enum.VerticalAlignment.Center
+		layout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+		layout.Parent = sideNotifyContainer
+	end
+	
+	local item = Utils.mkFrame({
+		name = "NotifyItem",
+		size = UDim2.new(1, 0, 0, 45),
+		bg = C.BG_PANEL,
+		bgT = 0.3,
+		stroke = 1,
+		strokeC = color or C.GOLD,
+		r = 8,
+		parent = sideNotifyContainer
+	})
+	
+	local content = Utils.mkFrame({size=UDim2.new(1,0,1,0), bgT=1, parent=item})
+	
+	if icon then
+		local img = Instance.new("ImageLabel")
+		img.Size = UDim2.new(0, 30, 0, 30)
+		img.Position = UDim2.new(0, 10, 0.5, 0)
+		img.AnchorPoint = Vector2.new(0, 0.5)
+		img.BackgroundTransparency = 1
+		img.Image = icon
+		img.Parent = content
+	end
+	
+	local lbl = Utils.mkLabel({
+		text = text,
+		size = UDim2.new(1, icon and -50 or -20, 1, 0),
+		pos = UDim2.new(0, icon and 45 or 10, 0, 0),
+		ts = 14,
+		color = C.WHITE,
+		ax = Enum.TextXAlignment.Left,
+		parent = content
+	})
+	
+	-- FX: Slide in from right
+	item.Position = UDim2.new(1, 100, 0, 0)
+	TweenService:Create(item, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0, 0, 0, 0)}):Play()
+	
+	-- Auto cleanup
+	task.delay(4, function()
+		if not item or not item.Parent then return end
+		local out = TweenService:Create(item, TweenInfo.new(0.5), {BackgroundTransparency = 1, Position = UDim2.new(1, 50, 0, 0)})
+		TweenService:Create(lbl, TweenInfo.new(0.5), {TextTransparency = 1}):Play()
+		out:Play()
+		out.Completed:Connect(function() item:Destroy() end)
 	end)
 end
 
@@ -1303,19 +1368,13 @@ local function setupEventListeners()
 	InventoryController.onChanged(function()
 		if isInvOpen then UIManager.refreshInventory() end
 		UIManager.refreshHotbar()
+		if isEquipmentOpen then UIManager.refreshStats() end
 		if invCraftContainer and invCraftContainer.Visible then
 			UIManager.refreshPersonalCrafting()
 		end
 	end)
 	ShopController.onGoldChanged(function(g) UIManager.updateGold(g) end)
-	TechController.onTechUpdated(function()
-		if isTechOpen then UIManager.refreshTechTree() end
-		if isCraftOpen then UIManager.refreshCrafting() end
-	end)
-	TechController.onTechUnlocked(function(data)
-		TechUI.ShowUnlockSuccessPopup(data, getItemIcon, mainGui)
-		UIManager.notify("기술 연구 완료: " .. (data.name or data.techId), C.GOLD)
-	end)
+	-- [수정] 구 refreshCrafting() 제거 — 하단 onTechUpdated 콜백이 올바르게 처리합니다.
 
 	-- HUD Update Loop
 	RunService.RenderStepped:Connect(function()
@@ -1523,6 +1582,7 @@ function UIManager.Init()
 	-- 슬롯 참조만 유지 (드래그 앤 드롭 및 리프레시 로직용)
 	hotbarSlots = HUDUI.Refs.hotbarSlots
 	invSlots = InventoryUI.Refs.Slots
+	equipSlots = EquipmentUI.Refs.Slots
 	
 	-- Personal Crafting references
 	invPersonalCraftGrid = InventoryUI.Refs.CraftGrid

@@ -14,6 +14,12 @@ local initialized = false
 
 -- 로컬 인벤토리 캐시 [slot] = { itemId, count } or nil
 local inventoryCache = {}
+local equipmentCache = {
+	Head = nil,
+	Body = nil,
+	Feet = nil,
+	Hand = nil,
+}
 local totalWeight = 0
 local maxWeight = 300
 
@@ -38,6 +44,33 @@ end
 
 function InventoryController.getWeightInfo()
 	return totalWeight, maxWeight
+end
+
+function InventoryController.getEquipment()
+	return equipmentCache
+end
+
+function InventoryController.requestEquip(fromSlot: number, toSlotName: string)
+	task.spawn(function()
+		local ok, data = NetClient.Request("Inventory.Equip.Request", {
+			fromSlot = fromSlot,
+			toSlot = toSlotName
+		})
+		if not ok then
+			warn("[InventoryController] Equip failed:", data)
+		end
+	end)
+end
+
+function InventoryController.requestUnequip(slotName: string)
+	task.spawn(function()
+		local ok, data = NetClient.Request("Inventory.Unequip.Request", {
+			slot = slotName
+		})
+		if not ok then
+			warn("[InventoryController] Unequip failed:", data)
+		end
+	end)
 end
 
 --- 아이템별 총 보유 수량 집계 (ID 기반)
@@ -99,6 +132,15 @@ function InventoryController.requestSort()
 	end)
 end
 
+function InventoryController.requestSetActiveSlot(slot: number)
+	task.spawn(function()
+		local ok, data = NetClient.Request("Inventory.ActiveSlot.Request", { slot = slot })
+		if not ok then
+			warn("[InventoryController] Failed to set active slot:", data)
+		end
+	end)
+end
+
 
 --========================================
 -- Public API: Event Listeners
@@ -144,6 +186,7 @@ local function onInventoryChanged(data)
 
 	if data.totalWeight then totalWeight = data.totalWeight end
 	if data.maxWeight then maxWeight = data.maxWeight end
+	if data.equipment then equipmentCache = data.equipment end
 	
 	-- Toast UI Notification check (Only run if actual item count increased)
 	local UISuccess, UIMgr = pcall(function() return require(script.Parent.Parent.UIManager) end)
@@ -188,6 +231,13 @@ function InventoryController.Init()
 	-- 이벤트 리스너 등록
 	NetClient.On("Inventory.Changed", onInventoryChanged)
 	
+	NetClient.On("Inventory.Equipment.Changed", function(data)
+		if data and data.equipment then
+			equipmentCache = data.equipment
+			fireChangeListeners()
+		end
+	end)
+	
 	-- 초기 데이터 요청
 	task.spawn(function()
 		local ok, data = NetClient.Request("Inventory.Get.Request", {})
@@ -200,6 +250,7 @@ function InventoryController.Init()
 					durability = item.durability,
 				}
 			end
+			if data.equipment then equipmentCache = data.equipment end
 			totalWeight = data.totalWeight or 0
 			maxWeight = data.maxWeight or 300
 			fireChangeListeners()

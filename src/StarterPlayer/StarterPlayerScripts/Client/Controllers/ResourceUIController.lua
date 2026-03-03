@@ -151,10 +151,25 @@ function ResourceUIController.Init()
 	
 	-- [UX 개선] StreamingEnabled 대응을 위한 CollectionService 기반 구조로 변경
 	local function onNodeAdded(model)
-		local nodeUID = model:GetAttribute("NodeUID")
-		if nodeUID then
-			createHPBar(model, nodeUID, 10) -- 기본 최대 타격 10 (Hit 이벤트 시 업데이트됨)
-		end
+		task.spawn(function()
+			-- StreamingEnabled로 인해 파트 로드 지연 가능성 대기
+			local primary = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+			if not primary then
+				-- BasePart가 들어올 때까지 최대 3초 대기
+				local t = 0
+				while not primary and t < 3 do
+					task.wait(0.2)
+					t = t + 0.2
+					primary = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+				end
+			end
+			
+			local nodeUID = model:GetAttribute("NodeUID")
+			-- 파트가 확인되었을 때만 생성 시도
+			if nodeUID and primary then
+				createHPBar(model, nodeUID, 10) -- 기본 최대 타격 10 (Hit 이벤트 시 업데이트됨)
+			end
+		end)
 	end
 	
 	local function onNodeRemoved(model)

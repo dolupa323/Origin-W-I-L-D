@@ -20,7 +20,7 @@ local InventoryService = {}
 -- Private State
 --========================================
 local initialized = false
-local playerInventories = {}  -- [userId] = { slots = { [1] = {itemId, count}, ... } }
+local playerInventories = {}  -- [userId] = { slots = { [1] = {itemId, count}, ... }, equipment = { Head, Body, Feet, Hand } }
 local playerActiveSlots = {} -- [userId] = hotbarIndex (1-8)
 
 -- NetController 참조
@@ -198,6 +198,7 @@ local function _emitChanged(player: Player, changes: {{slot: number, itemId: str
 	if SaveService and inv then
 		SaveService.updatePlayerState(userId, function(state)
 			state.inventory = inv.slots
+			state.equipment = inv.equipment
 			return state
 		end)
 	end
@@ -239,6 +240,120 @@ local function _makeChange(inv: any, slot: number): {slot: number, itemId: strin
 	end
 end
 
+function InventoryService.getEquipment(userId: number)
+	local inv = playerInventories[userId]
+	return inv and inv.equipment or {}
+end
+
+function InventoryService.equipItem(player: Player, inventorySlot: number, equipmentSlotName: string)
+	local userId = player.UserId
+	local inv = playerInventories[userId]
+	if not inv then return false, Enums.ErrorCode.NOT_FOUND end
+	
+	local slotData = inv.slots[inventorySlot]
+	if not slotData then return false, Enums.ErrorCode.SLOT_EMPTY end
+	
+	local itemData = DataService.getItem(slotData.itemId)
+	if not itemData then return false, Enums.ErrorCode.INVALID_ITEM end
+	
+	-- 슬롯 타입 체크
+	if itemData.slot and itemData.slot:upper() ~= equipmentSlotName:upper() then
+		warn(string.format("[InventoryService] Slot mismatch: %s vs %s", itemData.slot, equipmentSlotName))
+		return false, Enums.ErrorCode.BAD_REQUEST
+	end
+	
+	-- 기존 장비와 교체
+	local oldEquip = inv.equipment[equipmentSlotName]
+	inv.equipment[equipmentSlotName] = {
+		itemId = slotData.itemId,
+		durability = slotData.durability
+	}
+	
+	-- 인벤토리에서 제거 (1개만)
+	if slotData.count > 1 then
+		slotData.count -= 1
+	else
+		inv.slots[inventorySlot] = nil
+	end
+	
+	-- 기존 장비가 있었다면 인벤토리로 복구
+	if oldEquip then
+		InventoryService.addItem(userId, oldEquip.itemId, 1, oldEquip.durability)
+	end
+	
+	-- 상태 저장 요청
+	_emitChanged(player, { _makeChange(inv, inventorySlot) })
+	
+	-- 클라이언트에 장비 변경 통보
+	NetController.FireClient(player, "Inventory.Equipment.Changed", {
+		equipment = inv.equipment
+	})
+	
+	-- 장비 변경 통보 (EquipService 연동 - 도구/무기인 경우)
+	if equipmentSlotName == "Hand" and EquipService then
+		EquipService.equipItem(player, inv.equipment[equipmentSlotName].itemId)
+	end
+	
+	-- 스탯 재계산 (방어구 등)
+	if PlayerStatService then
+		PlayerStatService.applyStats(userId)
+	end
+	
+	return true
+end
+
+function InventoryService.unequipItem(player: Player, equipmentSlotName: string)
+	local userId = player.UserId
+	local inv = playerInventories[userId]
+	if not inv then return false, Enums.ErrorCode.NOT_FOUND end
+	
+	local oldEquip = inv.equipment[equipmentSlotName]
+	if not oldEquip then return false, Enums.ErrorCode.SLOT_EMPTY end
+	
+	-- 인벤토리에 공간 있는지 체크
+	local added, remaining = InventoryService.addItem(userId, oldEquip.itemId, 1, oldEquip.durability)
+	if added == 0 then
+		return false, Enums.ErrorCode.INV_FULL
+	end
+	
+	inv.equipment[equipmentSlotName] = nil
+	
+	-- 상태 저장 요청
+	_emitChanged(player, {}) -- 무게 환산 등을 위해 빈 change로 호출 가능
+	
+	-- 클라이언트에 장비 변경 통보
+	NetController.FireClient(player, "Inventory.Equipment.Changed", {
+		equipment = inv.equipment
+	})
+	
+	-- 장비 해제 통보
+	if equipmentSlotName == "Hand" and EquipService then
+		EquipService.equipItem(player, nil)
+	end
+	
+	if PlayerStatService then
+		PlayerStatService.applyStats(userId)
+	end
+	
+	return true
+end
+
+function InventoryService.getTotalDefense(userId: number): number
+	local inv = playerInventories[userId]
+	if not inv then return 0 end
+	
+	local total = 0
+	for _, equip in pairs(inv.equipment) do
+		if equip and equip.itemId then
+			local itemData = DataService.getItem(equip.itemId)
+			if itemData and itemData.defense then
+				total = total + itemData.defense
+			end
+		end
+	end
+	return total
+end
+
 --========================================
 -- Public API: Inventory Management
 --========================================
@@ -251,16 +366,24 @@ function InventoryService.getOrCreateInventory(userId: number): any
 	
 	-- SaveService에서 로드 시도
 	local savedInv = nil
+	local savedEquip = nil
 	if SaveService then
 		local state = SaveService.getPlayerState(userId)
-		if state and state.inventory then
-			savedInv = state.inventory
+		if state then
+			if state.inventory then savedInv = state.inventory end
+			if state.equipment then savedEquip = state.equipment end
 		end
 	end
 
 	-- 새 인벤토리 객체 생성
 	local inv = {
 		slots = savedInv or {},
+		equipment = savedEquip or {
+			Head = nil,
+			Body = nil,
+			Feet = nil,
+			Hand = nil,
+		}
 	}
 	
 	-- (Optional) 슬롯 구조 정규화 등 필요 시 수행
@@ -286,6 +409,7 @@ function InventoryService.setActiveSlot(userId: number, slot: number)
 	if playerActiveSlots[userId] == slot then return end -- 이미 활성 슬롯이면 무시
 	
 	playerActiveSlots[userId] = slot
+	print(string.format("[InventoryService] Player %d active slot set to %d", userId, slot))
 	
 	-- 시각적 장착 업데이트
 	if EquipService then
@@ -956,19 +1080,70 @@ function InventoryService.decreaseDurability(userId: number, slot: number, amoun
 	return true, nil, math.max(0, current)
 end
 
+--- 장비 슬롯 내구도 감소
+function InventoryService.decreaseEquipmentDurability(userId: number, equipmentSlotName: string, amount: number)
+	local inv = playerInventories[userId]
+	if not inv or not inv.equipment then return false, Enums.ErrorCode.NOT_FOUND end
+	
+	local slotData = inv.equipment[equipmentSlotName]
+	if not slotData then return false, Enums.ErrorCode.SLOT_EMPTY end
+	if not slotData.durability then return false, Enums.ErrorCode.INVALID_ITEM end
+	
+	slotData.durability = math.max(0, slotData.durability - amount)
+	local current = slotData.durability
+	
+	if current <= 0 then
+		-- 장비 파괴 (장착 해제)
+		print(string.format("[InventoryService] Equipment %s destroyed for user %d", equipmentSlotName, userId))
+		inv.equipment[equipmentSlotName] = nil
+	end
+	
+	-- 이벤트
+	local player = game:GetService("Players"):GetPlayerByUserId(userId)
+	if player then
+		NetController.FireClient(player, "Inventory.Equipment.Changed", { equipment = inv.equipment })
+		
+		-- 핸드 슬롯 파괴 시 시각화 업데이트
+		if equipmentSlotName == "HAND" and current <= 0 then
+			if EquipService then
+				EquipService.equipItem(player, nil)
+			end
+		end
+		
+		-- 스탯 재계산 (방어력/공격력 등 변경 대응)
+		if PlayerStatService then
+			PlayerStatService.recalculateStats(userId)
+		end
+	end
+	
+	return true, nil, current
+end
+
+--- 내구도 설정 (수리 등에 사용)
+function InventoryService.setDurability(userId: number, slot: number, amount: number)
+	local inv = playerInventories[userId]
+	if not inv then return false, Enums.ErrorCode.NOT_FOUND end
+	
+	local slotData = inv.slots[slot]
+	if not slotData then return false, Enums.ErrorCode.SLOT_EMPTY end
+	
+	slotData.durability = amount
+	
+	-- 이벤트
+	local player = Players:GetPlayerByUserId(userId)
+	if player then
+		_emitChanged(player, {_makeChange(inv, slot)})
+	end
+	
+	return true
+end
+
 --- 현재 장착 중인(선택된 핫바) 아이템 조회
 function InventoryService.getEquippedItem(userId: number): any?
 	local inv = playerInventories[userId]
 	if not inv then return nil end
 	
-	-- ActiveSlot 개념이 아직 없으므로 임시로 1번 슬롯이나, 클라이언트에서 보내주는 슬롯을 신뢰해야 함.
-	-- 하지만 Server Auth를 위해선 서버에 activeSlot 상태가 있어야 함.
-	-- 일단은 nil 반환하고, CombatService에서 payload.slot을 검증하는 방식으로 우회하거나,
-	-- 추후 Hotbar System 구현 시 activeSlot 동기화 추가 필요.
-	
-	-- Phase 3-3: 임시로 클라이언트 요청 payload의 item을 신뢰하지 않고,
-	-- CombatService가 인벤토리 슬롯을 조회하도록 함.
-	
+	-- 서버 권위(Active Slot) 기반으로 현재 장착 아이템 조회
 	local active = InventoryService.getActiveSlot(userId)
 	return InventoryService.getSlot(userId, active)
 end
@@ -1053,7 +1228,19 @@ local function handleUse(player: Player, payload: any)
 			NetController.FireClient(player, "Inventory.ActiveSlot.Changed", { slot = slot })
 			return { success = true, data = { action = "SELECT", slot = slot } }
 		else
-			-- 가방(9-20)에 있는 경우 -> 현재 활성 핫바 슬롯과 교체(Swap)
+			-- 가방에 있는 경우
+			
+			-- [추가] 방어구 타입이고 전용 슬롯(BODY 등) 정보가 있는 경우 바로 장착
+			if itemData.type == Enums.ItemType.ARMOR and itemData.slot then
+				local success, err = InventoryService.equipItem(player, slot, itemData.slot:upper())
+				if success then
+					return { success = true, data = { action = "EQUIP_ARMOR", slot = itemData.slot } }
+				end
+				-- 실패 시(슬롯 꽉참 등) 일반 Swap 로직으로 팔오버하거나 에러 반환
+				if err then return { success = false, errorCode = err } end
+			end
+
+			-- 무기/도구 혹은 슬롯 정보 없는 방어구 -> 현재 활성 핫바 슬롯과 교체(Swap)
 			local activeSlot = InventoryService.getActiveSlot(userId)
 			local success, err = InventoryService.move(player, slot, activeSlot, nil)
 			if success then
@@ -1117,6 +1304,7 @@ local function handleGetInventory(player: Player, payload: any)
 		success = true,
 		data = {
 			inventory = slots, -- Client expects 'inventory'
+			equipment = inv and inv.equipment or {},
 			totalWeight = inv and _getTotalWeight(inv) or 0,
 			maxWeight = _getMaxWeight(userId),
 			maxSlots = Balance.INV_SLOTS,
@@ -1199,6 +1387,14 @@ function InventoryService.GetHandlers()
 		["Inventory.Get.Request"] = handleGetInventory,
 		["Inventory.ActiveSlot.Request"] = handleActiveSlot,
 		["Inventory.Use.Request"] = handleUse,
+		["Inventory.Equip.Request"] = function(player, payload)
+			local success, err = InventoryService.equipItem(player, payload.fromSlot, payload.toSlot)
+			return { success = success, errorCode = err }
+		end,
+		["Inventory.Unequip.Request"] = function(player, payload)
+			local success, err = InventoryService.unequipItem(player, payload.slot)
+			return { success = success, errorCode = err }
+		end,
 		["Inventory.Sort.Request"] = function(player, payload)
 			InventoryService.sort(player.UserId)
 			return { success = true }

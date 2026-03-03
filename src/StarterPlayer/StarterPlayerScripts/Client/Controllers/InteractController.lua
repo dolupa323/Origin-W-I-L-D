@@ -27,7 +27,7 @@ local currentTarget = nil
 local currentTargetType = nil  -- "resource", "npc", "facility", "drop"
 
 -- 상호작용 거리 (Balance에서 가져옴, 여유분 추가)
-local INTERACT_DISTANCE = (Balance.HARVEST_RANGE or 10) + 4
+local INTERACT_DISTANCE = (Balance.HARVEST_RANGE or 10) + (Balance.INTERACT_OFFSET or 4)
 
 -- UIManager 참조 (Init 후 설정)
 local UIManager = nil

@@ -112,6 +112,7 @@ Enums.StatId = {
 	WEIGHT = "WEIGHT",             -- 소지 무게
 	WORK_SPEED = "WORK_SPEED",     -- 작업 속도
 	ATTACK = "ATTACK",             -- 공격력
+	DEFENSE = "DEFENSE",           -- 방어력
 }
 
 --========================================
@@ -153,10 +154,13 @@ Enums.Rarity = {
 --========================================
 Enums.FacilityType = {
 	COOKING = "COOKING",       -- 요리 (캠프파이어)
+	CRAFTING_T1 = "CRAFTING_T1", -- 제작 1단계 (원시 작업대)
+	CRAFTING_T2 = "CRAFTING_T2", -- 제작 2단계 (청동기 작업대)
+	CRAFTING_T3 = "CRAFTING_T3", -- 제작 3단계 (철기 작업대)
 	STORAGE = "STORAGE",       -- 저장 (보관함)
-	CRAFTING = "CRAFTING",     -- 제작 (작업대)
 	RESPAWN = "RESPAWN",       -- 리스폰 (침낭)
-	SMELTING = "SMELTING",     -- 제련 (용광로)
+	SMELTING_T1 = "SMELTING_T1", -- 제련 1단계 (돌 용광로)
+	SMELTING_T2 = "SMELTING_T2", -- 제련 2단계 (철 용광로)
 	FARMING = "FARMING",       -- 농사 (화분/농장)
 	DEFENSE = "DEFENSE",       -- 방어 (함정 등)
 	GATHERING = "GATHERING",   -- 채집 (자동화)

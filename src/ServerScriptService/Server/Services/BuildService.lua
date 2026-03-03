@@ -188,39 +188,92 @@ end
 --========================================
 -- Internal: 구조물 생성 (Workspace)
 --========================================
+--- 설비 모델 정리 (스크립트 제거 등)
+local function cleanModelForBuild(model: Model)
+	for _, descendant in ipairs(model:GetDescendants()) do
+		if descendant:IsA("LuaSourceContainer") or descendant:IsA("Sound") then
+			descendant:Destroy()
+		end
+	end
+end
+
+--- 모델을 시설물로 설정 (위치/회전/히트박스)
+local function setupFacilityModel(model: Model, position: Vector3, rotation: Vector3): Model
+	cleanModelForBuild(model)
+	
+	-- PrimaryPart 설정
+	local primaryPart = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
+	if primaryPart then
+		model.PrimaryPart = primaryPart
+		
+		-- 지면 정렬 (하단 기준 위치 설정)
+		local minY = math.huge
+		for _, p in ipairs(model:GetDescendants()) do
+			if p:IsA("BasePart") then
+				local pMinY = p.Position.Y - (p.Size.Y / 2)
+				if pMinY < minY then minY = pMinY end
+			end
+		end
+		
+		local currentPivot = model:GetPivot()
+		local pivotOffset = currentPivot.Position.Y - minY
+		
+		-- 위치 및 회전 적용
+		local targetCF = CFrame.new(position) 
+			* CFrame.Angles(math.rad(rotation.X), math.rad(rotation.Y), math.rad(rotation.Z))
+			* CFrame.new(0, pivotOffset, 0)
+		model:PivotTo(targetCF)
+	end
+	
+	-- 물리 및 충돌 설정
+	for _, part in ipairs(model:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.Anchored = true
+			part.CanCollide = true
+			part.CanQuery = true
+			part.CanTouch = true
+		end
+	end
+	
+	return model
+end
+
+--========================================
+-- Internal: 구조물 생성 (Workspace)
+--========================================
 local function spawnFacilityModel(facilityId: string, position: Vector3, rotation: Vector3, structureId: string, ownerId: number): Instance?
 	local facilityData = DataService.getFacility(facilityId)
 	if not facilityData then return nil end
 	
-	-- 임시 구현: 간단한 Part 생성
-	-- 실제로는 ReplicatedStorage.Assets.Facilities에서 모델 복제
-	local facility = Instance.new("Part")
-	facility.Name = structureId
-	facility.Size = Vector3.new(4, 4, 4)
-	-- CFrame을 사용하여 위치와 회전을 동시에 적용
-	facility.CFrame = CFrame.new(position) * CFrame.Angles(math.rad(rotation.X), math.rad(rotation.Y), math.rad(rotation.Z))
-	facility.Anchored = true
-	facility.CanCollide = true
-	facility.BrickColor = BrickColor.new("Bright orange")
+	-- ReplicatedStorage/Assets/FacilityModels 폴더 찾기
+	local modelsFolder = ReplicatedStorage:FindFirstChild("Assets") and ReplicatedStorage.Assets:FindFirstChild("FacilityModels")
+	local template = modelsFolder and modelsFolder:FindFirstChild(facilityData.modelName or facilityId)
 	
-	-- 정면 표시용 띠 (회전 확인용)
-	local deco = Instance.new("Part")
-	deco.Size = Vector3.new(4.2, 1, 1)
-	deco.CFrame = facility.CFrame * CFrame.new(0, 0, -2)
-	deco.BrickColor = BrickColor.new("White")
-	deco.Anchored = true
-	deco.CanCollide = false
-	deco.Parent = facility
+	local model
+	if template then
+		model = template:Clone()
+		model.Name = structureId
+		model.Parent = facilitiesFolder
+		setupFacilityModel(model, position, rotation)
+	else
+		-- 폴백: 모델이 없을 경우 임시 파트 생성
+		warn(string.format("[BuildService] Model '%s' not found, using fallback", facilityData.modelName or facilityId))
+		model = Instance.new("Part")
+		model.Name = structureId
+		model.Size = Vector3.new(4, 4, 4)
+		model.CFrame = CFrame.new(position) * CFrame.Angles(math.rad(rotation.X), math.rad(rotation.Y), math.rad(rotation.Z))
+		model.Anchored = true
+		model.BrickColor = BrickColor.new("Bright orange")
+		model.Parent = facilitiesFolder
+	end
 	
 	-- 속성 설정
-	facility:SetAttribute("FacilityId", facilityId)
-	facility:SetAttribute("StructureId", structureId)
-	facility:SetAttribute("OwnerId", ownerId)
-	facility:SetAttribute("Health", facilityData.maxHealth)
+	model:SetAttribute("FacilityId", facilityId)
+	model:SetAttribute("StructureId", structureId)
+	model:SetAttribute("OwnerId", ownerId)
+	model:SetAttribute("Health", facilityData.maxHealth)
 	
-	facility.Parent = facilitiesFolder
-	
-	return facility
+	return model
 end
 
 --========================================

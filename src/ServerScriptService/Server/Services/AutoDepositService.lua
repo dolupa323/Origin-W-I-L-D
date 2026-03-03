@@ -36,8 +36,13 @@ local TICK_INTERVAL = Balance.AUTO_DEPOSIT_INTERVAL or 5
 local function findNearestStorage(facilityPosition: Vector3, ownerId: number): (string?, any?)
 	if not BuildService then return nil, nil end
 	
+	local searchRange = Balance.AUTO_DEPOSIT_RANGE or 30
+	local nearestDist = math.huge
+	local nearestId = nil
+	local nearestStorage = nil
+	
 	-- [FIX] 모든 구조물이 아닌 해당 소유자의 구조물만 순회 (성능 최적화)
-	local ownerStructures = BuildService.getStructuresByOwner(ownerId)
+	local ownerStructures = BuildService.getStructuresByOwner(ownerId) or {}
 	
 	for _, structure in ipairs(ownerStructures) do
 		-- Storage 타입인지 확인
@@ -71,7 +76,7 @@ end
 --- 시설의 Output → Storage 이동 처리
 local function processDeposit(structureId: string, runtime: any, ownerId: number)
 	-- Output 슬롯 확인
-	if not runtime.outputSlot or runtime.outputSlot.count == 0 then
+	if type(runtime.outputSlot) ~= "table" or not runtime.outputSlot.itemId or (runtime.outputSlot.count or 0) == 0 then
 		return 0
 	end
 	
@@ -123,7 +128,7 @@ function AutoDepositService.tick(deltaTime: number)
 	
 	for structureId, runtime in pairs(allRuntimes) do
 		-- Output이 있는 시설만 처리
-		if runtime.outputSlot and runtime.outputSlot.count > 0 then
+		if type(runtime.outputSlot) == "table" and runtime.outputSlot.itemId and (runtime.outputSlot.count or 0) > 0 then
 			processDeposit(structureId, runtime, runtime.ownerId)
 		end
 	end

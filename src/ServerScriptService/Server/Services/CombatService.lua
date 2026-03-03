@@ -213,6 +213,42 @@ function CombatService.processPlayerAttack(player: Player, targetId: string, too
 	return true, nil, { damage = hpDamage, torporDamage = torporDamage, killed = killed }
 end
 
+--- 플레이어에게 데미지 적용 (방어력 반영)
+function CombatService.damagePlayer(userId: number, rawDamage: number)
+	local player = game:GetService("Players"):GetPlayerByUserId(userId)
+	if not player or not player.Character then return end
+	
+	local humanoid = player.Character:FindFirstChild("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then return end
+	
+	-- 1. 무적 상태 체크 (구르기 등)
+	if CombatService.isPlayerInvulnerable(userId) then
+		print(string.format("[CombatService] Player %d is invulnerable, ignoring damage", userId))
+		return
+	end
+	
+	-- 2. 방어력 계산
+	local defense = 0
+	if InventoryService and InventoryService.getTotalDefense then
+		defense = InventoryService.getTotalDefense(userId)
+	end
+	
+	-- 데미지 감쇄 공식: final = raw * (100 / (100 + defense))
+	local reductionMult = 100 / (100 + defense)
+	local finalDamage = math.max(1, rawDamage * reductionMult)
+	
+	-- 3. 방어구 내구도 감소 (Body 슬롯 우선)
+	if InventoryService and InventoryService.decreaseEquipmentDurability then
+		local armorDamage = math.max(1, math.floor(rawDamage * Balance.ARMOR_DURABILITY_LOSS_RATIO))
+		InventoryService.decreaseEquipmentDurability(userId, "BODY", armorDamage)
+	end
+	
+	humanoid:TakeDamage(finalDamage)
+	
+	print(string.format("[CombatService] Player %s took %.1f damage (Raw: %.1f, Def: %d)", 
+		player.Name, finalDamage, rawDamage, defense))
+end
+
 --========================================
 -- Network Handlers
 --========================================

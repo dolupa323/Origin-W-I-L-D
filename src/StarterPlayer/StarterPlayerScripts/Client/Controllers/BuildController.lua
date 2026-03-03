@@ -45,6 +45,9 @@ local function createGhost(facilityId)
 	local ghost
 	if sourceModel then
 		ghost = sourceModel:Clone()
+		if not ghost.PrimaryPart then
+			ghost.PrimaryPart = ghost:FindFirstChildWhichIsA("BasePart", true)
+		end
 	else
 		-- 모델이 없으면 임시 박스 생성
 		ghost = Instance.new("Model")
@@ -129,13 +132,16 @@ function BuildController.startPlacement(facilityId: string)
 			
 			-- 기본적으로 hitNormal 방향으로 UpVector 설정 (지형을 따라감)
 			local lookAt = hitPos + finalRotation.LookVector
-			currentGhost:SetPrimaryPartCFrame(CFrame.lookAt(hitPos, lookAt, hitNormal))
+			if currentGhost.PrimaryPart then
+				currentGhost:SetPrimaryPartCFrame(CFrame.lookAt(hitPos, lookAt, hitNormal))
+			end
 			
 			-- 건설 가능 조건 체크
 			local dist = (player.Character.PrimaryPart.Position - hitPos).Magnitude
 			isPlaceable = (dist <= 25) -- 25 스터드 이내
-			-- 추가 조건: 경사도 체크
-			local slope = math.deg(math.acos(hitNormal.Dot(Vector3.new(0, 1, 0))))
+			-- [FIX] NaN 방지: Dot 결과가 1.0000001 등이 될 수 있으므로 clamp(-1, 1) 필수
+			local dot = hitNormal:Dot(Vector3.new(0, 1, 0))
+			local slope = math.deg(math.acos(math.clamp(dot, -1, 1)))
 			if slope > 45 then isPlaceable = false end -- 너무 가파르면 불가
 		else
 			isPlaceable = false

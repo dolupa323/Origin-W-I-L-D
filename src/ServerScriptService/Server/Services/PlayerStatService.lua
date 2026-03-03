@@ -244,12 +244,22 @@ function PlayerStatService.GetCalculatedStats(userId: number)
 	_initPlayerStats(userId)
 	local stats = playerStats[userId].statInvested
 	
+	local defense = 0
+	-- 순환 참조 방지 위해 지연 로딩 (InventoryService)
+	local success, InventoryService = pcall(function() 
+		return require(game:GetService("ServerScriptService").Server.Services.InventoryService) 
+	end)
+	if success and InventoryService and InventoryService.getTotalDefense then
+		defense = InventoryService.getTotalDefense(userId)
+	end
+	
 	return {
 		maxHealth = 100 + (stats[Enums.StatId.MAX_HEALTH] * Balance.HP_PER_POINT),
 		maxStamina = 100 + (stats[Enums.StatId.MAX_STAMINA] * Balance.STAMINA_PER_POINT),
 		maxWeight = 300 + (stats[Enums.StatId.WEIGHT] * Balance.WEIGHT_PER_POINT),
 		workSpeed = 100 + (stats[Enums.StatId.WORK_SPEED] * Balance.WORKSPEED_PER_POINT),
 		attackMult = 1.0 + (stats[Enums.StatId.ATTACK] * Balance.ATTACK_PER_POINT),
+		defense = defense,
 	}
 end
 
@@ -285,7 +295,19 @@ function PlayerStatService.applyStats(userId: number)
 		character:SetAttribute("MaxWeight", calc.maxWeight)
 		character:SetAttribute("AttackMult", calc.attackMult)
 		character:SetAttribute("WorkSpeed", calc.workSpeed)
+		character:SetAttribute("Defense", calc.defense)
 	end
+	
+	-- 4. 클라이언트에 최종 스탯 전송
+	if NetController then
+		local fullStats = PlayerStatService.getStats(userId)
+		NetController.FireClient(player, "Player.Stats.Changed", fullStats)
+	end
+end
+
+--- 스탯 재계산 (에일리어스)
+function PlayerStatService.recalculateStats(userId: number)
+	PlayerStatService.applyStats(userId)
 end
 
 function PlayerStatService.getStats(userId: number): { [string]: any }

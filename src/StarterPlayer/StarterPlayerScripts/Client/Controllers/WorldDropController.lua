@@ -7,7 +7,9 @@ local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local NetClient = require(script.Parent.Parent.NetClient)
-local ItemData = require(ReplicatedStorage.Data.ItemData)
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Balance = require(Shared.Config.Balance)
+local DataHelper = require(Shared.Util.DataHelper)
 
 local WorldDropController = {}
 
@@ -27,56 +29,29 @@ local dropModels = {}
 local dropFolder = nil
 
 --========================================
--- Drop Model Configuration
---========================================
-local DROP_COLORS = {
-	STONE = Color3.fromRGB(128, 128, 128),
-	WOOD = Color3.fromRGB(139, 90, 43),
-	FIBER = Color3.fromRGB(76, 153, 0),
-	BERRY = Color3.fromRGB(204, 51, 102),
-	BERRIES = Color3.fromRGB(204, 51, 102),
-	FLINT = Color3.fromRGB(64, 64, 64),
-	THATCH = Color3.fromRGB(204, 178, 102),
-	HIDE = Color3.fromRGB(139, 69, 19),
-	LEATHER = Color3.fromRGB(139, 69, 19),
-	MEAT = Color3.fromRGB(178, 102, 102),
-	RESIN = Color3.fromRGB(230, 180, 80),
-	IRON_ORE = Color3.fromRGB(100, 80, 70),
-	DEFAULT = Color3.fromRGB(200, 200, 200),
-}
-
-local DROP_SIZE = Vector3.new(0.8, 0.8, 0.8)
-local BILLBOARD_OFFSET = Vector3.new(0, 2, 0)
-
---========================================
 -- Helper Functions
 --========================================
 
 local function getDropColor(itemId: string): Color3
-	local upperItemId = itemId:upper()
-	return DROP_COLORS[upperItemId] or DROP_COLORS.DEFAULT
+	local itemData = DataHelper.GetData("ItemData", itemId:upper())
+	return (itemData and itemData.color) or Color3.fromRGB(200, 200, 200)
 end
 
 local function getItemDisplayName(itemId: string): string
-	local upperItemId = itemId:upper()
-	for _, item in ipairs(ItemData) do
-		if item.id == upperItemId then
-			return item.name or itemId
-		end
-	end
-	return itemId
+	local itemData = DataHelper.GetData("ItemData", itemId:upper())
+	return (itemData and itemData.name) or itemId
 end
 
 local function findLootModel(itemId: string): Instance?
 	local assets = ReplicatedStorage:FindFirstChild("Assets")
 	if not assets then return nil end
 	
-	-- 기존 LootModels 혹은 통합된 Models 폴더 체크
 	local modelsFolder = assets:FindFirstChild("LootModels") or assets:FindFirstChild("Models")
 	if not modelsFolder then return nil end
 	
-	-- [최적화] 기획 요청에 따라 모든 필드 드롭 아이템 모델을 단일 "POUCH" 모델로 통일
-	local template = modelsFolder:FindFirstChild("POUCH") or modelsFolder:FindFirstChild("Pouch")
+	-- Balance에 정의된 기본 모델 이름 사용
+	local modelName = Balance.DROP_MODEL_DEFAULT
+	local template = modelsFolder:FindFirstChild(modelName) or modelsFolder:FindFirstChild(modelName:lower():gsub("^%l", string.upper))
 	return template
 end
 
@@ -122,7 +97,7 @@ local function createDropModel(dropData)
 		mainObject = Instance.new("Part")
 		mainObject.Name = dropData.dropId
 		mainObject.Parent = dropFolder -- Parent early
-		mainObject.Size = DROP_SIZE
+		mainObject.Size = Balance.DROP_SIZE
 		mainObject.Shape = Enum.PartType.Ball
 		mainObject.Color = getDropColor(dropData.itemId)
 		mainObject.Material = Enum.Material.SmoothPlastic
@@ -172,10 +147,10 @@ local function createDropModel(dropData)
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name = "DropLabel"
 	billboard.Size = UDim2.new(0, 100, 0, 40)
-	billboard.StudsOffset = BILLBOARD_OFFSET
+	billboard.StudsOffset = Balance.DROP_BILLBOARD_OFFSET
 	-- [UX 개선] AlwaysOnTop을 false로 변경하여 물체 뒤에 숨겨지게 함 (UI 겹침 공해 방지)
 	billboard.AlwaysOnTop = false 
-	billboard.MaxDistance = 25
+	billboard.MaxDistance = Balance.DROP_BILLBOARD_MAX_DIST
 	billboard.Parent = attachmentPoint
 	
 	-- 배경 프레임
@@ -220,7 +195,7 @@ local function createDropModel(dropData)
 	prompt.Name = "PickupPrompt"
 	prompt.ActionText = "줍기"
 	prompt.ObjectText = getItemDisplayName(dropData.itemId)
-	prompt.MaxActivationDistance = 8
+	prompt.MaxActivationDistance = Balance.DROP_PROMPT_RANGE
 	prompt.HoldDuration = 0
 	prompt.KeyboardKeyCode = Enum.KeyCode.Z
 	prompt.RequiresLineOfSight = false

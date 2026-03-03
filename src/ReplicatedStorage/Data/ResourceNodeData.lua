@@ -28,7 +28,6 @@ local ResourceNodeData = {
 		optimalTool = "AXE",
 		resources = {
 			{ itemId = "WOOD", min = 4, max = 6, weight = 1.0 },
-			{ itemId = "RESIN", min = 0, max = 1, weight = 0.2 },
 		},
 		maxHits = 15,
 		respawnTime = 360,
@@ -64,7 +63,6 @@ local ResourceNodeData = {
 		nodeType = "BUSH",
 		optimalTool = nil,
 		resources = {
-			{ itemId = "WOOD", min = 1, max = 2, weight = 0.8 },  -- 덤불에서도 나무 수급 가능
 			{ itemId = "BERRY", min = 2, max = 4, weight = 1.0 },
 			{ itemId = "FIBER", min = 1, max = 3, weight = 1.0 },
 		},
@@ -99,7 +97,6 @@ local ResourceNodeData = {
 		optimalTool = "PICKAXE",
 		resources = {
 			{ itemId = "COPPER_ORE", min = 3, max = 6, weight = 1.0 },
-			{ itemId = "STONE", min = 1, max = 2, weight = 0.5 },
 		},
 		maxHits = 20,
 		respawnTime = 400,
@@ -114,7 +111,6 @@ local ResourceNodeData = {
 		optimalTool = "PICKAXE",
 		resources = {
 			{ itemId = "TIN_ORE", min = 3, max = 6, weight = 1.0 },
-			{ itemId = "STONE", min = 1, max = 2, weight = 0.5 },
 		},
 		maxHits = 20,
 		respawnTime = 400,
@@ -129,7 +125,6 @@ local ResourceNodeData = {
 		optimalTool = "PICKAXE",
 		resources = {
 			{ itemId = "IRON_ORE", min = 4, max = 8, weight = 1.0 },
-			{ itemId = "COAL", min = 1, max = 2, weight = 0.3 },
 		},
 		maxHits = 35,
 		respawnTime = 600,

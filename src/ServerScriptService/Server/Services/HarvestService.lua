@@ -26,10 +26,24 @@ local DESPAWN_DIST = Balance.NODE_DESPAWN_DIST or 300
 local SEA_LEVEL = Balance.SEA_LEVEL or 10
 
 -- 지형별 스폰 풀
-local GRASS_TERRAIN_NODES = {"TREE_OAK", "TREE_PINE", "BUSH_BERRY", "FIBER_GRASS", "GROUND_BRANCH", "GROUND_BRANCH", "GROUND_STONE", "GROUND_STONE"}
-local ROCK_TERRAIN_NODES = {"ROCK_NORMAL", "ORE_COPPER", "ORE_TIN", "ORE_IRON", "ORE_COAL", "GROUND_STONE"}
-local SAND_TERRAIN_NODES = {"ROCK_NORMAL", "FIBER_GRASS", "GROUND_STONE", "GROUND_STONE"}
-local GROUND_TERRAIN_NODES = {"TREE_OAK", "ROCK_NORMAL", "BUSH_BERRY", "FIBER_GRASS", "GROUND_BRANCH", "GROUND_BRANCH", "GROUND_STONE", "GROUND_STONE"}
+-- 지형별 스폰 풀 (정리됨: 원시 시대 기획 우선)
+local GRASS_TERRAIN_NODES = {
+	"TREE_OAK", "TREE_PINE", "BUSH_BERRY", "FIBER_GRASS", 
+	"GROUND_BRANCH", "GROUND_BRANCH", "GROUND_BRANCH", -- 나뭇가지 비중 상향
+	"GROUND_STONE", "GROUND_STONE"
+}
+local ROCK_TERRAIN_NODES = {
+	"ROCK_NORMAL", "ROCK_NORMAL", "GROUND_STONE", "GROUND_STONE", "GROUND_STONE", -- 돌 비중 상향
+	"ORE_COPPER", "ORE_TIN" -- 철/석탄은 원시 시대 이후로 보류하여 정리
+}
+local SAND_TERRAIN_NODES = {
+	"ROCK_NORMAL", "FIBER_GRASS", "GROUND_STONE", "GROUND_STONE", "GROUND_STONE"
+}
+local GROUND_TERRAIN_NODES = {
+	"TREE_OAK", "ROCK_NORMAL", "BUSH_BERRY", "FIBER_GRASS", 
+	"GROUND_BRANCH", "GROUND_BRANCH", "GROUND_BRANCH", 
+	"GROUND_STONE", "GROUND_STONE", "GROUND_STONE"
+}
 
 -- 풀밑 (Grass) 지형 Material
 local GRASS_MATERIALS = {
@@ -392,8 +406,9 @@ local function validateTool(player: Player, nodeData: any, toolSlot: number?): (
 	-- 도구 필수 여부 확인
 	if nodeData.requiresTool then
 		if not equippedToolType then
-			-- 맨손인데 도구가 필수인 경우
-			return false, Enums.ErrorCode.WRONG_TOOL
+			-- [설계 변경] 나무(TREE), 바위(ROCK)는 맨손 타격 시 데미지 1 + 플레이어 HP 감소
+			-- 여기서는 true를 리턴하되, hit 함수에서 후처리를 하도록 유도
+			return true, "BAREHANDED_PENALTY"
 		end
 		
 		-- 최적 도구(optimalTool)가 지정된 경우, 호환되는 도구여야만 함
@@ -404,8 +419,6 @@ local function validateTool(player: Player, nodeData: any, toolSlot: number?): (
 		end
 	end
 	
-	-- 모든 자원은 도구가 있으면 일단 채집 가능 (효율은 calculateEfficiency에서 처리)
-	-- (위의 requiresTool 체크를 통과했다면)
 	return true, nil
 end
 
@@ -830,15 +843,44 @@ function HarvestService.hit(player: Player, nodeUID: string, toolSlot: number?, 
 	local efficiency = calculateEfficiency(player, nodeData.optimalTool, toolSlot)
 	
 	-- 7. 타격 처리 (Power 계산)
-	local workSpeedStat = 0
-	if PlayerStatService then
-		local stats = PlayerStatService.getStats(player.UserId)
-		workSpeedStat = (stats and stats.statInvested and stats.statInvested[Enums.StatId.WORK_SPEED]) or 0
+	local isBareHandedPenalty = (toolError == "BAREHANDED_PENALTY")
+	local power = 1
+	
+	if not isBareHandedPenalty then
+		local workSpeedStat = 0
+		if PlayerStatService then
+			local stats = PlayerStatService.getStats(player.UserId)
+			workSpeedStat = (stats and stats.statInvested and stats.statInvested[Enums.StatId.WORK_SPEED]) or 0
+		end
+		power = 1 + math.floor(workSpeedStat / 10)
+	else
+		-- [설계] 맨손 패널티: 데미지 무조건 1 + 플레이어 HP 감소
+		power = 1
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			-- CombatService의 damagePlayer는 userId(number)를 첫 번째 인자로 받음
+			local success, CombatService = pcall(function() return require(game:GetService("ServerScriptService").Server.Services.CombatService) end)
+			if success and CombatService then
+				CombatService.damagePlayer(userId, Balance.HARVEST_BAREHAND_HP_PENALTY or 2)
+			else
+				humanoid:TakeDamage(Balance.HARVEST_BAREHAND_HP_PENALTY or 2)
+			end
+		end
 	end
-	local power = 1 + math.floor(workSpeedStat / 10)
 	
 	-- 8. 실제 데미지 적용
-	local finalHitCount = math.clamp(hitCount or 1, 1, 10) -- 보안: 비정상적인 다중 타격 방지
+	-- [FIX] 보안 결함: 수동 채집(Manual Hit) 시 클라이언트가 보낸 hitCount를 무조건 신뢰하지 않음 (Exploit 방지)
+	local finalHitCount = 1
+	
+	-- 노드 타입이 BUSH(덤불)나 FIBER(풀) 등 상호작용으로 한 번에 수확 가능한 경우에만 예외 허용
+	if nodeData.nodeType == "BUSH" or nodeData.nodeType == "FIBER" then
+		finalHitCount = math.clamp(hitCount or 1, 1, 10)
+	else
+		-- 나무, 바위 등은 무조건 1회 타격만 허용
+		finalHitCount = 1
+	end
+
 	local success, err, drops = HarvestService.damageNode(nodeUID, power * finalHitCount, efficiency, userId)
 	
 	-- 9. (Player-specific) 도구 내구도 감소
@@ -915,6 +957,7 @@ function HarvestService.damageNode(nodeUID: string, damage: number, efficiency: 
 				nodeId = nodeState.nodeId,
 				position = nodeState.position,
 				respawnAt = os.time() + (nodeData.respawnTime or 300),
+				isAutoSpawned = nodeState.isAutoSpawned,
 			}
 			activeNodes[nodeUID] = nil
 			task.delay(nodeData.respawnTime or 300, function()
@@ -974,6 +1017,7 @@ function HarvestService._respawnNode(nodeUID: string)
 		remainingHits = nodeData.maxHits,
 		depletedAt = nil,
 		respawnAt = nil,
+		isAutoSpawned = depletedNode.isAutoSpawned,
 	}
 	
 	-- 고갈된 노드 목록에서 제거

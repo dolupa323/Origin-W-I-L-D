@@ -16,6 +16,7 @@ local ItemData = {
 		icon = "rbxassetid://15573752528", -- Stone icon
 		description = "가장 기본적인 자원. 도구와 건물에 사용된다.",
 		dropDespawn = "GATHER",
+		color = Color3.fromRGB(128, 128, 128),
 	},
 	{
 		id = "WOOD",
@@ -27,6 +28,7 @@ local ItemData = {
 		description = "기본 건축 재료.",
 		dropDespawn = "GATHER",
 		fuelValue = 15,
+		color = Color3.fromRGB(139, 90, 43),
 	},
 	{
 		id = "FIBER",
@@ -37,6 +39,7 @@ local ItemData = {
 		weight = 0.5, -- 추가
 		description = "풀에서 채집한 섬유. 밧줄과 천을 만들 수 있다.",
 		dropDespawn = "GATHER",
+		color = Color3.fromRGB(76, 153, 0),
 	},
 	{
 		id = "BERRY",
@@ -48,6 +51,7 @@ local ItemData = {
 		description = "덤불에서 채집한 베리. 먹으면 체력이 조금 회복된다.",
 		dropDespawn = "GATHER",
 		foodValue = 35,
+		color = Color3.fromRGB(204, 51, 102),
 	},
 	{
 		id = "RESIN",
@@ -139,6 +143,7 @@ local ItemData = {
 		weight = 5.0, -- 추가
 		durability = 100,
 		damage = 8,
+		slot = "HAND",
 		description = "돌을 캘 수 있는 기본 도구.",
 		optimalTool = "PICKAXE",
 	},
@@ -150,6 +155,7 @@ local ItemData = {
 		maxStack = 1,
 		durability = 100,
 		damage = 8,
+		slot = "HAND",
 		description = "나무를 벨 수 있는 기본 도구.",
 		optimalTool = "AXE",
 	},
@@ -161,6 +167,7 @@ local ItemData = {
 		maxStack = 1,
 		durability = 100,
 		damage = 25,
+		slot = "HAND",
 		description = "기초 근접 무기.",
 		optimalTool = "SPEAR",
 	},
@@ -172,6 +179,7 @@ local ItemData = {
 		maxStack = 1,
 		durability = 60,
 		damage = 5,
+		slot = "HAND",
 		description = "시야 확보 및 체온 유지. 장착 중 내구도가 서서히 감소합니다.",
 		passiveDurabilityDrain = 1, -- 초당 내구도 감소량
 	},
@@ -184,6 +192,7 @@ local ItemData = {
 		durability = 120,
 		damage = 15,
 		isBlunt = true,  -- 기절 수치 적용용
+		slot = "HAND",
 		description = "야수를 때려서 기절시키거나 체력을 깎는 둔기.",
 		optimalTool = "CLUB",
 	},
@@ -210,6 +219,7 @@ local ItemData = {
 		maxStack = 1,
 		durability = 150,
 		damage = 40,
+		slot = "HAND",
 		description = "원거리 공격이 가능한 기초적인 활.",
 	},
 	{
@@ -228,6 +238,7 @@ local ItemData = {
 		maxStack = 1,
 		durability = 100,
 		damage = 5,
+		slot = "HAND",
 		description = "농경지 개간용 기초 도구.",
 	},
 	{
@@ -253,6 +264,7 @@ local ItemData = {
 		maxStack = 1,
 		durability = 250,
 		damage = 25,
+		slot = "HAND",
 		description = "더 단단한 광석을 캘 수 있는 청동 곡괭이.",
 		optimalTool = "PICKAXE",
 	},
@@ -264,6 +276,7 @@ local ItemData = {
 		maxStack = 1,
 		durability = 250,
 		damage = 25,
+		slot = "HAND",
 		description = "벌목 속도가 향상된 청동 도끼.",
 		optimalTool = "AXE",
 	},
@@ -275,6 +288,7 @@ local ItemData = {
 		maxStack = 1,
 		durability = 250,
 		damage = 75,
+		slot = "HAND",
 		description = "공격력이 향상된 청동 창.",
 	},
 	{
@@ -285,6 +299,7 @@ local ItemData = {
 		maxStack = 1,
 		durability = 300,
 		damage = 90,
+		slot = "HAND",
 		description = "안정적인 사격이 가능한 청동 활.",
 	},
 	{
@@ -318,6 +333,7 @@ local ItemData = {
 		maxStack = 1,
 		durability = 500,
 		damage = 50,
+		slot = "HAND",
 		description = "모든 광석을 캘 수 있는 가장 강력한 곡괭이.",
 		optimalTool = "PICKAXE",
 	},
@@ -329,6 +345,7 @@ local ItemData = {
 		maxStack = 1,
 		durability = 500,
 		damage = 50,
+		slot = "HAND",
 		description = "최고의 벌목 성능을 자랑하는 철 도끼.",
 		optimalTool = "AXE",
 	},
@@ -340,6 +357,7 @@ local ItemData = {
 		maxStack = 1,
 		durability = 500,
 		damage = 130,
+		slot = "HAND",
 		description = "가장 강력한 위력을 가진 철 창.",
 	},
 	{
@@ -350,6 +368,7 @@ local ItemData = {
 		maxStack = 1,
 		durability = 400,
 		damage = 180,
+		slot = "HAND",
 		description = "파괴력이 높고 조준이 쉬운 기계식 무기.",
 	},
 	{
@@ -372,6 +391,70 @@ local ItemData = {
 	},
 
 	--========================================
+	-- 방어구 (Armor)
+	--========================================
+	{
+		id = "FIBER_SHIRT",
+		name = "섬유 셔츠",
+		type = "ARMOR",
+		rarity = "COMMON",
+		maxStack = 1,
+		weight = 1.0,
+		durability = 80,
+		defense = 5,
+		slot = "BODY",
+		description = "섬유를 엮어 만든 초보자용 상의. 기초적인 방어력을 제공합니다.",
+	},
+	{
+		id = "FIBER_PANTS",
+		name = "섬유 바지",
+		type = "ARMOR",
+		rarity = "COMMON",
+		maxStack = 1,
+		weight = 1.0,
+		durability = 80,
+		defense = 5,
+		slot = "FEET", -- 팬츠는 FEET 또는 별도 슬롯 필요하나 현재 4슬롯 유지
+		description = "섬유를 엮어 만든 초보자용 하의. 기초적인 방어력을 제공합니다.",
+	},
+	{
+		id = "LEATHER_ARMOR",
+		name = "가죽 옷",
+		type = "ARMOR",
+		rarity = "COMMON",
+		maxStack = 1,
+		weight = 3.0,
+		durability = 150,
+		defense = 10,  -- 방어력 수치 (전투 로직에서 참조)
+		slot = "BODY",
+		description = "질긴 가죽으로 만든 생존용 의상. 기초적인 방어력을 제공합니다.",
+	},
+	{
+		id = "BRONZE_ARMOR",
+		name = "청동 갑옷",
+		type = "ARMOR",
+		rarity = "UNCOMMON",
+		maxStack = 1,
+		weight = 8.0,
+		durability = 300,
+		defense = 30,
+		slot = "BODY",
+		description = "청동 주괴를 덧댄 튼튼한 갑옷. 본격적인 전투에 적합합니다.",
+	},
+	{
+		id = "IRON_ARMOR",
+		name = "철제 갑옷",
+		type = "ARMOR",
+		rarity = "RARE",
+		maxStack = 1,
+		weight = 12.0,
+		durability = 600,
+		defense = 65,
+		slot = "BODY",
+		description = "묵직하고 견고한 철제 갑옷. 강력한 포식자의 공격도 어느 정도 견뎌냅니다.",
+	},
+
+	--========================================
 	-- 드롭/기타 자원
 	--========================================
 	{
@@ -383,6 +466,22 @@ local ItemData = {
 		description = "그냥 먹을 수도 있지만, 조리해 먹는 편이 좋다.",
 		foodValue = 15,
 		dropDespawn = "MONSTER",
+	},
+	{
+		id = "FEATHER",
+		name = "깃털",
+		type = "RESOURCE",
+		rarity = "COMMON",
+		maxStack = 99,
+		description = "새에게서 얻은 깃털. 화살이나 장식품 제작에 사용된다.",
+	},
+	{
+		id = "SMALL_BONE",
+		name = "작은 뼈",
+		type = "RESOURCE",
+		rarity = "COMMON",
+		maxStack = 99,
+		description = "작은 짐승에게서 얻은 뼈. 원시 도구 제작에 유용하다.",
 	},
 	{
 		id = "COOKED_MEAT", 

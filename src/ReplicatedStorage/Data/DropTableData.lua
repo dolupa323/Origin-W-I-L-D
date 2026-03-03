@@ -7,11 +7,13 @@ local DropTableData = {
 	-- 초식 / PASSIVE
 	--========================================
 	["DODO"] = {
-		{ itemId = "MEAT", chance = 1.0, min = 1, max = 1 },
+		{ itemId = "MEAT", chance = 1.0, min = 1, max = 2 },
+		{ itemId = "FEATHER", chance = 0.8, min = 1, max = 3 },
 	},
 	["COMPY"] = {
 		{ itemId = "MEAT", chance = 0.8, min = 1, max = 1 },
-		{ itemId = "LEATHER", chance = 0.3, min = 1, max = 1 },
+		{ itemId = "SMALL_BONE", chance = 0.6, min = 1, max = 2 },
+		{ itemId = "LEATHER", chance = 0.2, min = 1, max = 1 },
 	},
 	["PARASAUR"] = {
 		{ itemId = "MEAT", chance = 1.0, min = 3, max = 6 },

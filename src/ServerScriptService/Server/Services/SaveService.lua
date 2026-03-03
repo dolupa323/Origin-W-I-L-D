@@ -85,6 +85,13 @@ local function _getDefaultPlayerSave()
 				[Enums.StatId.ATTACK] = 0,
 			}
 		},
+		-- 장착 중인 아이템 (Head, Body, Feet, Hand)
+		equipment = {
+			Head = nil,
+			Body = nil,
+			Feet = nil,
+			Hand = nil,
+		},
 		-- 스냅샷 (롤백용)
 		snapshots = {},
 	}
