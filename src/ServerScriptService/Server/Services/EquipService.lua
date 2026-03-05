@@ -83,23 +83,35 @@ function EquipService.equipItem(player: Player, itemId: string?)
 			print(string.format("[EquipService] ItemModels contents: [%s]", table.concat(allNames, ", ")))
 		end
 
+		local assets = ReplicatedStorage:FindFirstChild("Assets")
+		local searchRoot = (assets and (assets:FindFirstChild("ItemModels") or assets:FindFirstChild("Models") or assets)) or ReplicatedStorage
+		
 		local template = nil
-		if modelsFolder then
-			-- [최적화] 모든 투척용 볼라 아이템은 손에 "POUCH" 모델을 들고 있는 것으로 통일
-			if itemId:match("_BOLA$") then
-				template = modelsFolder:FindFirstChild("POUCH") or modelsFolder:FindFirstChild("Pouch")
-			end
-			
-			-- 기본 탐색
+		-- [설계] 볼라(BOLA) 아이템만 손에 들었을 때 "POUCH" 모델로 표시
+		local isBola = itemId:upper():match("BOLA$") or (itemData.optimalTool == "BOLA")
+		
+		if isBola then
+			template = searchRoot:FindFirstChild("POUCH") or searchRoot:FindFirstChild("Pouch")
+			-- 못 찾으면 하위 폴더까지 깊이 탐색
 			if not template then
-				template = modelsFolder:FindFirstChild(itemId)
-				if not template then
-					local searchTarget = itemId:lower():gsub("_", "")
-					for _, child in ipairs(modelsFolder:GetChildren()) do
-						if child.Name:lower():gsub("_", "") == searchTarget then 
-							template = child 
-							break 
-						end
+				for _, child in ipairs(searchRoot:GetDescendants()) do
+					if child.Name:upper() == "POUCH" then
+						template = child
+						break
+					end
+				end
+			end
+		end
+		
+		-- 기본 탐색 (POUCH가 아니거나 못 찾은 경우 각 아이템 고유 모델 사용)
+		if not template then
+			template = searchRoot:FindFirstChild(itemId)
+			if not template then
+				local searchTarget = itemId:lower():gsub("_", "")
+				for _, child in ipairs(searchRoot:GetChildren()) do
+					if child.Name:lower():gsub("_", "") == searchTarget then 
+						template = child 
+						break 
 					end
 				end
 			end
@@ -288,6 +300,83 @@ function EquipService.equipItem(player: Player, itemId: string?)
 	
 	if not success then warn("[EquipService] Critical Error:", err) end
 	isEquipping[player.UserId] = nil
+end
+
+local function _formatAssetId(id)
+	if not id or id == "" or id == 0 then return "" end
+	if type(id) == "number" or (type(id) == "string" and not id:find("://")) then
+		return "rbxassetid://" .. tostring(id)
+	end
+	return id
+end
+
+--- 캐릭터 외형 업데이트 (방어구 시각화)
+function EquipService.updateAppearance(player: Player)
+	local char = player.Character
+	local hum = char and char:FindFirstChildWhichIsA("Humanoid")
+	if not char or not hum then return end
+	
+	-- 순환 참조 방지를 위해 지연 로딩
+	local InventoryService = require(game:GetService("ServerScriptService").Server.Services.InventoryService)
+	local equip = InventoryService.getEquipment(player.UserId)
+	if not equip then return end
+	
+	-- 0. 기존 장착 모델(Accessory) 제거 (ARMOR 태그가 붙은 것들)
+	for _, acc in ipairs(char:GetChildren()) do
+		if acc:IsA("Accessory") and acc:GetAttribute("IsArmor") then
+			acc:Destroy()
+		end
+	end
+	
+	local shirt = char:FindFirstChildOfClass("Shirt") or Instance.new("Shirt", char)
+	local pants = char:FindFirstChildOfClass("Pants") or Instance.new("Pants", char)
+	
+	-- 1. 상의/하의/한벌옷 텍스처 적용
+	local suitItem = equip.SUIT and DataService.getItem(equip.SUIT.itemId)
+	local topItem = equip.TOP and DataService.getItem(equip.TOP.itemId)
+	local botItem = equip.BOTTOM and DataService.getItem(equip.BOTTOM.itemId)
+	
+	if suitItem then
+		shirt.ShirtTemplate = _formatAssetId(suitItem.shirtId)
+		pants.PantsTemplate = _formatAssetId(suitItem.pantsId)
+		-- 3D 모델이 있다면 적용
+		if suitItem.modelId then
+			EquipService._applyArmorModel(char, suitItem.modelId)
+		end
+	else
+		shirt.ShirtTemplate = _formatAssetId(topItem and topItem.shirtId)
+		pants.PantsTemplate = _formatAssetId(botItem and botItem.pantsId)
+		
+		if topItem and topItem.modelId then
+			EquipService._applyArmorModel(char, topItem.modelId)
+		end
+		if botItem and botItem.modelId then
+			EquipService._applyArmorModel(char, botItem.modelId)
+		end
+	end
+	
+	-- 2. 투구(HEAD) 적용
+	local headItem = equip.HEAD and DataService.getItem(equip.HEAD.itemId)
+	if headItem and headItem.modelId then
+		EquipService._applyArmorModel(char, headItem.modelId)
+	end
+end
+
+--- 3D 아머 모델 적용 내부 함수 (Accessory 방식)
+function EquipService._applyArmorModel(char, modelId)
+	local assets = ReplicatedStorage:FindFirstChild("Assets")
+	local armorFolder = assets and (assets:FindFirstChild("ArmorModels") or assets:FindFirstChild("Models"))
+	if not armorFolder then return end
+	
+	local template = armorFolder:FindFirstChild(modelId)
+	if template then
+		local acc = template:Clone()
+		if acc:IsA("Accessory") then
+			acc:SetAttribute("IsArmor", true)
+			local hum = char:FindFirstChildOfClass("Humanoid")
+			if hum then hum:AddAccessory(acc) end
+		end
+	end
 end
 
 return EquipService

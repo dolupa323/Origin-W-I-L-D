@@ -117,69 +117,135 @@ local function playAttackAnimation(isHit: boolean)
 	end)
 end
 
---- 공격 대상 찾기 (마우스 위치 + 구체 영역 체크)
-local function findTarget(): (Instance?, Vector3?, string?, string?)
-	-- 1. 마우스 위치 타겟 확인
-	local target = InputManager.getMouseTarget()
-	local creaturesFolder = workspace:FindFirstChild("Creatures")
-	local nodesFolder = workspace:FindFirstChild("ResourceNodes")
+--- 카메라 쉐이크 (타격감)
+local function playHitShake(intensity)
+	local cam = workspace.CurrentCamera
+	if not cam then return end
 	
-	local function checkModel(part)
-		if not part then return nil end
-		local model = part:FindFirstAncestorOfClass("Model")
-		if not model then return nil end
-		
-		if creaturesFolder and model:IsDescendantOf(creaturesFolder) then
-			local hrp = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
-			local instanceId = model:GetAttribute("InstanceId")
-			if hrp and instanceId then
-				return model, hrp.Position, instanceId, "creature"
-			end
-		elseif nodesFolder and model:IsDescendantOf(nodesFolder) then
-			local nodeUID = model:GetAttribute("NodeUID")
-			local primary = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
-			if nodeUID and primary then
-				return model, primary.Position, nodeUID, "resource"
-			end
+	task.spawn(function()
+		local originalCF = cam.CFrame
+		for i = 1, 4 do
+			local offset = Vector3.new(
+				(math.random() - 0.5) * intensity,
+				(math.random() - 0.5) * intensity,
+				(math.random() - 0.5) * intensity
+			)
+			cam.CFrame = cam.CFrame * CFrame.new(offset)
+			task.wait(0.02)
 		end
-		return nil
+	end)
+end
+
+local function findTarget()
+	local creaturesFolder = workspace:FindFirstChild("ActiveCreatures") or workspace:FindFirstChild("Creatures")
+	local nodesFolder = workspace:FindFirstChild("ResourceNodes")
+
+	local function checkModel(part)
+		if not part then return nil, nil end
+		
+		local current = part
+		while current and current ~= workspace do
+			if current:IsA("Model") then
+				-- 자원 노드 체크
+				local nodeUID = current:GetAttribute("NodeUID")
+				if nodeUID then
+					return current, nodeUID, "resource"
+				end
+
+				-- 크리처 체크
+				local instanceId = current:GetAttribute("InstanceId")
+				if instanceId then
+					return current, instanceId, "creature"
+				end
+			end
+			current = current.Parent
+		end
+		
+		return nil, nil
 	end
 
-	-- 마우스 타겟 우선 확인
-	local mModel, mPos, mId, mType = checkModel(target)
-	if mModel then return mModel, mPos, mId, mType end
-	
-	-- 2. 플레이어 전방 구체 범위(Hitbox) 체크
 	local char = player.Character
-	if char and char.PrimaryPart then
-		local findRadius = Balance.COMBAT_HITBOX_SIZE or 8
-		local pos = char.PrimaryPart.Position + char.PrimaryPart.CFrame.LookVector * (findRadius * 0.6)
-		
-		local overlap = OverlapParams.new()
-		overlap.FilterType = Enum.RaycastFilterType.Include
-		overlap.FilterDescendantsInstances = {creaturesFolder, nodesFolder}
-		
-		local parts = workspace:GetPartBoundsInRadius(pos, findRadius, overlap)
-		local bestTarget, bestPos, bestId, bestType
-		local minDist = math.huge
-		
-		for _, p in ipairs(parts) do
-			local model, pPos, id, tType = checkModel(p)
-			if model then
-				local dist = (char.PrimaryPart.Position - pPos).Magnitude
-				if dist < minDist then
-					minDist = dist
-					bestTarget, bestPos, bestId, bestType = model, pPos, id, tType
+	if not char or not char.PrimaryPart then return nil end
+	
+	-- 도구별 사거리 결정
+	local toolType = getEquippedToolType()
+	local reach = Balance.REACH_BAREHAND or 10
+	if toolType == "SPEAR" then
+		reach = Balance.REACH_SPEAR or 16
+	elseif toolType == "AXE" or toolType == "PICKAXE" or toolType == "CLUB" then
+		reach = Balance.REACH_TOOL or 12
+	end
+
+	-- 1. 캐릭터 주변 엔티티 탐색 (Sphere)
+	local overlap = OverlapParams.new()
+	overlap.FilterType = Enum.RaycastFilterType.Include
+	local filterInstances = {}
+	if creaturesFolder then table.insert(filterInstances, creaturesFolder) end
+	if nodesFolder then table.insert(filterInstances, nodesFolder) end
+	overlap.FilterDescendantsInstances = filterInstances
+	
+	-- 판정 반경은 리치보다 넉넉하게 (각도/정밀 사거리 판정 전 단계)
+	local scanRadius = reach + 15
+	local parts = workspace:GetPartBoundsInRadius(char.PrimaryPart.Position, scanRadius, overlap)
+	local reachableTargets = {}
+
+	for _, p in ipairs(parts) do
+		local model, id, tType = checkModel(p)
+		if model then
+			-- [개선] 모든 파트를 검사하여 가장 가까운 지점을 찾음 (히트박스 전영역화)
+			local targetPos = p.Position
+			local toTarget = (targetPos - char.PrimaryPart.Position)
+			local dist = toTarget.Magnitude
+			
+			-- 현재 모델에 대해 더 가까운 파트가 있으면 갱신
+			if not reachableTargets[id] or dist < reachableTargets[id].dist then
+				-- Y축 무시한 방향 벡터 (평면 판정)
+				local toTargetFlat = Vector3.new(toTarget.X, 0, toTarget.Z).Unit
+				local lookFlat = Vector3.new(char.PrimaryPart.CFrame.LookVector.X, 0, char.PrimaryPart.CFrame.LookVector.Z).Unit
+				local dot = lookFlat:Dot(toTargetFlat)
+				local angle = math.deg(math.acos(math.clamp(dot, -1, 1)))
+				
+				-- 사거리 이내 & 정면 부근(75도)인 것들만 수집
+				if dist <= reach + 5 and angle <= (Balance.REACH_ANGLE or 75) then
+					reachableTargets[id] = {model=model, pos=targetPos, id=id, type=tType, dist=dist, angle=angle}
 				end
 			end
 		end
-		
-		if bestTarget then
-			return bestTarget, bestPos, bestId, bestType
+	end
+
+	-- 2. 타겟 우선순위 결정
+	-- [우선순위 1] 마우스가 가리키는 대상 (에임)
+	local mousePart = InputManager.getMouseTarget()
+	if mousePart then
+		local mModel, mId, mType = checkModel(mousePart)
+		if mId then
+			local mPos = mousePart.Position
+			local mDist = (mPos - char.PrimaryPart.Position).Magnitude
+			
+			-- 마우스로 직접 찍은 경우 정면 판정 완화 (히트박스 우선)
+			if mDist <= reach + 8 then
+				return mModel, mPos, mId, mType
+			end
 		end
 	end
+
+	-- [우선순위 2] 정면에서 가장 가깝거나 점수가 높은 대상
+	local bestTarget = nil
+	local minScore = math.huge
 	
-	return nil, nil, nil, nil
+	for id, data in pairs(reachableTargets) do
+		local score = data.dist * (1 + data.angle / 45)
+		if score < minScore then
+			minScore = score
+			bestTarget = data
+		end
+	end
+
+	if bestTarget then
+		return bestTarget.model, bestTarget.pos, bestTarget.id, bestTarget.type
+	end
+
+	return nil
 end
 
 local function getDistanceToTarget(targetPos: Vector3): number
@@ -249,16 +315,22 @@ function CombatController.attack()
 	if targetModel and targetPos and targetId then
 		local distance = getDistanceToTarget(targetPos)
 		
-		-- [개선] 대상 및 도구별 동적 사거리 계산
-		local maxRange = Balance.COMBAT_HITBOX_SIZE or 12
-		if targetType == "resource" then
-			maxRange = Balance.HARVEST_RANGE or 25
+		-- 도구별 사거리 결정 (서버와 싱크)
+		-- 도구별 사거리 결정 (findTarget과 동일하게)
+		local toolType = getEquippedToolType()
+		local reach = Balance.REACH_BAREHAND or 10
+		if toolType == "SPEAR" then
+			reach = Balance.REACH_SPEAR or 16
+		elseif toolType == "AXE" or toolType == "PICKAXE" or toolType == "CLUB" then
+			reach = Balance.REACH_TOOL or 12
+		end
+
+		-- 장착 도구 데이터에 의한 추가 보정
+		if itm and itm.range then
+			reach = math.max(reach, itm.range)
 		end
 		
-		-- 장착 도구 사거리 반영
-		if itm and itm.range then
-			maxRange = itm.range + 5 -- 서버의 여유분(+10)을 고려한 클라이언트 허용치
-		end
+		local maxRange = reach + 4 -- 서버 오차 보정용 여유분
 		
 		-- 최종 공격 범위 체크
 		if distance > maxRange then
@@ -300,18 +372,67 @@ function CombatController.attack()
 			
 			if conn then conn:Disconnect() end
 
+			-- [FX] 타격 피드백 (카메라 쉐이크 & 대상 흔들림)
+			playHitShake(0.5) -- 더욱 강한 쉐이크 (기존 0.3)
+			local char = player.Character
+			if targetModel and char and char.PrimaryPart then
+				local targetPos = targetModel:GetPivot().Position
+				local charPos = char.PrimaryPart.Position
+				local origCFrame = targetModel:GetPivot()
+				
+				task.spawn(function()
+					local shakeDir = (targetPos - charPos).Unit
+					-- 2단계 흔들기로 반동 연출 (더욱 큰 피드백)
+					targetModel:PivotTo(origCFrame * CFrame.new(shakeDir * 0.6))
+					task.wait(0.04)
+					targetModel:PivotTo(origCFrame * CFrame.new(-shakeDir * 0.2))
+					task.wait(0.04)
+					targetModel:PivotTo(origCFrame)
+				end)
+			end
+
 			if targetType == "resource" then
+				-- [개선] 노드 정보 미리 가져오기 (메시지용)
+				local nodeType = targetModel:GetAttribute("NodeType")
+				
 				-- 자원 채집 처리
-				NetClient.Request("Harvest.Hit.Request", {
+				local ok, errorOrData = NetClient.Request("Harvest.Hit.Request", {
 					nodeUID = targetId,
 					toolSlot = UIManager.getSelectedSlot(),
 				})
+				
+				if not ok then
+					local err = errorOrData
+					if err == Enums.ErrorCode.NO_TOOL or err == Enums.ErrorCode.WRONG_TOOL then
+						if nodeType == "TREE" then
+							UIManager.notify("나무를 베려면 도끼를 장착해야 합니다!", Color3.fromRGB(255, 150, 50))
+						elseif nodeType == "ROCK" or nodeType == "ORE" then
+							UIManager.notify("채광을 하려면 곡괭이를 장착해야 합니다!", Color3.fromRGB(255, 150, 50))
+						else
+							UIManager.notify("이 작업을 하기에 적합한 도구가 아닙니다.", Color3.fromRGB(255, 100, 100))
+						end
+					elseif err == Enums.ErrorCode.INVALID_STATE then
+						UIManager.notify("도구가 파손되어 기능을 상실했습니다!", Color3.fromRGB(255, 50, 50))
+					elseif err == Enums.ErrorCode.OUT_OF_RANGE then
+						UIManager.notify("대상과 너무 멉니다.", Color3.fromRGB(255, 100, 100))
+					elseif err == Enums.ErrorCode.COOLDOWN then
+						-- 쿨다운은 조용히 무시 (혹은 연출)
+					else
+						UIManager.notify("채집할 수 없는 상태입니다: " .. tostring(err), Color3.fromRGB(255, 100, 100))
+					end
+				end
 			else
 				-- 크리처 공격 처리
-				NetClient.Request("Combat.Hit.Request", {
-					targetInstanceId = targetId,
+				local ok, errorOrData = NetClient.Request("Combat.Hit.Request", {
+					targetId = targetId,
 					toolSlot = UIManager.getSelectedSlot(),
 				})
+				
+				if not ok then
+					if errorOrData == Enums.ErrorCode.INVALID_STATE then
+						UIManager.notify("무기가 파손되어 공격할 수 없습니다!", Color3.fromRGB(255, 50, 50))
+					end
+				end
 			end
 		end)
 	else

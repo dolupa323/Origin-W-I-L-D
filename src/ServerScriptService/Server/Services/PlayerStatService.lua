@@ -245,20 +245,36 @@ function PlayerStatService.GetCalculatedStats(userId: number)
 	local stats = playerStats[userId].statInvested
 	
 	local defense = 0
+	local setBonuses = nil
 	-- 순환 참조 방지 위해 지연 로딩 (InventoryService)
 	local success, InventoryService = pcall(function() 
 		return require(game:GetService("ServerScriptService").Server.Services.InventoryService) 
 	end)
-	if success and InventoryService and InventoryService.getTotalDefense then
-		defense = InventoryService.getTotalDefense(userId)
+	if success and InventoryService then
+		if InventoryService.getTotalDefense then
+			defense = InventoryService.getTotalDefense(userId)
+		end
+		if InventoryService.getArmorSetBonuses then
+			setBonuses = InventoryService.getArmorSetBonuses(userId)
+		end
+	end
+	
+	local finalHp = 100 + ((stats[Enums.StatId.MAX_HEALTH] or 0) * Balance.HP_PER_POINT)
+	local finalSta = 100 + ((stats[Enums.StatId.MAX_STAMINA] or 0) * Balance.STAMINA_PER_POINT)
+	local finalAtk = 1.0 + ((stats[Enums.StatId.ATTACK] or 0) * Balance.ATTACK_PER_POINT)
+	
+	if setBonuses then
+		if setBonuses.maxHealth then finalHp = finalHp + setBonuses.maxHealth end
+		if setBonuses.maxStamina then finalSta = finalSta + setBonuses.maxStamina end
+		if setBonuses.attackMult then finalAtk = finalAtk + setBonuses.attackMult end
 	end
 	
 	return {
-		maxHealth = 100 + (stats[Enums.StatId.MAX_HEALTH] * Balance.HP_PER_POINT),
-		maxStamina = 100 + (stats[Enums.StatId.MAX_STAMINA] * Balance.STAMINA_PER_POINT),
-		maxWeight = 300 + (stats[Enums.StatId.WEIGHT] * Balance.WEIGHT_PER_POINT),
-		workSpeed = 100 + (stats[Enums.StatId.WORK_SPEED] * Balance.WORKSPEED_PER_POINT),
-		attackMult = 1.0 + (stats[Enums.StatId.ATTACK] * Balance.ATTACK_PER_POINT),
+		maxHealth = finalHp,
+		maxStamina = finalSta,
+		maxWeight = 300 + ((stats[Enums.StatId.WEIGHT] or 0) * Balance.WEIGHT_PER_POINT),
+		workSpeed = 100 + ((stats[Enums.StatId.WORK_SPEED] or 0) * Balance.WORKSPEED_PER_POINT),
+		attackMult = finalAtk,
 		defense = defense,
 	}
 end

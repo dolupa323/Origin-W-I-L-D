@@ -228,20 +228,27 @@ local function interactFacility(target: Instance)
 	local facilityData = DataHelper.GetData("FacilityData", facilityId)
 	if not facilityData then return end
 	
-	if facilityData.functionType == "CRAFTING" or facilityData.functionType == "COOKING" then
-		-- [제거] 작업대 개념 없음. 모든 제작은 인벤토리[I]에서 수행됩니다.
+	if facilityData.functionType == "CRAFTING" or facilityData.functionType == "CRAFTING_T1" or facilityData.functionType == "CRAFTING_T2" or facilityData.functionType == "CRAFTING_T3" then
+		-- 일반 제작대는 인벤토리 제작 탭 안내
 		if UIManager then
-			UIManager.notify("제작 및 요리는 인벤토리[I]의 제작 탭에서 가능합니다.", Color3.fromRGB(255, 210, 80))
+			UIManager.notify("도구 및 장비 제작은 인벤토리[I]의 제작 탭에서 가능합니다.", Color3.fromRGB(255, 210, 80))
 		end
+	elseif facilityData.functionType == "COOKING" or facilityData.functionType:find("SMELTING") then
+		-- 요리, 제련용 시설 UI 열기
+		local FacilityController = require(Client.Controllers.FacilityController)
+		FacilityController.openFacility(structureId)
 	elseif facilityData.functionType == "STORAGE" then
-		-- 보관함 UI 열기 (별도 구현 필요)
-		print("[InteractController] Storage UI not implemented yet")
+		-- 보관함 UI 열기
+		local StorageController = require(Client.Controllers.StorageController)
+		StorageController.openStorage(structureId)
 	elseif facilityData.functionType == "RESPAWN" then
 		-- 리스폰 위치 설정
 		print("[InteractController] Respawn point set")
 		UIManager.notify("부활 지점이 설정되었습니다.")
 	end
 end
+
+
 
 --========================================
 -- Public API
@@ -287,14 +294,23 @@ local function onUpdate()
 				elseif targetType == "drop" then
 					promptText = promptText .. "줍기"
 					
-					-- 만약 이름이 구별 기호(Drop_)로 남아있다면 한국어로 아이템이라고 처리
-					local dropId = target:GetAttribute("DropId")
-					if dropId then
-						local itemData = DataHelper.GetData("ItemData", dropId)
-						if itemData then targetName = itemData.name end
+					-- ItemId 속성을 사용하여 실제 아이템 이름 가져오기
+					local itemId = target:GetAttribute("ItemId")
+					if itemId then
+						local itemData = DataHelper.GetData("ItemData", itemId)
+						if itemData then 
+							targetName = itemData.name 
+						end
 					end
 					
-					if type(targetName) == "string" and (targetName:lower():find("^drop_") or targetName:find("Drop")) then
+					-- 여전히 이름이 적절하지 않으면 (id 형태거나 MeshPart 등) "아이템"으로 처리
+					if type(targetName) == "string" and (
+						targetName:lower():find("^drop_") or 
+						targetName:find("_") or -- GUID나 ID 형태 체크
+						targetName == "MeshPart" or 
+						targetName == "Part" or
+						targetName == "Handle"
+					) then
 						targetName = "아이템"
 					end
 				elseif targetType == "npc" then

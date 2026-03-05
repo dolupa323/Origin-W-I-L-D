@@ -1,9 +1,10 @@
 -- StorageController.lua
 -- 클라이언트 창고 컨트롤러
--- 서버 Storage 이벤트 수신 및 로컬 캐시 관리
+-- 서버 StorageService와 통신 및 UI 상태 관리
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local NetClient = require(script.Parent.Parent.NetClient)
+local InventoryController = require(script.Parent.Parent.Controllers.InventoryController)
 
 local StorageController = {}
 
@@ -11,79 +12,60 @@ local StorageController = {}
 -- Private State
 --========================================
 local initialized = false
-
--- 열려있는 창고 캐시 [storageId] = { slots = {...} }
-local openStorages = {}
-
---========================================
--- Public API: Cache Access
---========================================
-
-function StorageController.getOpenStorages()
-	return openStorages
-end
-
-function StorageController.getStorage(storageId: string)
-	return openStorages[storageId]
-end
-
-function StorageController.isStorageOpen(storageId: string): boolean
-	return openStorages[storageId] ~= nil
-end
+local currentStorageId = nil
+local storageData = nil -- { storageId, slots, maxSlots, maxStack }
+local lastOpenTime = 0
 
 --========================================
--- Public API: Storage Operations
+-- Public API
 --========================================
 
---- 창고 열기 요청
-function StorageController.open(storageId: string): (boolean, any)
-	local ok, result = NetClient.Request("Storage.Open.Request", { storageId = storageId })
+function StorageController.openStorage(storageId: string)
+	if currentStorageId == storageId and (tick() - lastOpenTime < 0.5) then return end
 	
-	if ok and result and result.success then
-		-- 로컬 캐시에 저장
-		local data = result.data
-		openStorages[storageId] = {
-			slots = {},
-			maxSlots = data.maxSlots,
-			maxStack = data.maxStack,
-		}
-		
-		-- 슬롯 데이터 채우기
-		for _, slotData in ipairs(data.slots) do
-			openStorages[storageId].slots[slotData.slot] = {
-				itemId = slotData.itemId,
-				count = slotData.count,
-			}
-		end
-		
-		return true, data
-	end
-	
-	return false, result
-end
-
---- 창고 닫기
-function StorageController.close(storageId: string): (boolean, any)
-	local ok, result = NetClient.Request("Storage.Close.Request", { storageId = storageId })
-	
-	-- 로컬 캐시에서 제거
-	openStorages[storageId] = nil
-	
-	return ok, result
-end
-
---- 아이템 이동 요청
-function StorageController.move(storageId: string, sourceType: string, sourceSlot: number, targetType: string, targetSlot: number, count: number?): (boolean, any)
-	local ok, result = NetClient.Request("Storage.Move.Request", {
-		storageId = storageId,
-		sourceType = sourceType,
-		sourceSlot = sourceSlot,
-		targetType = targetType,
-		targetSlot = targetSlot,
-		count = count,
+	local success, data = NetClient.Request("Storage.Open.Request", {
+		storageId = storageId
 	})
 	
-	return ok, result
+	if success and data then
+		currentStorageId = storageId
+		storageData = data
+		lastOpenTime = tick()
+		
+		-- UIManager를 통해 UI 표시
+		local UIManager = require(script.Parent.Parent.UIManager)
+		UIManager.openStorage(currentStorageId, storageData)
+	else
+		warn("[StorageController] Failed to open storage:", storageId, data)
+	end
+end
+
+function StorageController.closeStorage()
+	if not currentStorageId then return end
+	
+	NetClient.Request("Storage.Close.Request", {
+		storageId = currentStorageId
+	})
+	
+	currentStorageId = nil
+	storageData = nil
+end
+
+--- 아이템 이동 요청 (인벤토리 <-> 창고)
+--- @param slot 이동할 슬롯 번호
+--- @param fromType "player" | "storage"
+function StorageController.moveItem(slot: number, fromType: string)
+	if not currentStorageId then return end
+	
+	local targetType = (fromType == "player") and "storage" or "player"
+	
+	NetClient.Request("Storage.Move.Request", {
+		storageId = currentStorageId,
+		sourceType = fromType,
+		sourceSlot = slot,
+		targetType = targetType,
+		targetSlot = 0, -- 0이면 자동 빈 슬롯 찾기 (서버 InventoryService.MoveInternal 지원)
+	})
 end
 
 --========================================
@@ -91,28 +73,44 @@ end
 --========================================
 
 local function onStorageChanged(data)
-	if not data or not data.storageId or not data.changes then return end
+	if not currentStorageId or data.storageId ~= currentStorageId then return end
 	
-	local storageId = data.storageId
-	local storage = openStorages[storageId]
-	
-	-- 열려있는 창고만 업데이트
-	if storage then
+	-- 로컬 데이터 업데이트
+	if data.changes then
 		for _, change in ipairs(data.changes) do
-			local slot = change.slot
 			if change.empty then
-				storage.slots[slot] = nil
+				-- 슬롯 제거
+				for i, si in ipairs(storageData.slots) do
+					if si.slot == change.slot then
+						table.remove(storageData.slots, i)
+						break
+					end
+				end
 			else
-				storage.slots[slot] = {
-					itemId = change.itemId,
-					count = change.count,
-				}
+				-- 슬롯 업데이트 또는 추가
+				local found = false
+				for i, si in ipairs(storageData.slots) do
+					if si.slot == change.slot then
+						si.itemId = change.itemId
+						si.count = change.count
+						found = true
+						break
+					end
+				end
+				if not found then
+					table.insert(storageData.slots, {
+						slot = change.slot,
+						itemId = change.itemId,
+						count = change.count
+					})
+				end
 			end
 		end
 	end
 	
-	-- 디버그 로그 (필요시 활성화)
-	-- print(string.format("[StorageController] Changed: %s, %d slots", storageId, #data.changes))
+	-- UI 리프레시
+	local UIManager = require(script.Parent.Parent.UIManager)
+	UIManager.refreshStorage()
 end
 
 --========================================
@@ -120,16 +118,12 @@ end
 --========================================
 
 function StorageController.Init()
-	if initialized then
-		warn("[StorageController] Already initialized")
-		return
-	end
+	if initialized then return end
 	
-	-- 이벤트 리스너 등록
 	NetClient.On("Storage.Changed", onStorageChanged)
 	
 	initialized = true
-	print("[StorageController] Initialized - listening for Storage events")
+	print("[StorageController] Initialized")
 end
 
 return StorageController

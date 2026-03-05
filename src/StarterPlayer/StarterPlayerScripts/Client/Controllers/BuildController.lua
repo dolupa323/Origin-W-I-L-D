@@ -121,31 +121,112 @@ function BuildController.startPlacement(facilityId: string)
 		
 		local mousePos = UserInputService:GetMouseLocation()
 		local ray = workspace.CurrentCamera:ViewportPointToRay(mousePos.X, mousePos.Y)
-		local result = workspace:Raycast(ray.Origin, ray.Direction * 100, rayParams)
+		local result = workspace:Raycast(ray.Origin, ray.Direction * 150, rayParams) -- 사거리 소폭 상향
 		
 		local isPlaceable = false
+		local finalCF = nil
+		
 		if result then
 			local hitPos = result.Position
 			local hitNormal = result.Normal
+			local hitPart = result.Instance
 			
-			local finalRotation = CFrame.Angles(0, math.rad(currentRotation), 0)
+			-- 기본 위치 설정 (건축물이 아닌 지면에 설치 시)
+			local baseRotation = CFrame.Angles(0, math.rad(currentRotation), 0)
+			finalCF = CFrame.lookAt(hitPos, hitPos + baseRotation.LookVector, hitNormal)
 			
-			-- 기본적으로 hitNormal 방향으로 UpVector 설정 (지형을 따라감)
-			local lookAt = hitPos + finalRotation.LookVector
+			-- [Snapping 핵심 로직]
+			-- 1. 근처 시설물 검색
+			local facilitiesFolder = workspace:FindFirstChild("Facilities")
+			local snapFound = false
+			
+			if facilitiesFolder then
+				-- 마우스 위치 주변 구조물 검색
+				local overlap = OverlapParams.new()
+				overlap.FilterType = Enum.RaycastFilterType.Include
+				overlap.FilterDescendantsInstances = {facilitiesFolder}
+				
+				local nearby = workspace:GetPartBoundsInRadius(hitPos, 6, overlap)
+				
+				for _, part in ipairs(nearby) do
+					local structId = part:GetAttribute("StructureId") or (part.Parent and part.Parent:GetAttribute("StructureId"))
+					local fId = part:GetAttribute("FacilityId") or (part.Parent and part.Parent:GetAttribute("FacilityId"))
+					
+					if not fId then continue end
+					
+					-- 10x10x1 그리드 기준 스냅 (표준 사이즈 가정)
+					local targetCF = part.CFrame
+					local targetSize = part.Size
+					
+					-- (A) 토대 -> 토대 스냅 (옆으로 붙이기)
+					if currentFacilityId:find("FOUNDATION") and fId:find("FOUNDATION") then
+						local localPos = targetCF:PointToObjectSpace(hitPos)
+						local snappedLocalPos = Vector3.new(0, 0, 0)
+						
+						-- X축 또는 Z축 중 마우스가 더 치우친 쪽으로 스냅
+						if math.abs(localPos.X) > math.abs(localPos.Z) then
+							snappedLocalPos = Vector3.new(math.sign(localPos.X) * 10, 0, 0)
+						else
+							snappedLocalPos = Vector3.new(0, 0, math.sign(localPos.Z) * 10)
+						end
+						
+						finalCF = targetCF * CFrame.new(snappedLocalPos)
+						snapFound = true
+						break
+						
+					-- (B) 벽 -> 토대 스냅 (가장자리에 세우기)
+					elseif currentFacilityId:find("WALL") and fId:find("FOUNDATION") then
+						local localPos = targetCF:PointToObjectSpace(hitPos)
+						local snappedLocalPos = Vector3.new(0, 5, 0) -- 토대 위 5 스터드 (벽 높이 절반)
+						local wallRot = CFrame.Angles(0, 0, 0)
+						
+						if math.abs(localPos.X) > math.abs(localPos.Z) then
+							snappedLocalPos = Vector3.new(math.sign(localPos.X) * 5, 5, 0)
+							wallRot = CFrame.Angles(0, math.rad(90), 0)
+						else
+							snappedLocalPos = Vector3.new(0, 5, math.sign(localPos.Z) * 5)
+							wallRot = CFrame.Angles(0, 0, 0)
+						end
+						
+						finalCF = targetCF * CFrame.new(snappedLocalPos) * wallRot
+						snapFound = true
+						break
+						
+					-- (C) 지붕 -> 벽 스냅 (벽 위에 얹기)
+					elseif currentFacilityId:find("ROOF") and fId:find("WALL") then
+						local localPos = targetCF:PointToObjectSpace(hitPos)
+						-- 벽의 회전 방향을 알아내야 함
+						-- 벽은 높이가 10이므로 위쪽 스냅 (로컬 Y=5)
+						local snappedLocalPos = Vector3.new(0, 5, 5) -- 벽 중심에서 앞쪽으로 5
+						
+						finalCF = targetCF * CFrame.new(0, 5, 0) -- 일단 벽 위 정중앙
+						-- 마우스 방향에 따라 옆으로 확장 가능하지만 여기서는 수직 스냅만 우선
+						snapFound = true
+						break
+					end
+				end
+			end
+			
 			if currentGhost.PrimaryPart then
-				currentGhost:SetPrimaryPartCFrame(CFrame.lookAt(hitPos, lookAt, hitNormal))
+				currentGhost:SetPrimaryPartCFrame(finalCF)
 			end
 			
 			-- 건설 가능 조건 체크
 			local dist = (player.Character.PrimaryPart.Position - hitPos).Magnitude
-			isPlaceable = (dist <= 25) -- 25 스터드 이내
-			-- [FIX] NaN 방지: Dot 결과가 1.0000001 등이 될 수 있으므로 clamp(-1, 1) 필수
-			local dot = hitNormal:Dot(Vector3.new(0, 1, 0))
-			local slope = math.deg(math.acos(math.clamp(dot, -1, 1)))
-			if slope > 45 then isPlaceable = false end -- 너무 가파르면 불가
+			isPlaceable = (dist <= 35) -- 35 스터드 이내로 상향
+			
+			if not snapFound then
+				-- 스냅이 아닐 때는 경사도 체크
+				local dot = hitNormal:Dot(Vector3.new(0, 1, 0))
+				local slope = math.deg(math.acos(math.clamp(dot, -1, 1)))
+				if slope > 45 then isPlaceable = false end
+			else
+				isPlaceable = true -- 스냅 지점은 경사 무시
+			end
 		else
 			isPlaceable = false
 		end
+
 		
 		-- Ghost 색상 업데이트
 		local color = isPlaceable and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(255, 100, 100)

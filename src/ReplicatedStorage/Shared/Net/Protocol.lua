@@ -64,7 +64,9 @@ Protocol.Commands = {
 	-- Facility 명령어
 	["Facility.GetInfo.Request"] = true,       -- 시설 정보 조회 (Lazy Update 트리거)
 	["Facility.AddFuel.Request"] = true,       -- 연료 투입
+	["Facility.RemoveFuel.Request"] = true,    -- 연료 회수
 	["Facility.AddInput.Request"] = true,      -- 재료 투입 (Input 슬롯)
+	["Facility.RemoveInput.Request"] = true,   -- 재료 회수
 	["Facility.CollectOutput.Request"] = true, -- 산출물 수거 (Output 슬롯)
 	["Facility.AssignPal.Request"] = true,     -- 팰 작업 배치 (Phase 5-5)
 	["Facility.UnassignPal.Request"] = true,   -- 팰 작업 해제 (Phase 5-5)

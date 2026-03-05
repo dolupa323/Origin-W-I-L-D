@@ -1,5 +1,6 @@
 -- BuildUI.lua
--- 듀랑고 스타일 건축 UI (별도 창)
+-- 듀랑고 스타일 건축 설계도 UI 리팩토링
+-- 기술 연구 및 제작 UI와 통일된 디자인 언어 적용
 
 local Theme = require(script.Parent.UITheme)
 local Utils = require(script.Parent.UIUtils)
@@ -10,13 +11,21 @@ local BuildUI = {}
 BuildUI.Refs = {
 	Frame = nil,
 	Grid = nil,
-	Preview = nil,
+	DetailFrame = nil,
+	CategoryBtns = {},
+	Detail = {
+		Name = nil,
+		Icon = nil,
+		Desc = nil,
+		Mats = nil,
+		Btn = nil,
+	}
 }
 
 function BuildUI.Init(parent, UIManager, isMobile)
 	local isSmall = isMobile
 	
-	-- Main Container (Full screen overlay)
+	-- 1. Full screen overlay
 	BuildUI.Refs.Frame = Utils.mkFrame({
 		name = "BuildMenu",
 		size = UDim2.new(1, 0, 1, 0),
@@ -26,47 +35,56 @@ function BuildUI.Init(parent, UIManager, isMobile)
 		parent = parent
 	})
 	
-	-- Main Window
+	-- 2. Main Window (Translucent Concept)
 	local main = Utils.mkWindow({
 		name = "BuildWindow",
-		size = UDim2.new(isSmall and 0.98 or 0.9, 0, isSmall and 0.92 or 0.85, 0),
-		maxSize = Vector2.new(1200, 800),
+		size = UDim2.new(isSmall and 1 or 0.7, 0, isSmall and 1 or 0.85, 0),
+		maxSize = Vector2.new(950, 850),
 		pos = UDim2.new(0.5, 0, 0.5, 0),
 		anchor = Vector2.new(0.5, 0.5),
-		bg = C.BG_PANEL,
-		bgT = Theme.Transp.PANEL,
+		bg = Color3.fromRGB(15, 15, 18),
+		bgT = 0.5, -- 투명 컨셉 유지
 		r = 0,
-		stroke = 2,
-		strokeC = C.BORDER_DIM,
+		stroke = 1,
+		strokeC = Color3.fromRGB(60, 60, 60),
 		parent = BuildUI.Refs.Frame
-		-- ratio removed: Responsive layout
 	})
 	
 	-- [Header]
-	local header = Utils.mkFrame({name="Header", size=UDim2.new(1,0,0,45), bgT=1, parent=main})
-	Utils.mkLabel({text="건축 설계도", pos=UDim2.new(0, 15, 0, 0), ts=24, font=F.TITLE, color=C.GOLD_SEL, ax=Enum.TextXAlignment.Left, parent=header})
-	Utils.mkBtn({text="X", size=UDim2.new(0, 30, 0, 30), pos=UDim2.new(1, -15, 0, 7), anchor=Vector2.new(1, 0), bgT=1, ts=26, color=C.WHITE, fn=function() UIManager.closeBuild() end, parent=main})
+	local header = Utils.mkFrame({name="Header", size=UDim2.new(1,0,0,50), bgT=1, parent=main})
+	Utils.mkLabel({
+		text="건축 설계도", pos=UDim2.new(0, 20, 0.5, 0), anchor=Vector2.new(0, 0.5), 
+		ts=24, font=F.TITLE, color=C.GOLD, ax=Enum.TextXAlignment.Left, parent=header
+	})
 	
+	-- Close Button
+	Utils.mkBtn({
+		text="X", size=UDim2.new(0, 40, 0, 40), pos=UDim2.new(1, -5, 0, 5), anchor=Vector2.new(1, 0), 
+		bgT=1, ts=24, color=C.WHITE, 
+		fn=function() UIManager.closeBuild() end, 
+		parent=main
+	})
+
 	-- [Content Area]
-	local content = Utils.mkFrame({name="Content", size=UDim2.new(1, -20, 1, -55), pos=UDim2.new(0, 10, 0, 45), bgT=1, parent=main})
+	local content = Utils.mkFrame({name="Content", size=UDim2.new(1, -20, 1, -60), pos=UDim2.new(0, 10, 0, 50), bgT=1, parent=main})
 	
-	-- Left Sidebar: Categories
-	local sidebar = Utils.mkFrame({name="Sidebar", size=UDim2.new(0.2, -10, 1, 0), bg=C.BG_PANEL_L, bgT=0.5, parent=content})
-	local sList = Instance.new("UIListLayout"); sList.Padding=UDim.new(0, 5); sList.Parent=sidebar
-	local sPad = Instance.new("UIPadding"); sPad.PaddingTop=UDim.new(0, 5); sPad.PaddingLeft=UDim.new(0, 5); sPad.PaddingRight=UDim.new(0, 5); sPad.Parent=sidebar
+	-- 3. Left Sidebar (Categories)
+	local sidebarWidth = 120
+	local sidebar = Utils.mkFrame({name="Sidebar", size=UDim2.new(0, sidebarWidth, 1, 0), bgT=1, parent=content})
+	local sList = Instance.new("UIListLayout"); sList.Padding=UDim.new(0, 10); sList.Parent=sidebar
 	
 	local categories = {
-		{id="STRUCTURES", name="구조물", icon="rbxassetid://10452331908"},
-		{id="PRODUCTION", name="생산 시설", icon="rbxassetid://6031267325"},
-		{id="SURVIVAL", name="생존 시설", icon="rbxassetid://6034805332"},
+		{id="STRUCTURES", name="구조물"},
+		{id="PRODUCTION", name="생산 시설"},
+		{id="SURVIVAL", name="생존 시설"},
 	}
 	
-	BuildUI.Refs.CategoryBtns = {}
 	for _, cat in ipairs(categories) do
 		local btn = Utils.mkBtn({
 			text = cat.name,
-			size = UDim2.new(1, 0, 0, 40),
-			bg = Color3.fromRGB(50, 50, 50),
+			size = UDim2.new(1, 0, 0, 45),
+			bg = Color3.fromRGB(40, 40, 45),
+			bgT = 0.3,
 			ts = 16,
 			font = F.TITLE,
 			color = C.GRAY,
@@ -76,43 +94,70 @@ function BuildUI.Init(parent, UIManager, isMobile)
 		BuildUI.Refs.CategoryBtns[cat.id] = btn
 	end
 	
-	-- Center: Grid
-	local gridArea = Utils.mkFrame({name="GridArea", size=UDim2.new(0.5, -10, 1, 0), pos=UDim2.new(0.2, 0, 0, 0), bgT=1, parent=content})
+	-- 4. Right Side: Detail Panel (320px)
+	local detailSize = 320
+	local detail = Utils.mkFrame({
+		name="Detail", size=UDim2.new(0, detailSize, 1, -8),
+		pos=UDim2.new(1, -detailSize - 4, 0, 4),
+		bg=Color3.fromRGB(12,12,15), bgT=0.4, r=6, stroke=1, strokeC=Color3.fromRGB(60,60,60),
+		parent=content
+	})
+	BuildUI.Refs.DetailFrame = detail
+	
+	local dtHead = Utils.mkLabel({
+		text="설계도 상세", size=UDim2.new(1,0,0,40),
+		bg=Color3.fromRGB(30,30,30), bgT=0.2, color=C.GOLD, ts=16, font=F.TITLE,
+		parent=detail
+	})
+	
+	BuildUI.Refs.Detail.Name = Utils.mkLabel({
+		text="시설을 선택하세요", size=UDim2.new(1,-30,0,40), pos=UDim2.new(0,15,0,50),
+		color=C.WHITE, ts=22, font=F.TITLE, ax=Enum.TextXAlignment.Left, parent=detail
+	})
+	
+	BuildUI.Refs.Detail.Icon = Instance.new("ImageLabel")
+	BuildUI.Refs.Detail.Icon.Size = UDim2.new(0, 90, 0, 90); BuildUI.Refs.Detail.Icon.Position = UDim2.new(0,15,0,95)
+	BuildUI.Refs.Detail.Icon.BackgroundTransparency = 1; BuildUI.Refs.Detail.Icon.Visible = false; BuildUI.Refs.Detail.Icon.Parent = detail
+	
+	BuildUI.Refs.Detail.Desc = Utils.mkLabel({
+		text="", size=UDim2.new(1,-120,0,100), pos=UDim2.new(0,115,0,95),
+		color=Color3.fromRGB(200,200,200), ts=16, wrap=true,
+		ax=Enum.TextXAlignment.Left, ay=Enum.TextYAlignment.Top, parent=detail
+	})
+	
+	BuildUI.Refs.Detail.Mats = Utils.mkLabel({
+		text="", size=UDim2.new(1,-30,1,-310), pos=UDim2.new(0,15,0,240),
+		ts=16, color=C.GOLD, ax=Enum.TextXAlignment.Left, ay=Enum.TextYAlignment.Top, wrap=true, rich=true, parent=detail
+	})
+	
+	local buildBtn = Utils.mkBtn({
+		text="건설 하기", size=UDim2.new(1,-30,0,50), pos=UDim2.new(0.5,0,1,-15), anchor=Vector2.new(0.5,1),
+		bg=C.GOLD, r=5, ts=20, font=F.TITLE, color=Color3.fromRGB(20,20,20), vis=false, parent=detail
+	})
+	BuildUI.Refs.Detail.Btn = buildBtn
+	buildBtn.MouseButton1Click:Connect(function() UIManager._doStartBuild() end)
+
+	-- 5. Center: Grid (The scrollable part)
+	local gridArea = Utils.mkFrame({
+		name="GridArea", 
+		size=UDim2.new(1, -sidebarWidth - detailSize - 40, 1, 0), 
+		pos=UDim2.new(0, sidebarWidth + 15, 0, 0), 
+		bgT=1, parent=content
+	})
+	
 	local scroll = Instance.new("ScrollingFrame")
-	scroll.Size = UDim2.new(1,0,1,0); scroll.BackgroundTransparency=1; scroll.BorderSizePixel=0; scroll.ScrollBarThickness=2; scroll.AutomaticCanvasSize=Enum.AutomaticSize.Y
+	scroll.Size = UDim2.new(1,0,1,0); scroll.BackgroundTransparency=1; scroll.BorderSizePixel=0; scroll.ScrollBarThickness=4
+	scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	scroll.Parent = gridArea
 	
 	local grid = Instance.new("UIGridLayout")
-	grid.CellSize = UDim2.new(0, isSmall and 75 or 85, 0, isSmall and 75 or 85)
-	grid.CellPadding = UDim2.new(0, 8, 0, 8)
+	grid.CellSize = UDim2.new(0, 85, 0, 85)
+	grid.CellPadding = UDim2.new(0, 10, 0, 10)
+	grid.SortOrder = Enum.SortOrder.LayoutOrder
 	grid.Parent = scroll
 	
-	local pad = Instance.new("UIPadding"); pad.PaddingTop=UDim.new(0, 10); pad.PaddingLeft=UDim.new(0, 10); pad.Parent=scroll
+	local pad = Instance.new("UIPadding"); pad.PaddingTop=UDim.new(0, 5); pad.PaddingLeft=UDim.new(0, 5); pad.Parent=scroll
 	BuildUI.Refs.Grid = scroll
-	
-	-- Right Sidebar: Detail
-	local detail = Utils.mkFrame({name="Detail", size=UDim2.new(0.3, 0, 1, 0), pos=UDim2.new(1, 0, 0, 0), anchor=Vector2.new(1, 0), bg=C.BG_PANEL_L, bgT=0.3, stroke=1, parent=content})
-	BuildUI.Refs.DetailFrame = detail
-	
-	local dBody = Utils.mkFrame({size=UDim2.new(1,-20,1,-100), pos=UDim2.new(0,10,0,10), bgT=1, parent=detail})
-	local dList = Instance.new("UIListLayout"); dList.Padding=UDim.new(0, 10); dList.HorizontalAlignment=Enum.HorizontalAlignment.Center; dList.Parent=dBody
-	
-	local dName = Utils.mkLabel({text="시설을 선택하세요", ts=20, font=F.TITLE, color=C.GOLD_SEL, parent=dBody})
-	local dIcon = Instance.new("ImageLabel"); dIcon.Size=UDim2.new(0, 100, 0, 100); dIcon.BackgroundTransparency=1; dIcon.Visible=false; dIcon.Parent=dBody
-	local dDesc = Utils.mkLabel({text="", size=UDim2.new(1,0,0,60), ts=14, color=C.WHITE, wrap=true, ay=Enum.TextYAlignment.Top, parent=dBody})
-	local dMats = Utils.mkLabel({text="", size=UDim2.new(1,0,0,100), ts=14, color=C.GOLD, ax=Enum.TextXAlignment.Left, wrap=true, ay=Enum.TextYAlignment.Top, parent=dBody})
-	
-	local buildBtn = Utils.mkBtn({text="건설 시작", size=UDim2.new(1,-20,0,50), pos=UDim2.new(0.5,0,1,-10), anchor=Vector2.new(0.5,1), bg=C.GOLD_SEL, ts=20, font=F.TITLE, color=C.BG_PANEL, vis=false, parent=detail})
-	
-	BuildUI.Refs.Detail = {
-		Name = dName,
-		Icon = dIcon,
-		Desc = dDesc,
-		Mats = dMats,
-		Btn = buildBtn
-	}
-	
-	buildBtn.MouseButton1Click:Connect(function() UIManager._doStartBuild() end)
 end
 
 function BuildUI.Refresh(facilityList, unlockedTech, catId, getIcon, UIManager)
@@ -124,62 +169,82 @@ function BuildUI.Refresh(facilityList, unlockedTech, catId, getIcon, UIManager)
 	
 	-- Category Highlight
 	for cid, btn in pairs(BuildUI.Refs.CategoryBtns) do
-		btn.TextColor3 = (cid == catId) and C.GOLD_SEL or C.GRAY
-		btn.BackgroundColor3 = (cid == catId) and Color3.fromRGB(80, 80, 80) or Color3.fromRGB(50, 50, 50)
+		local isSel = (cid == catId)
+		btn.TextColor3 = isSel and C.GOLD or C.GRAY
+		btn.BackgroundColor3 = isSel and Color3.fromRGB(55, 50, 40) or Color3.fromRGB(35, 35, 40)
+		-- 과한 효과 제거 (UIStroke 등)
+		local stroke = btn:FindFirstChildOfClass("UIStroke")
+		if stroke then stroke.Enabled = false end
 	end
 	
 	for _, data in ipairs(facilityList) do
 		local isUnlocked = UIManager.checkFacilityUnlocked(data.id)
 		
-		local uigrid = grid:FindFirstChildOfClass("UIGridLayout")
-		local cellSize = uigrid and uigrid.CellSize or UDim2.new(0, 85, 0, 85)
-		local slot = Utils.mkSlot({name=data.id, size=cellSize, parent=grid})
+		local slot = Utils.mkSlot({name=data.id, size=UDim2.new(0,85,0,85), parent=grid})
 		slot.icon.Image = getIcon(data.id)
 		slot.icon.Visible = true
 		
 		if not isUnlocked then
-			slot.icon.ImageColor3 = Color3.fromRGB(80, 80, 80)
-			slot.frame.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+			slot.icon.ImageColor3 = Color3.fromRGB(100, 100, 100)
+			slot.frame.BackgroundColor3 = Color3.fromRGB(35, 30, 30)
 			
 			local lock = Instance.new("ImageLabel")
-			lock.Size = UDim2.new(0.5, 0, 0.5, 0)
-			lock.Position = UDim2.new(0.5, 0, 0.5, 0)
-			lock.AnchorPoint = Vector2.new(0.5, 0.5)
-			lock.BackgroundTransparency = 1
-			lock.Image = "rbxassetid://6031084651"
-			lock.ImageTransparency = 0.5
-			lock.ZIndex = 10
-			lock.Parent = slot.frame
+			lock.Size = UDim2.new(0, 24, 0, 24); lock.Position = UDim2.new(1,0,0,0); lock.AnchorPoint = Vector2.new(1,0)
+			lock.BackgroundTransparency = 1; lock.Image = "rbxassetid://6031084651"; lock.ZIndex = 10; lock.Parent = slot.frame
+		else
+			slot.frame.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
 		end
 		
 		slot.click.MouseButton1Click:Connect(function() UIManager._onBuildItemClick(data) end)
 	end
 end
 
-function BuildUI.UpdateDetail(data, canAfford, getIcon, isUnlocked)
+function BuildUI.UpdateDetail(data, canAfford, getIcon, isUnlocked, playerItemCounts, DataHelper)
+	playerItemCounts = playerItemCounts or {}
 	local d = BuildUI.Refs.Detail
-	d.Name.Text = data.name
+	if not d.Name then return end
+	
+	d.Name.Text = data.name or data.id
 	d.Icon.Image = getIcon(data.id)
 	d.Icon.Visible = true
 	d.Icon.ImageColor3 = isUnlocked and Color3.new(1,1,1) or Color3.fromRGB(100,100,100)
 	d.Desc.Text = data.description or ""
 	
 	if not isUnlocked then
-		d.Mats.Text = "<font color='#ff5050'>[미해금] 기술 연구가 필요합니다.</font>"
+		d.Mats.Text = "<font color='#ff6464'>[미해금] 기술 연구가 필요합니다.</font>"
 		d.Btn.Visible = false
 		return
 	end
 	
-	local matStr = "필요 재료:\n"
+	local matStr = "[ 필요 재료 ]\n"
 	if data.requirements then
 		for _, req in ipairs(data.requirements) do
-			matStr = matStr .. string.format("- %s x%d\n", req.itemId, req.amount)
+			local have = playerItemCounts[req.itemId] or 0
+			local ok = have >= req.amount
+			local color = ok and "#8CDC64" or "#ff6464"
+			local prefix = ok and "✓ " or "✗ "
+			
+			local mName = req.itemId
+			if DataHelper then
+				local md = DataHelper.GetData("ItemData", mName)
+				if md then mName = md.name end
+			end
+			
+			matStr = matStr .. string.format("<font color='%s'>%s%s: %d / %d</font>\n", color, prefix, mName, have, req.amount)
 		end
 	end
 	d.Mats.Text = matStr
+	
 	d.Btn.Visible = true
-	d.Btn.BackgroundColor3 = canAfford and C.GOLD_SEL or C.GRAY
-	d.Btn.Text = "건축 시작"
+	if canAfford then
+		d.Btn.BackgroundColor3 = C.GOLD
+		d.Btn.TextColor3 = Color3.fromRGB(20,20,20)
+		d.Btn.AutoButtonColor = true
+	else
+		d.Btn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+		d.Btn.TextColor3 = Color3.fromRGB(120, 120, 120)
+		d.Btn.AutoButtonColor = false
+	end
 end
 
 return BuildUI

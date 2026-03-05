@@ -245,6 +245,57 @@ function InventoryService.getEquipment(userId: number)
 	return inv and inv.equipment or {}
 end
 
+function InventoryService.getTotalDefense(userId: number): number
+	local inv = playerInventories[userId]
+	if not inv or not inv.equipment then return 0 end
+	
+	local defense = 0
+	for _, item in pairs(inv.equipment) do
+		local data = DataService.getItem(item.itemId)
+		if data and data.defense then
+			defense = defense + data.defense
+		end
+	end
+	
+	-- 세트 효과 추가 방어력
+	local setBonuses = InventoryService.getArmorSetBonuses(userId)
+	if setBonuses and setBonuses.defense then
+		defense = defense + setBonuses.defense
+	end
+	
+	return defense
+end
+
+function InventoryService.getArmorSetBonuses(userId: number)
+	local inv = playerInventories[userId]
+	if not inv or not inv.equipment then return nil end
+	
+	local counts = {} -- { setID = count }
+	for _, item in pairs(inv.equipment) do
+		local data = DataService.getItem(item.itemId)
+		if data and data.armorSet then
+			counts[data.armorSet] = (counts[data.armorSet] or 0) + 1
+		end
+	end
+	
+	local ArmorSetData = require(ReplicatedStorage.Data.ArmorSetData)
+	local bestSet = nil
+	local bestBonus = nil
+	
+	for setId, count in pairs(counts) do
+		local setData = ArmorSetData[setId]
+		if setData and count >= #setData.items then
+			-- 세트 완성! (가장 최근에 확인된 세트 하나만 적용하거나 중첩 가능하게 할 수 있음)
+			-- 현재는 간단히 합산하거나 우선순위 높은 것 하나만 반환
+			bestSet = setId
+			bestBonus = setData.bonuses
+		end
+	end
+	
+	return bestBonus, bestSet
+end
+
+
 function InventoryService.equipItem(player: Player, inventorySlot: number, equipmentSlotName: string)
 	local userId = player.UserId
 	local inv = playerInventories[userId]
@@ -257,14 +308,25 @@ function InventoryService.equipItem(player: Player, inventorySlot: number, equip
 	if not itemData then return false, Enums.ErrorCode.INVALID_ITEM end
 	
 	-- 슬롯 타입 체크
-	if itemData.slot and itemData.slot:upper() ~= equipmentSlotName:upper() then
-		warn(string.format("[InventoryService] Slot mismatch: %s vs %s", itemData.slot, equipmentSlotName))
+	local targetSlot = equipmentSlotName:upper()
+	if itemData.slot and itemData.slot:upper() ~= targetSlot then
+		warn(string.format("[InventoryService] Slot mismatch: %s vs %s", itemData.slot, targetSlot))
 		return false, Enums.ErrorCode.BAD_REQUEST
 	end
 	
+	-- [Phase 11] 한벌옷(SUIT) vs 상하의(TOP/BOTTOM) 갈등 로직
+	if targetSlot == "SUIT" then
+		-- 한벌옷 장착 시 상의와 하의 해제
+		InventoryService.unequipItem(player, "TOP")
+		InventoryService.unequipItem(player, "BOTTOM")
+	elseif targetSlot == "TOP" or targetSlot == "BOTTOM" then
+		-- 상의 또는 하의 장착 시 한벌옷 해제
+		InventoryService.unequipItem(player, "SUIT")
+	end
+
 	-- 기존 장비와 교체
-	local oldEquip = inv.equipment[equipmentSlotName]
-	inv.equipment[equipmentSlotName] = {
+	local oldEquip = inv.equipment[targetSlot]
+	inv.equipment[targetSlot] = {
 		itemId = slotData.itemId,
 		durability = slotData.durability
 	}
@@ -289,9 +351,12 @@ function InventoryService.equipItem(player: Player, inventorySlot: number, equip
 		equipment = inv.equipment
 	})
 	
-	-- 장비 변경 통보 (EquipService 연동 - 도구/무기인 경우)
-	if equipmentSlotName == "Hand" and EquipService then
-		EquipService.equipItem(player, inv.equipment[equipmentSlotName].itemId)
+	-- 장비 변경 통보 (EquipService 연동 - 도구/무기거나 방어구 시각화 필요 시)
+	if EquipService then
+		EquipService.updateAppearance(player) -- 전체 외형 갱신 (상의/하의/슈트 포함)
+		if targetSlot == "HAND" then
+			EquipService.equipItem(player, inv.equipment[targetSlot].itemId)
+		end
 	end
 	
 	-- 스탯 재계산 (방어구 등)
@@ -327,8 +392,11 @@ function InventoryService.unequipItem(player: Player, equipmentSlotName: string)
 	})
 	
 	-- 장비 해제 통보
-	if equipmentSlotName == "Hand" and EquipService then
-		EquipService.equipItem(player, nil)
+	if EquipService then
+		EquipService.updateAppearance(player)
+		if equipmentSlotName == "HAND" then
+			EquipService.equipItem(player, nil)
+		end
 	end
 	
 	if PlayerStatService then
@@ -379,10 +447,11 @@ function InventoryService.getOrCreateInventory(userId: number): any
 	local inv = {
 		slots = savedInv or {},
 		equipment = savedEquip or {
-			Head = nil,
-			Body = nil,
-			Feet = nil,
-			Hand = nil,
+			HEAD = nil,
+			TOP = nil,
+			BOTTOM = nil,
+			SUIT = nil,
+			HAND = nil,
 		}
 	}
 	
@@ -643,10 +712,11 @@ end
 --========================================
 
 --- 슬롯 범위 검증 (커스텀 maxSlots)
-local function _validateSlotRangeCustom(slot: number, maxSlots: number): (boolean, string?)
+local function _validateSlotRangeCustom(slot: number, maxSlots: number, allowZero: boolean?): (boolean, string?)
 	if type(slot) ~= "number" then
 		return false, Enums.ErrorCode.INVALID_SLOT
 	end
+	if allowZero and slot == 0 then return true, nil end
 	if slot < 1 or slot > maxSlots or slot ~= math.floor(slot) then
 		return false, Enums.ErrorCode.INVALID_SLOT
 	end
@@ -679,17 +749,44 @@ function InventoryService.MoveInternal(
 	local ok, err = _validateSlotRangeCustom(sourceSlot, sourceMaxSlots)
 	if not ok then return false, err, nil end
 	
-	ok, err = _validateSlotRangeCustom(targetSlot, targetMaxSlots)
+	ok, err = _validateSlotRangeCustom(targetSlot, targetMaxSlots, true)
 	if not ok then return false, err, nil end
 	
+	-- 소물 아이템 정보 확인
+	ok, err = _validateHasItem(sourceContainer, sourceSlot)
+	if not ok then return false, err, nil end
+	
+	local sourceData = sourceContainer.slots[sourceSlot]
+
+	-- 타겟 슬롯 자동 선택 (targetSlot == 0)
+	if targetSlot == 0 then
+		-- 1. 같은 아이템 스택 가능 슬롯 찾기
+		for i = 1, targetMaxSlots do
+			local ts = targetContainer.slots[i]
+			if ts and ts.itemId == sourceData.itemId and ts.count < Balance.MAX_STACK then
+				targetSlot = i
+				break
+			end
+		end
+		-- 2. 빈 슬롯 찾기
+		if targetSlot == 0 then
+			for i = 1, targetMaxSlots do
+				if targetContainer.slots[i] == nil then
+					targetSlot = i
+					break
+				end
+			end
+		end
+		-- 여전히 0이면 공간 없음
+		if targetSlot == 0 then
+			return false, Enums.ErrorCode.INV_FULL, nil
+		end
+	end
+
 	-- 같은 컨테이너 + 같은 슬롯이면 무시
 	if sourceContainer == targetContainer and sourceSlot == targetSlot then
 		return true, nil, nil
 	end
-	
-	-- 소스에 아이템 있는지
-	ok, err = _validateHasItem(sourceContainer, sourceSlot)
-	if not ok then return false, err, nil end
 	
 	-- 수량 검증
 	ok, err = _validateCount(count)
@@ -762,7 +859,7 @@ end
 
 --- 아이템 추가 (빈 슬롯 또는 기존 스택에)
 --- 반환: 추가된 수량, 남은 수량
-function InventoryService.addItem(userId: number, itemId: string, count: number): (number, number)
+function InventoryService.addItem(userId: number, itemId: string, count: number, durability: number?): (number, number)
 	local inv = playerInventories[userId]
 	if not inv then
 		return 0, count
@@ -780,8 +877,8 @@ function InventoryService.addItem(userId: number, itemId: string, count: number)
 	local itemWeight = _getItemWeight(itemId)
 
 	-- 내구도 정보 조회 (새 스택 생성 시 사용)
-	local maxDurability = nil
-	if DataService then
+	local maxDurability = durability -- 전달받은 내구도 우선
+	if not maxDurability and DataService then
 		local itemData = DataService.getItem(itemId)
 		if itemData then maxDurability = itemData.durability end
 	end

@@ -41,10 +41,10 @@ Balance.SEA_LEVEL = 10              -- 해수면 높이 (이보다 낮으면 바
 --========================================
 -- 야생동물 / 크리처
 --========================================
-Balance.WILDLIFE_CAP = 300         -- 서버 전체 야생동물 최대 수
+Balance.WILDLIFE_CAP = 120         -- 서버 전체 야생동물 최대 수 (300 -> 120)
 Balance.CREATURE_COOLDOWN = 600    -- 크리처 리스폰 쿨다운 (초)
-Balance.INITIAL_CREATURE_COUNT = 80 -- 서버 시작 시 초기 스폰 크리처 수 (30->80)
-Balance.CREATURE_REPLENISH_INTERVAL = 45 -- 보충 스폰 간격 (초)
+Balance.INITIAL_CREATURE_COUNT = 40 -- 서버 시작 시 초기 스폰 크리처 수 (80 -> 40)
+Balance.CREATURE_REPLENISH_INTERVAL = 60 -- 보충 스폰 간격 (초) (45 -> 60)
 
 --========================================
 -- 자원 노드 (Resource Nodes)
@@ -95,12 +95,12 @@ Balance.TECH_POINTS_PER_LEVEL = 3      -- 레벨업당 기술 포인트 지급 (
 Balance.STAT_POINTS_PER_LEVEL = 3      -- 레벨업당 스탯 포인트 지급
 
 --========================================
--- XP 획득량 (Phase 6)
+-- XP 획득량 (Phase 6 - 개발용 폭발적 상향)
 --========================================
-Balance.XP_CREATURE_KILL = 25          -- 크리처 처치
-Balance.XP_CRAFT_ITEM = 5              -- 아이템 제작
-Balance.XP_CAPTURE_PAL = 50            -- 팰 포획 성공
-Balance.XP_HARVEST_RESOURCE = 2        -- 자원 채집
+Balance.XP_CREATURE_KILL = 200000        -- 크리처 처치 (10000 -> 200000)
+Balance.XP_CRAFT_ITEM = 50000          -- 아이템 제작 (2000 -> 50000)
+Balance.XP_CAPTURE_PAL = 500000         -- 팰 포획 성공 (20000 -> 500000)
+Balance.XP_HARVEST_RESOURCE = 1000000     -- 자원 채집 (100000 -> 1000000)
 
 --========================================
 -- 플레이어 스탯 보너스 (Phase 6)
@@ -137,9 +137,15 @@ Balance.DODGE_IFRAMES = 0.25           -- 무적 프레임 지속 시간 (초)
 -- 수확 및 공격 판정 (Phase 7)
 --========================================
 Balance.HARVEST_COOLDOWN = 0.4         -- 연속 타격 쿨다운 (0.5 -> 0.4 단축)
-Balance.HARVEST_RANGE = 25             -- 수확 가능 거리 (18 -> 25 확대)
-Balance.COMBAT_HITBOX_SIZE = 12        -- 맨손 공격 판정 반경 (8 -> 12 상향)
-Balance.XP_HARVEST_XP_PER_HIT = 2      -- 타격당 XP
+Balance.HARVEST_RANGE = 12             -- [수정] 기본 수확 거리 (25 -> 12, 도구 사거리 시스템으로 대체)
+Balance.COMBAT_HITBOX_SIZE = 10        -- [수정] 기본 공격 판정 반경 (12 -> 10)
+Balance.XP_HARVEST_XP_PER_HIT = 100000    -- 타격당 XP (10000 -> 100000)
+
+-- 도구별 사거리 (Reach)
+Balance.REACH_BAREHAND = 12             -- 맨손 (8 -> 12)
+Balance.REACH_TOOL = 14               -- 도끼, 곡괭이, 몽둥이 (10 -> 14)
+Balance.REACH_SPEAR = 28               -- 창 (18 -> 28)
+Balance.REACH_ANGLE = 75               -- 공격 인정 각도 (정면 기준 +-75도)
 
 --========================================
 -- 배고픔 (생존) 시스템

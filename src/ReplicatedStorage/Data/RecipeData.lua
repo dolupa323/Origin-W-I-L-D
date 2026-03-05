@@ -140,6 +140,16 @@ local RecipeData = {
 		inputs = { { itemId = "LEATHER", count = 10 }, { itemId = "FIBER", count = 5 } },
 		outputs = { { itemId = "LEATHER_ARMOR", count = 1 } },
 	},
+	{
+		id = "CRAFT_LEATHER_HAT",
+		name = "가죽 모자",
+		category = "ARMOR",
+		requiredFacility = "CRAFTING_T1",
+		craftTime = 8,
+		techLevel = 5,
+		inputs = { { itemId = "LEATHER", count = 5 }, { itemId = "FIBER", count = 3 } },
+		outputs = { { itemId = "LEATHER_HAT", count = 1 } },
+	},
 
 	--========================================
 	-- 3단계: 제련 및 청동기 작업대 (SMELTING / CRAFTING)
@@ -224,6 +234,16 @@ local RecipeData = {
 		inputs = { { itemId = "BRONZE_INGOT", count = 10 }, { itemId = "LEATHER", count = 5 } },
 		outputs = { { itemId = "BRONZE_ARMOR", count = 1 } },
 	},
+	{
+		id = "CRAFT_BRONZE_HELMET",
+		name = "청동 투구",
+		category = "ARMOR",
+		requiredFacility = "CRAFTING_T2",
+		craftTime = 10,
+		techLevel = 27,
+		inputs = { { itemId = "BRONZE_INGOT", count = 6 }, { itemId = "LEATHER", count = 2 } },
+		outputs = { { itemId = "BRONZE_HELMET", count = 1 } },
+	},
 
 	--========================================
 	-- 4단계: 철기 제련 및 철기 작업대 (SMELTING / CRAFTING)
@@ -307,6 +327,16 @@ local RecipeData = {
 		techLevel = 42,
 		inputs = { { itemId = "IRON_INGOT", count = 15 }, { itemId = "LEATHER", count = 10 } },
 		outputs = { { itemId = "IRON_ARMOR", count = 1 } },
+	},
+	{
+		id = "CRAFT_IRON_HELMET",
+		name = "철제 투구",
+		category = "ARMOR",
+		requiredFacility = "CRAFTING_T3",
+		craftTime = 12,
+		techLevel = 42,
+		inputs = { { itemId = "IRON_INGOT", count = 8 }, { itemId = "LEATHER", count = 4 } },
+		outputs = { { itemId = "IRON_HELMET", count = 1 } },
 	},
 
 	--========================================

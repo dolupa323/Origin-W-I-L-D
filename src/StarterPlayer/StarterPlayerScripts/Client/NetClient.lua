@@ -95,7 +95,8 @@ function NetClient.Request(command: string, payload: any?): (boolean, any)
 		local decompressedData = Protocol.Decompress(response.data)
 		return true, decompressedData
 	else
-		return false, response.error
+		-- [수정] 서버의 errorCode와 error 필드를 모두 지원
+		return false, response.errorCode or response.error or "UNKNOWN_ERROR"
 	end
 end
 

@@ -84,6 +84,20 @@ function CreatureService.Init(_NetController, _DataService, _WorldDropService, _
 	-- DropTableData 로드 (ReplicatedStorage)
 	DropTableData = require(game:GetService("ReplicatedStorage").Data.DropTableData)
 	
+	-- [추가] 충돌 그룹 설정 (플레이어와 크리처는 서로 통과하게 함)
+	local PhysicsService = game:GetService("PhysicsService")
+	pcall(function()
+		-- 그룹이 없을 경우 생성
+		if not PhysicsService:IsCollisionGroupRegistered("Players") then
+			PhysicsService:RegisterCollisionGroup("Players")
+		end
+		if not PhysicsService:IsCollisionGroupRegistered("Creatures") then
+			PhysicsService:RegisterCollisionGroup("Creatures")
+		end
+		-- 플레이어 vs 크리처 충돌 비활성화 (날아감/드러눕기 방지)
+		PhysicsService:CollisionGroupSetCollidable("Players", "Creatures", false)
+	end)
+	
 	-- ★ 초기 대량 스폰 (서버 시작 시 즉시)
 	task.spawn(function()
 		task.wait(2) -- 맵 로드 대기
@@ -196,15 +210,29 @@ local function setupModelForCreature(model: Model, position: Vector3, data: any)
 		local _, modelSize = model:GetBoundingBox()
 		local center = getModelCenter(model)
 		
-		-- HumanoidRootPart 생성 (모델 크기에 맞춤)
+		-- HumanoidRootPart 생성 (고정 사이즈로 생성하여 단차/경사로 걸림 방지)
 		rootPart = Instance.new("Part")
 		rootPart.Name = "HumanoidRootPart"
-		rootPart.Size = modelSize -- 모델 크기와 동일하게 설정 (히트박스 확대)
+		rootPart.Size = Vector3.new(2, 2, 2) -- 물리에 최적화된 작은 크기
 		rootPart.Transparency = 1
 		rootPart.CanCollide = false
-		rootPart.CanQuery = true -- 공격 감지 가능하게
+		rootPart.CanQuery = true
 		rootPart.Position = center
 		rootPart.Parent = model
+		
+		-- [추가] 실제 판정용 Hitbox (공격용)
+		local hitbox = Instance.new("Part")
+		hitbox.Name = "ModelHitbox"
+		hitbox.Size = modelSize
+		hitbox.Transparency = 1
+		hitbox.CanCollide = false -- 물리 충돌은 Humanoid가 담당
+		hitbox.CanQuery = true
+		hitbox.CFrame = rootPart.CFrame
+		hitbox.Parent = model
+		local hw = Instance.new("WeldConstraint")
+		hw.Part0 = rootPart
+		hw.Part1 = hitbox
+		hw.Parent = hitbox
 		
 		-- 모든 BasePart를 HumanoidRootPart에 Weld로 연결
 		for _, part in ipairs(model:GetDescendants()) do
@@ -260,6 +288,24 @@ local function setupModelForCreature(model: Model, position: Vector3, data: any)
 	humanoid.WalkSpeed = data.walkSpeed or 16
 	humanoid.MaxHealth = data.maxHealth
 	humanoid.Health = data.maxHealth
+	
+	-- [추가] 지형 적응력 향상 (오르막/내리막)
+	humanoid.MaxSlopeAngle = 89 -- 거의 모든 경사로를 오를 수 있도록 최대치로 상향
+	humanoid.AutoJumpEnabled = true -- 턱에 걸리면 자동으로 점프 시도
+	
+	-- [추가] 물리적 이상 현상 방지 (쓰러짐/날아감 방지)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false)
+	humanoid.UseJumpPower = true
+	humanoid.JumpPower = 40 -- 점프력 부여
+	
+	-- [수정] HipHeight 계산 공식 보정 (조금 더 여유를 줌)
+	-- Roblox Humanoid의 HipHeight는 'HRP 바닥면'부터 '지면'까지의 거리입니다.
+	local modelCF, modelSize = model:GetBoundingBox()
+	local bottomToCenter = rootPart.Position.Y - (modelCF.Position.Y - modelSize.Y/2)
+	-- HRP의 절반 높이를 빼서 'HRP 바닥' 기준의 거리를 구함 + 0.5의 여유를 주어 단차 극복 용이하게 함
+	humanoid.HipHeight = math.max(1, bottomToCenter - (rootPart.Size.Y / 2) + 0.5)
 	
 	-- 7. 근거리 전용 울음소리 (RollOff로 가까이에서만 들림)
 	local ambientSound = Instance.new("Sound")
@@ -468,6 +514,7 @@ function CreatureService.spawn(creatureId, position)
 	
 	local instanceId = game:GetService("HttpService"):GenerateGUID(false)
 	model:SetAttribute("InstanceId", instanceId)
+	model:SetAttribute("CreatureId", creatureId)
 	
 	-- Collision Group 설정
 	for _, part in ipairs(model:GetDescendants()) do
@@ -819,13 +866,14 @@ function CreatureService._findMapSpawnPosition(center: Vector3, radius: number):
 		-- 지형/맵만 감지하도록 필터링 강화
 		local params = RaycastParams.new()
 		local filterList = { workspace.Terrain }
-		if workspace:FindFirstChild("Map") then
-			table.insert(filterList, workspace.Map)
-		end
+		local map = workspace:FindFirstChild("Map")
+		if map then table.insert(filterList, map) end
+		
 		params.FilterDescendantsInstances = filterList
 		params.FilterType = Enum.RaycastFilterType.Include
 		
-		local result = workspace:Raycast(origin, Vector3.new(0, -800, 0), params)
+		-- 훨씬 높은 곳에서 더 깊게 발사하여 정확한 바닥 찾기
+		local result = workspace:Raycast(origin, Vector3.new(0, -1200, 0), params)
 		if result then
 			-- 물/바다 Material 체크 (육지만 허용)
 			local isWater = result.Material == Enum.Material.Water 
@@ -1025,6 +1073,14 @@ function CreatureService._updateAILoop()
 								creature.closestPlayerRoot = hrp
 								creature.closestPlayerHum = hum
 								creature.closestPlayerUserId = p.UserId
+								
+								-- [추가] 공격 판정용 머리(Head) 위치 탐색
+								local head = creature.model:FindFirstChild("Head", true) or creature.model:FindFirstChild("Neck", true)
+								if head then
+									creature.headDist = (pPos - head.Position).Magnitude
+								else
+									creature.headDist = d
+								end
 							end
 						end
 					end
@@ -1053,10 +1109,16 @@ function CreatureService._updateAILoop()
 		
 		-- 1.1 LOD 업데이트 주기 결정
 		local updateInterval = AI_UPDATE_INTERVAL -- 기본 0.3s
-		if minDist > LOD_MID_DIST then
-			updateInterval = 1.5 -- 300m 부근: 매우 느림
-		elseif minDist > LOD_NEAR_DIST then
-			updateInterval = 0.9 -- 150m 부근: 중간 느림
+		
+		-- 선공형(AGGRESSIVE) 공룡은 인식 범위 밖이어도 좀 더 빠릿하게 체크하게 함
+		local awarenessFactor = (behavior == "AGGRESSIVE") and 1.5 or 1.0
+		local effectiveNearDist = LOD_NEAR_DIST * awarenessFactor
+		local effectiveMidDist = LOD_MID_DIST * awarenessFactor
+
+		if minDist > effectiveMidDist then
+			updateInterval = 1.2 -- 1.5 -> 1.2 (약간 단축)
+		elseif minDist > effectiveNearDist then
+			updateInterval = 0.6 -- 0.9 -> 0.6 (상향)
 		end
 		
 		-- 업데이트 타임아웃 체크
@@ -1166,6 +1228,9 @@ function CreatureService._updateAILoop()
 		if newState ~= creature.state then
 			creature.state = newState
 			creature.lastStateChange = now
+			-- [중요] 클라이언트 애니메이션 연동을 위해 속성 설정
+			creature.model:SetAttribute("State", newState)
+			
 			-- 새 상태에 맞는 랜덤 지속시간 설정
 			if newState == "IDLE" then
 				creature.stateDuration = getRandomDuration(IDLE_MIN_TIME, IDLE_MAX_TIME)
@@ -1176,6 +1241,11 @@ function CreatureService._updateAILoop()
 		
 		-- 4. Behavior Execution
 		local humanoid = creature.humanoid
+		local attackRange = creature.data.attackRange or 5
+		
+		-- [수정] 머리(Head) 기준 사거리 체크 적용 (더 실감나는 이빨 판정)
+		local headDist = creature.headDist or minDist
+		local isInAttackRange = (headDist <= attackRange)
 		
 		-- ============================================
 		-- 물 진입 방지 (최우선 처리)
@@ -1255,47 +1325,66 @@ function CreatureService._updateAILoop()
 
 			-- [이동 실행 (Pathfinding)]
 			if target then
-				-- 1. 경로 재계산 조건 체크
-				local needsNewPath = false
-				if not creature.pathData then
-					needsNewPath = true
-				elseif (creature.pathData.targetPos - target).Magnitude > PATH_RECALC_DIST then
-					needsNewPath = true
-				elseif creature.pathData.currentIndex > #creature.pathData.waypoints then
-					needsNewPath = true
-				elseif now - creature.pathData.lastRecalc > 2.0 then
-					needsNewPath = true
-				end
+				-- [추가] 공격 사거리 내에 있으면 플레이어를 바라보고 정지 (공격 집중)
+				if creature.state == "CHASE" and isInAttackRange then
+					humanoid:MoveTo(hrp.Position)
+					-- 플레이어 방향으로 회전
+					if closestPlayerPos then
+						local dir = (closestPlayerPos - hrp.Position) * Vector3.new(1, 0, 1)
+						if dir.Magnitude > 0.1 then
+							hrp.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + dir.Unit)
+						end
+					end
+				else
+					-- 1. 경로 재계산 조건 체크
+					local needsNewPath = false
+					if not creature.pathData then
+						needsNewPath = true
+					elseif (creature.pathData.targetPos - target).Magnitude > PATH_RECALC_DIST then
+						needsNewPath = true
+					elseif creature.pathData.currentIndex > #creature.pathData.waypoints then
+						needsNewPath = true
+					elseif now - creature.pathData.lastRecalc > 2.0 then
+						needsNewPath = true
+					end
 
-				if needsNewPath then
-					local rayParams = RaycastParams.new()
-					rayParams.FilterDescendantsInstances = { creature.model, creatureFolder }
-					rayParams.FilterType = Enum.RaycastFilterType.Exclude
-					local rayResult = workspace:Raycast(hrp.Position, (target - hrp.Position), rayParams)
-					
-					local isObstructed = false
-					if rayResult and (rayResult.Position - target).Magnitude > 3 then isObstructed = true end
+					if needsNewPath then
+						local rayParams = RaycastParams.new()
+						-- [수정] Terrain은 장애물에서 제외 (MaxSlopeAngle이 높으므로 직접 올라가게 함)
+						rayParams.FilterDescendantsInstances = { creature.model, creatureFolder, workspace.Terrain }
+						rayParams.FilterType = Enum.RaycastFilterType.Exclude
+						local rayResult = workspace:Raycast(hrp.Position, (target - hrp.Position), rayParams)
+						
+						local isObstructed = false
+						if rayResult and (rayResult.Position - target).Magnitude > 3 then isObstructed = true end
 
-					if isObstructed then
-						local path = PathfindingService:CreatePath({ AgentRadius = 3, AgentHeight = 6, AgentCanJump = true })
-						path:ComputeAsync(hrp.Position, target)
-						if path.Status == Enum.PathStatus.Success then
-							creature.pathData = { waypoints = path:GetWaypoints(), currentIndex = 2, targetPos = target, lastRecalc = now }
+						if isObstructed then
+							-- [수정] 경로 탐색 시 오르막과 단차를 더 잘 인식하도록 설정
+							local path = PathfindingService:CreatePath({ 
+								AgentRadius = 3, 
+								AgentHeight = 6, 
+								AgentCanJump = true,
+								AgentStepHeight = 4 -- 4스터드 높이까지는 계단처럼 오름
+							})
+							path:ComputeAsync(hrp.Position, target)
+							if path.Status == Enum.PathStatus.Success then
+								creature.pathData = { waypoints = path:GetWaypoints(), currentIndex = 2, targetPos = target, lastRecalc = now }
+							else
+								creature.pathData = { waypoints = {{Position = target}}, currentIndex = 1, targetPos = target, lastRecalc = now }
+							end
 						else
 							creature.pathData = { waypoints = {{Position = target}}, currentIndex = 1, targetPos = target, lastRecalc = now }
 						end
-					else
-						creature.pathData = { waypoints = {{Position = target}}, currentIndex = 1, targetPos = target, lastRecalc = now }
 					end
-				end
 
-				-- 2. 웨이포인트 이동
-				if creature.pathData and creature.pathData.currentIndex <= #creature.pathData.waypoints then
-					local wp = creature.pathData.waypoints[creature.pathData.currentIndex]
-					humanoid:MoveTo(wp.Position)
-					if wp.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
-					if (hrp.Position - wp.Position).Magnitude < WAYPOINT_REACH_DIST then
-						creature.pathData.currentIndex = creature.pathData.currentIndex + 1
+					-- 2. 웨이포인트 이동
+					if creature.pathData and creature.pathData.currentIndex <= #creature.pathData.waypoints then
+						local wp = creature.pathData.waypoints[creature.pathData.currentIndex]
+						humanoid:MoveTo(wp.Position)
+						if wp.Action == Enum.PathWaypointAction.Jump then humanoid.Jump = true end
+						if (hrp.Position - wp.Position).Magnitude < WAYPOINT_REACH_DIST then
+							creature.pathData.currentIndex = creature.pathData.currentIndex + 1
+						end
 					end
 				end
 			end
@@ -1324,29 +1413,36 @@ function CreatureService._updateAILoop()
 					end
 				end
 				
-				-- IDLE 시 좌우 둘러보기 (Y축 회전)
-				if not creature.idleLookTime or (now - creature.idleLookTime > 2 + math.random() * 3) then
+				-- IDLE 시 좌우 둘러보기 (직접 CFrame 조작 대신 회전 유도)
+				if not creature.idleLookTime or (now - creature.idleLookTime > 3 + math.random() * 4) then
 					creature.idleLookTime = now
-					local lookAngle = math.rad(math.random(-40, 40))
-					local currentCF = hrp.CFrame
-					local lookCF = CFrame.new(currentCF.Position) * CFrame.Angles(0, lookAngle, 0)
-					hrp.CFrame = lookCF
+					local lookAngle = math.rad(math.random(-60, 60))
+					local lookDir = (CFrame.Angles(0, lookAngle, 0) * hrp.CFrame.LookVector).Unit
+					local lookTarget = hrp.Position + lookDir * 5
+					humanoid:MoveTo(lookTarget) -- 살짝 몸을 틀게 함 (물리 엔진 존중)
 				end
 			end
 		end
 		
 		-- 5. Creature -> Player Damage (Phase 4-1)
 		if creature.state == "CHASE" and closestPlayerPos then
-			local attackRange = creature.data.attackRange or 5
 			local dmg = creature.data.damage or 0
 			
-			if dmg > 0 and minDist <= attackRange then
+			if dmg > 0 and isInAttackRange then
 				-- 쿨다운 체크
 				if not creature.lastAttackTime or (now - creature.lastAttackTime >= CREATURE_ATTACK_COOLDOWN) then
 					creature.lastAttackTime = now
 					
 					-- 플레이어 Humanoid에 데미지
 					if closestPlayerHum and closestPlayerHum.Health > 0 then
+						-- 이벤트를 통해 애니메이션 재생 통보
+						if NetController then
+							NetController.FireAllClients("Creature.Attack.Play", {
+								instanceId = id,
+								targetUserId = closestPlayerUserId
+							})
+						end
+
 						local CombatService = require(game:GetService("ServerScriptService").Server.Services.CombatService)
 						CombatService.damagePlayer(closestPlayerUserId, dmg)
 					end

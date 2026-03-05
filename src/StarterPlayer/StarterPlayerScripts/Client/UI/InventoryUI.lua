@@ -53,17 +53,14 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	-- Main Panel
 	local main = Utils.mkWindow({
 		name = "Main",
-		size = UDim2.new(isSmall and 0.98 or 0.9, 0, isSmall and 0.92 or 0.85, 0),
-		maxSize = Vector2.new(1200, 800),
+		size = UDim2.new(isSmall and 1 or 0.7, 0, isSmall and 1 or 0.85, 0),
+		maxSize = Vector2.new(950, 850),
 		pos = UDim2.new(0.5, 0, 0.5, 0),
 		anchor = Vector2.new(0.5, 0.5),
-		bg = C.BG_PANEL,
-		bgT = T.PANEL,
-		r = 0,
-		stroke = 2,
-		strokeC = C.BORDER_DIM,
+		bg = Color3.fromRGB(15, 15, 18),
+		bgT = 0.5,
+		r = 0, stroke = 1, strokeC = Color3.fromRGB(60, 60, 60),
 		parent = InventoryUI.Refs.Frame
-		-- ratio removed: Responsive layout
 	})
 
 	-- [Header]
@@ -95,32 +92,52 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	-- [Content Area]
 	local content = Utils.mkFrame({name="Content", size=UDim2.new(1, -20, 1, -55), pos=UDim2.new(0, 10, 0, 45), bgT=1, parent=main})
 	
-	-- Left Side: Item Grid (65%)
-	local gridArea = Utils.mkFrame({name="GridArea", size=UDim2.new(0.65, -10, 1, 0), bgT=1, parent=content})
+	-- Left Side: Item Grid
+	local gridArea = Utils.mkFrame({name="GridArea", size=UDim2.new(1, -320, 1, 0), bgT=1, parent=content})
 	InventoryUI.Refs.BagFrame = gridArea
 	
 	local scroll = Instance.new("ScrollingFrame")
 	scroll.Name = "GridScroll"
-	scroll.Size = UDim2.new(1, 0, 1, 0); scroll.BackgroundTransparency = 1; scroll.BorderSizePixel = 0; scroll.ScrollBarThickness = 2
+	scroll.Size = UDim2.new(1, 0, 1, 0); scroll.BackgroundTransparency = 1; scroll.BorderSizePixel = 0; scroll.ScrollBarThickness = 4
 	scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	scroll.ClipsDescendants = true
 	scroll.Parent = gridArea
 	
 	local grid = Instance.new("UIGridLayout")
-	local cellSize = isSmall and 65 or 75
+	local cellSize = 75
 	grid.CellSize = UDim2.new(0, cellSize, 0, cellSize)
-	grid.CellPadding = UDim2.new(0, 4, 0, 4)
+	grid.CellPadding = UDim2.new(0, 8, 0, 8)
 	grid.SortOrder = Enum.SortOrder.LayoutOrder
 	grid.Parent = scroll
 	
 	local pad = Instance.new("UIPadding")
-	pad.PaddingTop = UDim.new(0, 4); pad.PaddingLeft = UDim.new(0, 4)
-	pad.PaddingRight = UDim.new(0, 4); pad.PaddingBottom = UDim.new(0, 4)
+	pad.PaddingTop = UDim.new(0, 30); pad.PaddingLeft = UDim.new(0, 15) -- 패딩 넓혀서 라벨 공간 확보
 	pad.Parent = scroll
-	
-	for i = 1, 60 do -- 듀랑고는 칸이 많음
+
+	for i = 1, 60 do
 		local slot = Utils.mkSlot({name="Slot"..i, bgT=0.3, parent=scroll})
 		slot.frame.LayoutOrder = i
+		
+		-- 핫바 배지 추가 (HOTBAR 전용 디자인)
+		if i <= 8 then
+			local badge = Utils.mkFrame({
+				name = "HotbarBadge",
+				size = UDim2.new(0, 16, 0, 16),
+				pos = UDim2.new(0, 2, 0, 2),
+				bg = C.GOLD,
+				r = 3,
+				z = slot.frame.ZIndex + 3,
+				parent = slot.frame
+			})
+			Utils.mkLabel({
+				text = tostring(i),
+				ts = 10,
+				bold = true,
+				color = Color3.new(0,0,0),
+				parent = badge
+			})
+			local stk = slot.frame:FindFirstChildOfClass("UIStroke")
+			if stk then stk.Color = C.GOLD; stk.Thickness = 1.2 end -- 핫바 슬롯은 상시 강조
+		end
 		
 		-- Hover Effect (PC Highlight)
 		slot.click.MouseEnter:Connect(function()
@@ -147,12 +164,27 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 			end
 		end)
 		
+		local lastClickTime = 0
+		local lastClickIdx = 0
+		
 		slot.click.InputEnded:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 				local duration = tick() - pressStartTime
 				-- If NOT dragging and released quickly (< 0.25s) -> Click
 				if not UIManager.isDragging() and duration < 0.25 then
-					UIManager._onInvSlotClick(i)
+					local now = tick()
+					if now - lastClickTime < 0.35 and lastClickIdx == i then
+						-- Double Click
+						if UIManager._onInvSlotDoubleClick then
+							UIManager._onInvSlotDoubleClick(i)
+						end
+						lastClickTime = 0
+					else
+						-- Single Click
+						UIManager._onInvSlotClick(i)
+						lastClickTime = now
+						lastClickIdx = i
+					end
 				end
 				pressStartTime = 0
 			end
@@ -165,39 +197,82 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 		InventoryUI.Refs.Slots[i] = slot
 	end
 	
-	-- Right Side: Detail Panel (35%)
+	-- Right Side: Detail Panel (320px)
+	local detailSize = 320
 	local detail = Utils.mkFrame({
-		name="Detail", size=UDim2.new(0.35, 0, 1, 0), pos=UDim2.new(1, 0, 0, 0), anchor=Vector2.new(1, 0),
-		bg=C.BG_PANEL_L, stroke=1, parent=content
+		name="Detail", size=UDim2.new(0, detailSize, 1, -16),
+		pos=UDim2.new(1, -detailSize - 8, 0, 8),
+		bg=Color3.fromRGB(12,12,15), bgT=0.4, r=6, stroke=1, strokeC=Color3.fromRGB(60,60,60),
+		parent=content
 	})
 	InventoryUI.Refs.Detail.Frame = detail
 	
-	local dHeader = Utils.mkFrame({size=UDim2.new(1,0,0,40), bg=C.GOLD_SEL, bgT=0.3, parent=detail})
-	InventoryUI.Refs.Detail.Name = Utils.mkLabel({text="선택된 아이템 없음", ts=18, font=F.TITLE, parent=dHeader})
+	local dtHead = Utils.mkLabel({
+		text="아이템 정보", size=UDim2.new(1,0,0,40),
+		bg=Color3.fromRGB(30,30,30), bgT=0.2, color=C.GOLD, ts=16, font=F.TITLE,
+		parent=detail
+	})
 	
-	local dBody = Utils.mkFrame({size=UDim2.new(1,-20,1,-120), pos=UDim2.new(0,10,0,50), bgT=1, parent=detail})
-	local dBList = Instance.new("UIListLayout"); dBList.Padding=UDim.new(0, 10); dBList.HorizontalAlignment=Enum.HorizontalAlignment.Center; dBList.Parent=dBody
+	InventoryUI.Refs.Detail.Name = Utils.mkLabel({
+		text="선택된 대상 없음", size=UDim2.new(1,-20,0,40), pos=UDim2.new(0,15,0,50),
+		color=C.WHITE, ts=20, font=F.TITLE, ax=Enum.TextXAlignment.Left, parent=detail
+	})
 	
-	local iconFrame = Utils.mkFrame({size=UDim2.new(0, 100, 0, 100), bg=C.BG_SLOT, stroke=1, strokeC=C.BORDER_DIM, parent=dBody})
-	InventoryUI.Refs.Detail.Icon = Instance.new("ImageLabel"); InventoryUI.Refs.Detail.Icon.Size=UDim2.new(1,-10,1,-10); InventoryUI.Refs.Detail.Icon.Position=UDim2.new(0.5,0,0.5,0); InventoryUI.Refs.Detail.Icon.AnchorPoint=Vector2.new(0.5,0.5); InventoryUI.Refs.Detail.Icon.BackgroundTransparency=1; InventoryUI.Refs.Detail.Icon.Parent=iconFrame
-	InventoryUI.Refs.Detail.PreviewIcon = InventoryUI.Refs.Detail.Icon -- Alias for craft compatibility
+	InventoryUI.Refs.Detail.Icon = Instance.new("ImageLabel")
+	InventoryUI.Refs.Detail.Icon.Size = UDim2.new(0, 80, 0, 80); InventoryUI.Refs.Detail.Icon.Position = UDim2.new(0,15,0,95)
+	InventoryUI.Refs.Detail.Icon.BackgroundTransparency = 1; InventoryUI.Refs.Detail.Icon.Parent = detail
+	InventoryUI.Refs.Detail.PreviewIcon = InventoryUI.Refs.Detail.Icon
 	
-	InventoryUI.Refs.Detail.Mats = Utils.mkLabel({text="", size=UDim2.new(1,0,0,80), ts=14, color=C.GOLD, ax=Enum.TextXAlignment.Left, ay=Enum.TextYAlignment.Top, wrap=true, parent=dBody})
+	InventoryUI.Refs.Detail.Desc = Utils.mkLabel({
+		text="설명", size=UDim2.new(1,-110,0,100), pos=UDim2.new(0,105,0,95),
+		color=Color3.fromRGB(200,200,200), ts=16, wrap=true,
+		ax=Enum.TextXAlignment.Left, ay=Enum.TextYAlignment.Top, parent=detail
+	})
 	
-	InventoryUI.Refs.Detail.Desc = Utils.mkLabel({text="", size=UDim2.new(1,0,0,0), ts=13, color=C.WHITE, vis=false, ax=Enum.TextXAlignment.Left, ay=Enum.TextYAlignment.Top, wrap=true, parent=dBody})
+	InventoryUI.Refs.Detail.Stats = Utils.mkLabel({
+		text="", size=UDim2.new(1,-30,0,150), pos=UDim2.new(0,15,0,230),
+		ts=16, color=C.WHITE, ax=Enum.TextXAlignment.Left, ay=Enum.TextYAlignment.Top, wrap=true, rich=true, parent=detail
+	})
+	InventoryUI.Refs.Detail.Mats = InventoryUI.Refs.Detail.Stats -- Alias for crafting
+	InventoryUI.Refs.Detail.Weight = InventoryUI.Refs.Detail.Stats
+
+	-- Durability Bar (Detail Panel)
+	local durWrap = Utils.mkFrame({name="DurWrap", size=UDim2.new(1, -30, 0, 15), pos=UDim2.new(0, 15, 0, 195), bgT=1, vis=false, parent=detail})
+	local durBarBack = Utils.mkFrame({name="Back", size=UDim2.new(1, 0, 1, 0), bg=Color3.fromRGB(40, 40, 40), r=3, parent=durWrap})
+	local durBarFill = Utils.mkFrame({name="Fill", size=UDim2.new(1, 0, 1, 0), bg=C.GOLD, r=3, parent=durBarBack})
+	local durText = Utils.mkLabel({text="100/100", size=UDim2.new(1, 0, 1, 0), ts=10, bold=true, color=C.WHITE, parent=durBarBack})
 	
-	InventoryUI.Refs.Detail.Stats = Utils.mkLabel({text="", size=UDim2.new(1,0,0,120), ts=13, color=C.WHITE, ax=Enum.TextXAlignment.Left, ay=Enum.TextYAlignment.Top, wrap=true, rich=true, parent=dBody})
-	InventoryUI.Refs.Detail.Weight = InventoryUI.Refs.Detail.Stats -- Alias
+	InventoryUI.Refs.Detail.DurWrap = durWrap
+	InventoryUI.Refs.Detail.DurFill = durBarFill
+	InventoryUI.Refs.Detail.DurText = durText
+
+	-- [제작 진행표시] 로딩 스피너 및 프로그레스바 추가
+	local progWrap = Utils.mkFrame({name="ProgWrap", size=UDim2.new(0, 80, 0, 80), pos=UDim2.new(0,15,0,95), bgT=1, vis=false, parent=detail})
+	InventoryUI.Refs.Detail.ProgWrap = progWrap
+	
+	local spinner = Instance.new("ImageLabel")
+	spinner.Name = "Spinner"; spinner.Size = UDim2.new(1.2, 0, 1.2, 0); spinner.Position = UDim2.new(0.5, 0, 0.5, 0); spinner.AnchorPoint = Vector2.new(0.5,0.5)
+	spinner.BackgroundTransparency = 1; spinner.Image = "rbxassetid://6034445544"; spinner.ImageColor3 = C.GOLD; spinner.ZIndex = 15; spinner.Parent = progWrap
+	InventoryUI.Refs.Detail.Spinner = spinner
+
+	local barBack = Utils.mkFrame({name="BarBack", size=UDim2.new(1, -24, 0, 6), pos=UDim2.new(0.5, 0, 0, 185), anchor=Vector2.new(0.5, 0), bg=Color3.fromRGB(40,40,40), r=3, vis=false, parent=detail})
+	local barFill = Utils.mkFrame({name="Fill", size=UDim2.new(0, 0, 1, 0), bg=C.GOLD, r=3, parent=barBack})
+	InventoryUI.Refs.Detail.ProgBar = barBack
+	InventoryUI.Refs.Detail.ProgFill = barFill
 	
 	-- Detail Footer
-	local dFoot = Utils.mkFrame({size=UDim2.new(1,-20,0,105), pos=UDim2.new(0.5,0,1,-10), anchor=Vector2.new(0.5,1), bgT=1, parent=detail})
+	local dFoot = Utils.mkFrame({size=UDim2.new(1,-24,0,105), pos=UDim2.new(0.5,0,1,-10), anchor=Vector2.new(0.5,1), bgT=1, parent=detail})
 	
-	local footList = Instance.new("UIListLayout"); footList.Padding=UDim.new(0, 10); footList.VerticalAlignment=Enum.VerticalAlignment.Bottom; footList.Parent=dFoot
+	local footList = Instance.new("UIListLayout"); footList.Padding=UDim.new(0, 8); footList.VerticalAlignment=Enum.VerticalAlignment.Bottom; footList.Parent=dFoot
 	
-	InventoryUI.Refs.Detail.BtnMain = Utils.mkBtn({text="사용 / 장착", size=UDim2.new(1,0,0,45), bg=C.GOLD_SEL, hbg=Color3.fromRGB(120,120,120), font=F.TITLE, ts=20, color=C.BG_PANEL, parent=dFoot})
+	InventoryUI.Refs.Detail.BtnMain = Utils.mkBtn({
+		text="사용 / 장착", size=UDim2.new(1,0,0,48), bg=C.GOLD, r=5, font=F.TITLE, ts=18, color=Color3.fromRGB(20,20,20), parent=dFoot
+	})
 	InventoryUI.Refs.Detail.BtnUse = InventoryUI.Refs.Detail.BtnMain -- Alias
 	
-	InventoryUI.Refs.Detail.BtnDrop = Utils.mkBtn({text="버리기", size=UDim2.new(1,0,0,45), bg=Color3.fromRGB(40,40,40), font=F.TITLE, ts=20, color=C.GRAY, parent=dFoot})
+	InventoryUI.Refs.Detail.BtnDrop = Utils.mkBtn({
+		text="버리기", size=UDim2.new(1,0,0,42), bg=Color3.fromRGB(40,40,40), r=5, font=F.TITLE, ts=16, color=C.GRAY, parent=dFoot
+	})
 	
 	-- Events
 	InventoryUI.Refs.Detail.BtnMain.MouseButton1Click:Connect(function() 
@@ -210,18 +285,20 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	InventoryUI.Refs.Detail.BtnDrop.MouseButton1Click:Connect(function() if UIManager.openDropModal then UIManager.openDropModal() end end)
 	
 	-- Add Crafting Area Right Side (Same Pos as GridArea)
-	local craftArea = Utils.mkFrame({name="CraftFrame", size=UDim2.new(0.65, -10, 1, 0), bgT=1, vis=false, parent=content})
+	local craftArea = Utils.mkFrame({name="CraftFrame", size=UDim2.new(1, -detailSize - 16, 1, 0), bgT=1, vis=false, parent=content})
 	InventoryUI.Refs.CraftFrame = craftArea
 	local craftScroll = Instance.new("ScrollingFrame")
 	craftScroll.Name = "GridScroll"
-	craftScroll.Size = UDim2.new(1, 0, 1, 0); craftScroll.BackgroundTransparency = 1; craftScroll.BorderSizePixel = 0; craftScroll.ScrollBarThickness = 2
+	craftScroll.Size = UDim2.new(1, 0, 1, 0); craftScroll.BackgroundTransparency = 1; craftScroll.BorderSizePixel = 0; craftScroll.ScrollBarThickness = 4
 	craftScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	craftScroll.ClipsDescendants = true
 	craftScroll.Parent = craftArea
 	
+	local cGrid = Instance.new("UIGridLayout")
+	cGrid.CellSize = UDim2.new(0, 75, 0, 75); cGrid.CellPadding = UDim2.new(0, 8, 0, 8)
+	cGrid.SortOrder = Enum.SortOrder.LayoutOrder; cGrid.Parent = craftScroll
+
 	local cPad = Instance.new("UIPadding")
-	cPad.PaddingTop = UDim.new(0, 4); cPad.PaddingLeft = UDim.new(0, 4)
-	cPad.PaddingRight = UDim.new(0, 4); cPad.PaddingBottom = UDim.new(0, 4)
+	cPad.PaddingTop = UDim.new(0, 15); cPad.PaddingLeft = UDim.new(0, 15)
 	cPad.Parent = craftScroll
 	
 	InventoryUI.Refs.CraftGrid = craftScroll
@@ -432,14 +509,49 @@ function InventoryUI.UpdateDetail(data, getItemIcon, Enums, DataHelper)
 		local weightStr = string.format("무게: %.1f", (itemData and itemData.weight or 0.1) * (data.count or 1))
 		d.Stats.Text = weightStr .. " | 수량: " .. (data.count or 1)
 		
-		d.Desc.Text = "" -- (Descriptions removed by user request)
-		d.Mats.Text = ""
+		d.Desc.Text = (itemData and itemData.description) or (itemData and (itemData.name .. " 입니다.")) or ""
 		
+		-- [제작 탭 대응] 재료 정보 표시
+		local recipe = data
+		local mats = recipe.inputs or recipe.requirements
+		if mats and #mats > 0 then
+			local matsText = "[ 필요 재료 ]\n"
+			for _, m in ipairs(mats) do
+				local mName = m.itemId or m.id
+				if DataHelper then
+					local md = DataHelper.GetData("ItemData", mName)
+					if md then mName = md.name end
+				end
+				matsText = matsText .. string.format("- %s x %d\n", mName, m.count or m.amount or 1)
+			end
+			d.Stats.Text = matsText -- Stats 라벨을 재로 정보로 활용
+		end		
 		d.BtnMain.Visible = true
 		d.BtnDrop.Visible = true
 		
 		local isEquippable = (itemData and (itemData.type == Enums.ItemType.ARMOR or itemData.type == Enums.ItemType.WEAPON or itemData.type == Enums.ItemType.TOOL))
 		d.BtnMain.Text = isEquippable and "장착" or "사용"
+		
+		-- Durability Display
+		if data.durability and itemData and itemData.durability then
+			local maxDur = itemData.durability
+			local curDur = data.durability
+			local ratio = math.clamp(curDur / maxDur, 0, 1)
+			
+			d.DurWrap.Visible = true
+			d.DurFill.Size = UDim2.new(ratio, 0, 1, 0)
+			d.DurText.Text = string.format("내구도: %d / %d", math.floor(curDur), math.floor(maxDur))
+			
+			if ratio > 0.5 then
+				d.DurFill.BackgroundColor3 = Color3.fromRGB(150, 255, 150)
+			elseif ratio > 0.2 then
+				d.DurFill.BackgroundColor3 = Color3.fromRGB(255, 200, 100)
+			else
+				d.DurFill.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+			end
+		else
+			d.DurWrap.Visible = false
+		end
 	else
 		d.Name.Text = "선택된 아이템 없음"
 		d.Icon.Image = ""

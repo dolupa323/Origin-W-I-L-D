@@ -237,6 +237,17 @@ Enums.NodeType = {
 
 -- (Quest 시스템 삭제됨)
 
+--========================================
+-- 장비 슬롯 (Phase 11)
+--========================================
+Enums.EquipSlot = {
+	HEAD = "HEAD",     -- 투구
+	TOP = "TOP",       -- 상의 (섬유 등)
+	BOTTOM = "BOTTOM", -- 하의 (섬유 등)
+	SUIT = "SUIT",     -- 한벌옷 (중갑 등)
+	HAND = "HAND",     -- 손 (도구/무기)
+}
+
 -- 테이블 동결
 for key, subTable in pairs(Enums) do
 	if type(subTable) == "table" then

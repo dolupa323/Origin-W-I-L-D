@@ -30,6 +30,8 @@ local InventoryController = require(Controllers.InventoryController)
 local ShopController = require(Controllers.ShopController)
 local BuildController = require(Controllers.BuildController)
 local TechController = require(Controllers.TechController)
+local StorageController = require(Controllers.StorageController)
+local FacilityController = require(Controllers.FacilityController)
 
 local UIManager = {}
 
@@ -49,6 +51,8 @@ local TechUI = require(UI.TechUI)
 local InteractUI = require(UI.InteractUI)
 local BuildUI = require(UI.BuildUI)
 local EquipmentUI = require(UI.EquipmentUI)
+local StorageUI = require(UI.StorageUI)
+local FacilityUI = require(UI.FacilityUI)
 
 local C = Theme.Colors
 local F = Theme.Fonts
@@ -67,20 +71,22 @@ local selectedSlot = 1
 -- Panels
 local inventoryFrame, craftingOverlay, shopFrame, techOverlay, interactPrompt
 local actionContainer, hotbarFrame -- Store refs for visibility control
-local craftDetailPanel, progFill, craftSpinner
-local equipSlots = {}
-local isInvOpen, isCraftOpen, isShopOpen, isTechOpen, isBuildOpen, isEquipmentOpen = false, false, false, false, false, false
+local isInvOpen, isCraftOpen, isShopOpen, isTechOpen, isBuildOpen, isEquipmentOpen, isStorageOpen, isFacilityOpen = false, false, false, false, false, false, false, false
 local cachedStats = {}
 local pendingStats = {}
 local activeDebuffs = {} -- { [debuffId] = {id, name, startTime, duration} }
 local selectedBuildCat = "STRUCTURES"
 local selectedFacilityId = nil -- shared with Crafting or use separate variable
 local selectedBuildId = nil
+local currentStorageData = nil
+local currentFacilityData = nil
+local currentFacilityStructureId = nil
 
 -- 0. UI 관리 헬퍼
 local function isAnyWindowOpen()
-	return isInvOpen or isCraftOpen or isShopOpen or isTechOpen or isBuildOpen or isEquipmentOpen
+	return isInvOpen or isCraftOpen or isShopOpen or isTechOpen or isBuildOpen or isEquipmentOpen or isStorageOpen or isFacilityOpen
 end
+
 
 local function updateUIMode()
 	local anyOpen = isAnyWindowOpen()
@@ -95,6 +101,8 @@ local function closeAllWindows(except)
 	if isTechOpen and except ~= "TECH" then UIManager.closeTechTree() end
 	if isBuildOpen and except ~= "BUILD" then UIManager.closeBuild() end
 	if isEquipmentOpen and except ~= "EQUIP" then UIManager.closeEquipment() end
+	if isStorageOpen and except ~= "STORAGE" then UIManager.closeStorage() end
+	if isFacilityOpen and except ~= "FACILITY" then UIManager.closeFacility() end
 end
 
 -- [중복 제거] openTechTree/closeTechTree/toggleTechTree는 하단에서 올바르게 정의됩니다.
@@ -408,6 +416,11 @@ function UIManager.refreshInventory()
 	local items = InventoryController.getItems()
 	InventoryUI.RefreshSlots(items, getItemIcon, C, DataHelper)
 	
+	-- 상세창 정보 업데이트 (선택된 슬롯이 있는 경우 실시간 반영)
+	if selectedInvIndex and items[selectedInvIndex] then
+		InventoryUI.UpdateDetail(items[selectedInvIndex], getItemIcon, Enums, DataHelper)
+	end
+	
 	local totalWeight, maxWeight = InventoryController.getWeightInfo()
 	InventoryUI.UpdateWeight(totalWeight, maxWeight, C)
 	
@@ -656,6 +669,25 @@ function UIManager.onInventorySlotClick(idx)
 	UIManager._onInvSlotClick(idx)
 end
 
+function UIManager._onInvSlotDoubleClick(idx)
+	local items = InventoryController.getItems()
+	local item = items[idx]
+	if not item or not item.itemId then return end
+	
+	local itemData = DataHelper.GetData("ItemData", item.itemId)
+	if not itemData then return end
+	
+	if itemData.type == "ARMOR" or itemData.type == "TOOL" or itemData.type == "WEAPON" then
+		local slot = itemData.slot and itemData.slot:upper() or "HAND"
+		-- [Phase 11] 한벌옷(SUIT) 장착 시 상하의가 해제됨을 유도하거나, 
+		-- 그냥 서버에서 처리하도록 요청 (InventoryController.requestEquip)
+		print("[UIManager] Quick Equip:", item.itemId, "to", slot)
+		InventoryController.requestEquip(idx, slot)
+	elseif itemData.type == "FOOD" or itemData.type == "CONSUMABLE" then
+		InventoryController.requestUse(idx)
+	end
+end
+
 function UIManager.onUseItem()
 	if not selectedInvSlot then return end
 	InventoryController.requestUse(selectedInvSlot)
@@ -861,9 +893,9 @@ function UIManager._updatePersonalCraftDetail(recipe)
 		
 		local DataHelper = require(ReplicatedStorage.Shared.Util.DataHelper)
 		local itemData = DataHelper.GetData("ItemData", outItem)
-		d.Desc.Text = ""
+		d.Desc.Text = itemData and itemData.description or (itemData and (itemData.name .. " 을(를) 제작합니다.") or "선택한 대상을 제작합니다.")
 		
-		d.Stats.Visible = false
+		d.Stats.Visible = true
 		d.Weight.Text = ""
 		
 		local recipe = recipe -- Redundant but safe
@@ -891,22 +923,60 @@ function UIManager._updatePersonalCraftDetail(recipe)
 		d.BtnDrop.Visible = false
 	end
 	
-	if progFill then progFill.Size = UDim2.new(0,0,1,0) end
+	-- 제작 진행률 초기화
+	local refs = (isInvOpen and InventoryUI.Refs.Detail) or (isCraftOpen and CraftingUI.Refs.Detail)
+	if refs and refs.ProgFill then
+		refs.ProgFill.Size = UDim2.new(0,0,1,0)
+		refs.ProgWrap.Visible = false
+		refs.ProgBar.Visible = false
+	end
 end
 
 local isCrafting = false
-local craftTween = nil
-local spinnerConn = nil
+local spinnerTween = nil
+local progConn = nil
 
 function UIManager.showCraftingProgress(duration)
 	if isCrafting then return end
 	isCrafting = true
+	
+	-- 1. 상단 채집바 표시 (기존 유지)
 	HUDUI.ShowHarvestProgress(duration, "제작 중...")
+	
+	-- 2. 상세 정보창 내부 진행률 표시 (돌아가는 표시)
+	local refs = (isInvOpen and InventoryUI.Refs.Detail) or (isCraftOpen and CraftingUI.Refs.Detail)
+	if refs and refs.ProgWrap then
+		refs.ProgWrap.Visible = true
+		refs.ProgBar.Visible = true
+		
+		-- 스피너 회전 루프 (Durango 스타일)
+		if spinnerTween then spinnerTween:Cancel() end
+		refs.Spinner.Rotation = 0
+		spinnerTween = TweenService:Create(refs.Spinner, TweenInfo.new(1, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, -1), {Rotation = 360})
+		spinnerTween:Play()
+		
+		-- 프로그레스바 루프
+		if progConn then progConn:Disconnect() end
+		local start = tick()
+		progConn = RunService.RenderStepped:Connect(function()
+			local p = math.clamp((tick() - start) / duration, 0, 1)
+			if refs.ProgFill then refs.ProgFill.Size = UDim2.new(p, 0, 1, 0) end
+		end)
+	end
 end
 
 function UIManager.stopCraftingProgress()
 	isCrafting = false
 	HUDUI.HideHarvestProgress()
+	
+	if spinnerTween then spinnerTween:Cancel(); spinnerTween = nil end
+	if progConn then progConn:Disconnect(); progConn = nil end
+	
+	local refs = (isInvOpen and InventoryUI.Refs.Detail) or (isCraftOpen and CraftingUI.Refs.Detail)
+	if refs and refs.ProgWrap then
+		refs.ProgWrap.Visible = false
+		refs.ProgBar.Visible = false
+	end
 end
 function UIManager._doCraft()
 	-- 인벤토리 내 제작 탭 처리 (아이템 제작 전용)
@@ -930,19 +1000,32 @@ function UIManager._doCraft()
 		if not ok then UIManager.notify(msg, C.RED); return end
 
 		-- 제작 프로세스 시작
-		UIManager.showCraftingProgress(recipe.craftTime or 3)
+		local craftTime = recipe.craftTime or 3
+		UIManager.showCraftingProgress(craftTime)
 		
 		task.spawn(function()
 			local resultOk, response = NetClient.Request("Craft.Start.Request", {
 				recipeId = selectedPersonalRecipeId
 			})
 			
-			UIManager.stopCraftingProgress()
 			if resultOk then
-				UIManager.notify((recipe.name or "아이템") .. " 제작 완료!", C.GREEN)
-				UIManager.refreshInventory()
-				UIManager.refreshPersonalCrafting() 
+				if response and response.instant then
+					-- 즉시 제작인 경우 바로 종료
+					UIManager.stopCraftingProgress()
+					UIManager.notify((recipe.name or "아이템") .. " 제작 완료!", C.GREEN)
+					UIManager.refreshInventory()
+					UIManager.refreshPersonalCrafting() 
+				else
+					-- 대기 제작인 경우, craftTime만큼 더 기다림 (또는 서버 이벤트를 기다림)
+					-- 여기선 단순히 시간만큼 대기하거나, 이미 showCraftingProgress가 애니메이션 중이므로
+					-- 추가적인 stop 호출 없이 서버 이벤트(Craft.Completed)를 기다려도 됨.
+					-- 하지만 UX상 여기서 시간만큼 기다려주는 게 안전함.
+					task.wait(craftTime)
+					UIManager.stopCraftingProgress()
+					-- 완료 통보는 setupEventListeners의 Craft.Completed 에서 처리됨
+				end
 			else
+				UIManager.stopCraftingProgress()
 				UIManager.notify("제작 실패: " .. tostring(response), C.RED)
 			end
 		end)
@@ -1180,8 +1263,121 @@ function UIManager.refreshBuild()
 		end
 	end
 	
-	BuildUI.Refresh(list, {}, selectedBuildCat, getItemIcon, UIManager)
+	BuildUI.Refresh(list, {}, selectedBuildCat, UIManager.getItemIcon, UIManager)
 end
+
+----------------------------------------------------------------
+-- Storage UI
+----------------------------------------------------------------
+
+function UIManager.openStorage(storageId, data)
+	if isStorageOpen then return end
+	closeAllWindows("STORAGE")
+	isStorageOpen = true
+	currentStorageData = data
+	StorageUI.Refs.Frame.Visible = true
+	UIManager._setMainHUDVisible(false)
+	InputManager.setUIOpen(true)
+	
+	if not blurEffect then
+		blurEffect = Instance.new("BlurEffect"); blurEffect.Size = 15; blurEffect.Parent = Lighting
+	end
+	
+	UIManager.refreshStorage()
+end
+
+function UIManager.closeStorage()
+	if not isStorageOpen then return end
+	if blurEffect then blurEffect:Destroy(); blurEffect = nil end
+	isStorageOpen = false
+	currentStorageData = nil
+	StorageUI.Refs.Frame.Visible = false
+	updateUIMode()
+	
+	-- 서버에 닫기 요청
+	StorageController.closeStorage()
+end
+
+function UIManager.refreshStorage()
+	if not isStorageOpen or not currentStorageData then return end
+	
+	local invData = InventoryController.getItems()
+	StorageUI.Refresh(currentStorageData, invData, UIManager.getItemIcon, UIManager)
+end
+
+function UIManager._onStorageSlotClick(slot, fromType)
+	StorageController.moveItem(slot, fromType)
+end
+
+----------------------------------------------------------------
+-- Facility UI
+----------------------------------------------------------------
+
+function UIManager.openFacility(structureId, data)
+	if isFacilityOpen then return end
+	closeAllWindows("FACILITY")
+	isFacilityOpen = true
+	currentFacilityStructureId = structureId
+	currentFacilityData = data
+	FacilityUI.Refs.Frame.Visible = true
+	UIManager._setMainHUDVisible(false)
+	InputManager.setUIOpen(true)
+	
+	if not blurEffect then
+		blurEffect = Instance.new("BlurEffect"); blurEffect.Size = 15; blurEffect.Parent = Lighting
+	end
+	
+	UIManager.refreshFacility()
+end
+
+function UIManager.closeFacility()
+	if not isFacilityOpen then return end
+	if blurEffect then blurEffect:Destroy(); blurEffect = nil end
+	isFacilityOpen = false
+	currentFacilityStructureId = nil
+	currentFacilityData = nil
+	FacilityUI.Refs.Frame.Visible = false
+	updateUIMode()
+	
+	FacilityController.closeFacility()
+end
+
+function UIManager.refreshFacility()
+	if not isFacilityOpen or not currentFacilityData then return end
+	
+	local invData = InventoryController.getItems()
+	FacilityUI.Refresh(currentFacilityData, invData, UIManager.getItemIcon, DataHelper.GetData, UIManager)
+end
+
+function UIManager._onInventoryToFacility(slot)
+	local item = InventoryController.getItem(slot)
+	if not item then return end
+	
+	local itemData = DataHelper.GetData("ItemData", item.itemId)
+	if not itemData then return end
+	
+	-- 연료 우선 판정
+	if itemData.fuelValue and itemData.fuelValue > 0 then
+		FacilityController.addFuel(slot)
+	else
+		-- 아니면 재료로 투입
+		FacilityController.addInput(slot)
+	end
+end
+
+function UIManager._onCollectFacility()
+	FacilityController.collectOutput()
+end
+
+function UIManager._onFacilityFuelClick()
+	FacilityController.removeFuel()
+end
+
+function UIManager._onFacilityInputClick()
+	FacilityController.removeInput()
+end
+
+
 
 function UIManager._onBuildCategoryClick(catId)
 	selectedBuildCat = catId
@@ -1191,8 +1387,9 @@ end
 function UIManager._onBuildItemClick(data)
 	selectedBuildId = data.id
 	local isUnlocked = TechController.isFacilityUnlocked(data.id)
-	local ok, _ = UIManager.checkMaterials(data)
-	BuildUI.UpdateDetail(data, ok, getItemIcon, isUnlocked)
+	local playerItemCounts = InventoryController.getItemCounts()
+	local ok, _ = UIManager.checkMaterials(data, playerItemCounts)
+	BuildUI.UpdateDetail(data, ok, getItemIcon, isUnlocked, playerItemCounts, DataHelper)
 end
 
 function UIManager._doStartBuild()
@@ -1578,6 +1775,11 @@ function UIManager.Init()
 	EquipmentUI.Init(mainGui, UIManager, Enums, isMobile)
 	equipmentUIFrame = EquipmentUI.Refs.Frame
 	BuildUI.Init(mainGui, UIManager, isMobile)
+	StorageUI.Init(mainGui, UIManager, isMobile)
+	FacilityUI.Init(mainGui, UIManager, isMobile)
+
+	StorageController.Init()
+	FacilityController.Init()
 
 	-- 슬롯 참조만 유지 (드래그 앤 드롭 및 리프레시 로직용)
 	hotbarSlots = HUDUI.Refs.hotbarSlots

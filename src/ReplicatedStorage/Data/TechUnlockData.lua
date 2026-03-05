@@ -19,6 +19,7 @@ local TechUnlockData = {
 			facilities = {} 
 		},
 		category = "SURVIVAL",
+		description = "석재 도구와 횃불 등 기초적인 생존 장비를 제작할 수 있습니다.",
 	},
 	{
 		id = "TECH_Lv2_FIRE",
@@ -28,6 +29,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv1_BASICS" },
 		unlocks = { recipes = { "CRAFT_COOKED_MEAT" }, facilities = { "CAMPFIRE" } },
 		category = "SURVIVAL",
+		description = "모닥불을 피워 음식을 익히거나 밤의 추위로부터 몸을 보호합니다.",
 	},
 	{
 		id = "TECH_Lv3_CLOTHES",
@@ -37,15 +39,17 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv1_BASICS" },
 		unlocks = { recipes = { "CRAFT_FIBER_SHIRT", "CRAFT_FIBER_PANTS" }, facilities = {} },
 		category = "SURVIVAL",
+		description = "섬유로 제작된 기초적인 의복을 통해 방어력을 갖춥니다.",
 	},
 	{
 		id = "TECH_Lv4_SETTLEMENT",
-		name = "초기 정착",
+		name = "원시 작업대",
 		requireLevel = 4,
 		techPointCost = 2,
 		prerequisites = { "TECH_Lv2_FIRE" },
-		unlocks = { recipes = {}, facilities = { "STORAGE_BOX", "PRIMITIVE_WORKBENCH" } },
+		unlocks = { recipes = {}, facilities = { "PRIMITIVE_WORKBENCH", "STORAGE_BOX" } },
 		category = "SETTLEMENT",
+		description = "원시 작업대와 보관함을 건설하여 본격적인 정착 활동과 도구 제작을 시작합니다.",
 	},
 	{
 		id = "TECH_Lv5_HUNTING",
@@ -55,6 +59,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv4_SETTLEMENT" },
 		unlocks = { recipes = { "CRAFT_WOODEN_CLUB", "CRAFT_VINE_BOLA", "CRAFT_LEATHER_ARMOR" }, facilities = {} },
 		category = "WEAPONS",
+		description = "몽둥이와 볼라를 활용해 더욱 효율적인 수렵 활동을 시작합니다.",
 	},
 	{
 		id = "TECH_Lv5_BASE_TOTEM",
@@ -74,6 +79,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv4_SETTLEMENT" },
 		unlocks = { recipes = {}, facilities = { "REPAIR_BENCH" } },
 		category = "SURVIVAL",
+		description = "수리 작업대를 이용해 내구도가 닳은 도구를 다시 새것처럼 수리합니다.",
 	},
 
 	{
@@ -84,6 +90,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv5_BASE_TOTEM" },
 		unlocks = { recipes = {}, facilities = { "WOODEN_FOUNDATION", "WOODEN_WALL", "WOODEN_ROOF", "WOODEN_DOOR" } },
 		category = "SETTLEMENT",
+		description = "통나무를 가공해 단단한 토대와 벽을 갖춘 목조 가옥을 건설합니다.",
 	},
 	{
 		id = "TECH_Lv13_BOW",
@@ -93,6 +100,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv5_HUNTING" },
 		unlocks = { recipes = { "CRAFT_WOODEN_BOW", "CRAFT_STONE_ARROW" }, facilities = {} },
 		category = "WEAPONS",
+		description = "나무로 만든 활과 돌 화살로 멀리 떨어진 적을 제압합니다.",
 	},
 	{
 		id = "TECH_Lv14_BOLA2",
@@ -102,6 +110,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv5_HUNTING" },
 		unlocks = { recipes = { "CRAFT_BONE_BOLA" }, facilities = {} },
 		category = "PAL",
+		description = "뼈를 깎아 만든 볼라로 더 강력한 야수를 포획할 수 있습니다.",
 	},
 	{
 		id = "TECH_Lv15_HOE",
@@ -111,6 +120,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv4_SETTLEMENT" },
 		unlocks = { recipes = { "CRAFT_STONE_HOE" }, facilities = {} },
 		category = "TOOLS",
+		description = "땅을 일구고 농작물을 재배하기 위한 돌 괭이를 제작합니다.",
 	},
 	{
 		id = "TECH_Lv17_FARMING",
@@ -120,6 +130,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv15_HOE" },
 		unlocks = { recipes = {}, facilities = { "BERRY_PLANTATION", "BEAST_FEEDING_TROUGH" } },
 		category = "SURVIVAL",
+		description = "베리 농장을 건설해 식량을 안정적으로 수급하고 먹이통을 마련합니다.",
 	},
 
 	--========================================
@@ -133,6 +144,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv11_WOOD_BUILD" },
 		unlocks = { recipes = {}, facilities = { "STONE_FURNACE" } },
 		category = "FACILITIES",
+		description = "돌로 만든 용광로를 통해 광석으로부터 주괴를 추출하기 시작합니다.",
 	},
 	{
 		id = "TECH_Lv21_BRONZE_SMELT",
@@ -142,6 +154,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv20_FURNACE1" },
 		unlocks = { recipes = { "SMELT_BRONZE_INGOT" }, facilities = {} },
 		category = "FACILITIES",
+		description = "구리와 주석을 배합하여 더욱 단단한 청동 주괴를 제련합니다.",
 	},
 	{
 		id = "TECH_Lv22_WORKBENCH2",
@@ -151,6 +164,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv21_BRONZE_SMELT" },
 		unlocks = { recipes = {}, facilities = { "BRONZE_WORKBENCH" } },
 		category = "FACILITIES",
+		description = "청동기 시대를 위한 전용 작업대를 건설해 상위 장비를 제작합니다.",
 	},
 	{
 		id = "TECH_Lv23_BRONZE_TOOLS",
@@ -160,6 +174,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv22_WORKBENCH2" },
 		unlocks = { recipes = { "CRAFT_BRONZE_PICKAXE", "CRAFT_BRONZE_AXE" }, facilities = {} },
 		category = "TOOLS",
+		description = "청동의 강도를 활용해 더욱 빠른 채집이 가능한 도구를 제작합니다.",
 	},
 	{
 		id = "TECH_Lv25_BOLA3",
@@ -169,6 +184,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv22_WORKBENCH2" },
 		unlocks = { recipes = { "CRAFT_BRONZE_BOLA" }, facilities = {} },
 		category = "PAL",
+		description = "청동으로 보강된 포획구로 상위급 야수를 효과적으로 억제합니다.",
 	},
 	{
 		id = "TECH_Lv27_BRONZE_WEAPONS",
@@ -178,6 +194,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv23_BRONZE_TOOLS", "TECH_Lv13_BOW" },
 		unlocks = { recipes = { "CRAFT_BRONZE_SPEAR", "CRAFT_BRONZE_BOW", "CRAFT_BRONZE_ARROW", "CRAFT_BRONZE_ARMOR" }, facilities = {} },
 		category = "WEAPONS",
+		description = "청동 창과 청동 활 등 강력한 금속 무기와 갑옷을 갖춥니다.",
 	},
 	{
 		id = "TECH_Lv30_STRAW_NEST",
@@ -187,6 +204,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv11_WOOD_BUILD" },
 		unlocks = { recipes = {}, facilities = { "STRAW_NEST" } },
 		category = "PAL",
+		description = "짚을 엮어 만든 아늑한 둥지로 거점의 야수들이 휴식하게 합니다.",
 	},
 	{
 		id = "TECH_Lv32_LARGE_BOX",
@@ -196,6 +214,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv11_WOOD_BUILD" },
 		unlocks = { recipes = {}, facilities = { "LARGE_STORAGE_BOX" } },
 		category = "SETTLEMENT",
+		description = "훨씬 더 많은 자원을 안전하게 보관할 수 있는 대형 상자를 설치합니다.",
 	},
 
 	--========================================
@@ -209,6 +228,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv21_BRONZE_SMELT" },
 		unlocks = { recipes = { "SMELT_IRON_INGOT" }, facilities = { "IRON_FURNACE" } },
 		category = "FACILITIES",
+		description = "고열을 견디는 철 용광로에서 순도 높은 철 주괴를 생산합니다.",
 	},
 	{
 		id = "TECH_Lv36_STONE_BUILD",
@@ -218,6 +238,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv35_FURNACE2", "TECH_Lv11_WOOD_BUILD" },
 		unlocks = { recipes = {}, facilities = { "STONE_FOUNDATION", "STONE_WALL", "STONE_ROOF" } },
 		category = "SETTLEMENT",
+		description = "돌을 깎아 만든 견고한 벽과 천장으로 습격으로부터 완벽히 보호받습니다.",
 	},
 	{
 		id = "TECH_Lv38_WORKBENCH3",
@@ -227,6 +248,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv35_FURNACE2", "TECH_Lv22_WORKBENCH2" },
 		unlocks = { recipes = {}, facilities = { "IRON_WORKBENCH" } },
 		category = "FACILITIES",
+		description = "철기 문명을 위한 정밀 작업대에서 최고 수준의 장비를 제작합니다.",
 	},
 	{
 		id = "TECH_Lv40_IRON_TOOLS",
@@ -236,6 +258,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv38_WORKBENCH3" },
 		unlocks = { recipes = { "CRAFT_IRON_PICKAXE", "CRAFT_IRON_AXE" }, facilities = {} },
 		category = "TOOLS",
+		description = "강철 수준의 강도를 지닌 철제 도구로 거대 자원을 순식간에 채집합니다.",
 	},
 	{
 		id = "TECH_Lv41_IRON_SPEAR",
@@ -255,6 +278,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv40_IRON_TOOLS" },
 		unlocks = { recipes = { "CRAFT_CROSSBOW", "CRAFT_IRON_BOLT", "CRAFT_IRON_ARMOR" }, facilities = {} },
 		category = "WEAPONS",
+		description = "강력한 위력의 석궁과 철제 판금 갑옷으로 무장하여 전장을 누빕니다.",
 	},
 	{
 		id = "TECH_Lv45_BOLA4",
@@ -264,6 +288,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv38_WORKBENCH3" },
 		unlocks = { recipes = { "CRAFT_IRON_BOLA" }, facilities = {} },
 		category = "PAL",
+		description = "강철 와이어가 포함된 최상위 포획구로 환상의 야수들을 포획합니다.",
 	},
 	{
 		id = "TECH_Lv47_BEAST_BED",
@@ -273,6 +298,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv30_STRAW_NEST" },
 		unlocks = { recipes = {}, facilities = { "LARGE_BEAST_BED" } },
 		category = "PAL",
+		description = "지친 대형 야수들을 위한 대형 침대를 건설해 피로를 빠르게 해소합니다.",
 	},
 	{
 		id = "TECH_Lv50_REINFORCED_GATE",
@@ -282,6 +308,7 @@ local TechUnlockData = {
 		prerequisites = { "TECH_Lv36_STONE_BUILD", "TECH_Lv38_WORKBENCH3" },
 		unlocks = { recipes = {}, facilities = { "REINFORCED_GATE" } },
 		category = "SETTLEMENT",
+		description = "어떤 공격에도 끄떡없는 철제 보강 성문을 세워 완벽한 요새를 완성합니다.",
 	},
 }
 

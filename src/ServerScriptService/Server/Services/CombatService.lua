@@ -23,7 +23,7 @@ local PlayerStatService
 local HungerService -- Cached (Phase 11)
 
 -- Constants
-local DEFAULT_ATTACK_RANGE = 15 -- 맨손 사거리 (Balance.COMBAT_HITBOX_SIZE(12) 고려)
+local DEFAULT_ATTACK_RANGE = Balance.REACH_BAREHAND or 12 -- 맨손 사거리 (Balance 반영)
 local MIN_ATTACK_COOLDOWN = 0.35 -- 서버 측 최소 공격 쿨다운 보안 검증 (클라이언트 0.4~0.5초 대비 타이트하게)
 local PVP_ENABLED = false       -- PvP 비활성화
 
@@ -88,7 +88,7 @@ function CombatService.processPlayerAttack(player: Player, targetId: string, too
 	local dynamicCooldown = MIN_ATTACK_COOLDOWN -- 기본 0.35초
 	local itemData = nil
 	local toolItem = nil
-	local isBlunt = false
+	local isBlunt = true -- 맨손은 기본적으로 타격(Blunt) 판정 (기절 수치 부여)
 	
 	if toolSlot then
 		local slotData = InventoryService.getSlot(userId, toolSlot)
@@ -96,10 +96,15 @@ function CombatService.processPlayerAttack(player: Player, targetId: string, too
 			itemData = DataService.getItem(slotData.itemId)
 			if itemData then
 				baseDamage = itemData.damage or 5
-				range = itemData.range or DEFAULT_ATTACK_RANGE
+				range = itemData.range or (itemData.optimalTool == "SPEAR" and Balance.REACH_SPEAR or Balance.REACH_TOOL or 14)
 				isBlunt = itemData.isBlunt == true
 				toolItem = slotData
 				
+				-- 내구도 체크: 파손된 도구는 공격 불가능 (또는 맨손 데미지 적용 가능하나 현재는 불허)
+				if slotData.durability and slotData.durability <= 0 then
+					return false, Enums.ErrorCode.INVALID_STATE -- "무기가 파손되었습니다"
+				end
+
 				-- 아이템에 명시된 attackSpeed가 있다면 이를 기반으로 쿨다운 설정 (+ 레이턴시 보정)
 				if itemData.attackSpeed then
 					dynamicCooldown = math.max(0.15, itemData.attackSpeed - 0.05)
@@ -136,9 +141,10 @@ function CombatService.processPlayerAttack(player: Player, targetId: string, too
 	local p2 = Vector2.new(creature.rootPart.Position.X, creature.rootPart.Position.Z)
 	local dist = (p1 - p2).Magnitude
 	
-	-- 서버 측 검증은 클라이언트보다 약간 더 여유를 둡니다 (네트워크 레이턴시 고려)
-	if dist > range + 10 then 
-		warn(string.format("[CombatService] Out of range (2D): %.1f > %.1f", dist, range))
+	-- 서버 측 검증은 클라이언트보다 약간 더 여유를 둡니다 (네트워크 레이턴시 및 거대 크리처 히트박스 고려)
+	-- [수정] 거대 공룡 판정을 위해 사거리 여유분을 30 -> 50으로 상향
+	if dist > range + 50 then 
+		warn(string.format("[CombatService] Out of range (2D): %.1f > %.1f (Range: %d + 50)", dist, range + 50, range))
 		return false, Enums.ErrorCode.OUT_OF_RANGE
 	end
 	
@@ -237,10 +243,26 @@ function CombatService.damagePlayer(userId: number, rawDamage: number)
 	local reductionMult = 100 / (100 + defense)
 	local finalDamage = math.max(1, rawDamage * reductionMult)
 	
-	-- 3. 방어구 내구도 감소 (Body 슬롯 우선)
+	-- 3. 방어구 내구도 감소
 	if InventoryService and InventoryService.decreaseEquipmentDurability then
-		local armorDamage = math.max(1, math.floor(rawDamage * Balance.ARMOR_DURABILITY_LOSS_RATIO))
-		InventoryService.decreaseEquipmentDurability(userId, "BODY", armorDamage)
+		local armorDamage = math.max(1, math.floor(rawDamage * (Balance.ARMOR_DURABILITY_LOSS_RATIO or 0.1)))
+		local equip = InventoryService.getEquipment(userId)
+		
+		if equip.SUIT then
+			-- 한벌옷은 전담 처리
+			InventoryService.decreaseEquipmentDurability(userId, "SUIT", armorDamage)
+		else
+			-- 상하의/머리 분산 처리
+			if equip.TOP then 
+				InventoryService.decreaseEquipmentDurability(userId, "TOP", math.ceil(armorDamage * 0.4)) 
+			end
+			if equip.BOTTOM then 
+				InventoryService.decreaseEquipmentDurability(userId, "BOTTOM", math.ceil(armorDamage * 0.4)) 
+			end
+			if equip.HEAD then 
+				InventoryService.decreaseEquipmentDurability(userId, "HEAD", math.ceil(armorDamage * 0.2)) 
+			end
+		end
 	end
 	
 	humanoid:TakeDamage(finalDamage)
@@ -254,7 +276,7 @@ end
 --========================================
 
 local function handleHitRequest(player, payload)
-	local targetId = payload.targetInstanceId -- InstanceId (GUID)
+	local targetId = payload.targetId or payload.targetInstanceId -- Both supported for compatibility
 	
 	-- 보안/기획: 클라이언트가 보낸 toolSlot 대신, 서버의 현재 활성 슬롯(Active Slot)을 사용
 	local activeSlot = 1

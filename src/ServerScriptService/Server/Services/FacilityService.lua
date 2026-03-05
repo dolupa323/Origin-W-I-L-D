@@ -97,7 +97,7 @@ local function findRecipeForInput(facilityId: string, inputItemId: string): any?
 end
 
 --- 상태 전이 판정
-local function determineState(runtime: any): number
+local function determineState(runtime: any): string
 	local facilityData = DataService.getFacility(runtime.facilityId)
 	if not facilityData then return Enums.FacilityState.IDLE end
 
@@ -118,9 +118,12 @@ local function determineState(runtime: any): number
 	
 	-- 연료 필요한 시설
 	if facilityData.fuelConsumption > 0 then
-		if hasInput and hasFuel then
+		-- 연료 슬롯에 뭔가 있거나 현재 연소 중인 연료가 있거나
+		local hasAnyFuel = (runtime.currentFuel > 0 or (runtime.fuelSlot ~= nil and runtime.fuelSlot.count > 0))
+		
+		if hasInput and hasAnyFuel then
 			return Enums.FacilityState.ACTIVE
-		elseif hasInput and not hasFuel then
+		elseif hasInput and not hasAnyFuel then
 			return Enums.FacilityState.NO_POWER
 		end
 	else
@@ -160,9 +163,25 @@ local function lazyUpdate(runtime)
 	-- 연료 기반 시설: 가동 가능한 시간 계산
 	local activeTime = deltaTime
 	if facilityData.fuelConsumption > 0 then
-		-- 연료로 버틸 수 있는 시간
-		local fuelTime = runtime.currentFuel / facilityData.fuelConsumption
-		activeTime = math.min(deltaTime, fuelTime)
+		-- 현재 연소 중인 연료 시간이 부족하면 연료 슬롯에서 가져오기
+		if runtime.currentFuel < deltaTime * facilityData.fuelConsumption then
+			while runtime.fuelSlot and runtime.fuelSlot.count > 0 and runtime.currentFuel < deltaTime * facilityData.fuelConsumption do
+				local itemData = DataService.getItem(runtime.fuelSlot.itemId)
+				if itemData and itemData.fuelValue then
+					runtime.currentFuel = runtime.currentFuel + itemData.fuelValue
+					runtime.fuelSlot.count = runtime.fuelSlot.count - 1
+					if runtime.fuelSlot.count <= 0 then
+						runtime.fuelSlot = nil
+					end
+				else
+					break 
+				end
+			end
+		end
+		
+		-- 최종적으로 버틸 수 있는 시간
+		local fuelCapTime = runtime.currentFuel / facilityData.fuelConsumption
+		activeTime = math.min(deltaTime, fuelCapTime)
 		
 		-- 연료 차감
 		runtime.currentFuel = math.max(0, runtime.currentFuel - activeTime * facilityData.fuelConsumption)
@@ -384,11 +403,10 @@ function FacilityService.addFuel(player: Player, structureId: string, invSlot: n
 		runtime.fuelSlot = nil
 	end
 	
-	-- 인벤에서 1개 제거 → 연료값 충전
+	-- 인벤에서 1개 제거 -> 연료 슬롯에 추가
 	InventoryService.removeItem(userId, slotData.itemId, 1)
-	runtime.currentFuel = runtime.currentFuel + itemData.fuelValue
 	
-	-- 연료 슬롯 기록
+	-- 연료 슬롯 기록 (충전은 연소 시점에 lazyUpdate에서 수행됨)
 	if runtime.fuelSlot then
 		runtime.fuelSlot.count = runtime.fuelSlot.count + 1
 	else
@@ -405,9 +423,9 @@ function FacilityService.addFuel(player: Player, structureId: string, invSlot: n
 		fuelSlot = runtime.fuelSlot,
 	})
 	
-	print(string.format("[FacilityService] Added fuel to %s: +%d (total: %.0f)",
-		structureId, itemData.fuelValue, runtime.currentFuel))
-	return true, nil, { currentFuel = runtime.currentFuel, state = runtime.state }
+	print(string.format("[FacilityService] Added fuel to %s: %s (Queued)",
+		structureId, slotData.itemId))
+	return true, nil, { currentFuel = runtime.currentFuel, state = runtime.state, fuelSlot = runtime.fuelSlot }
 end
 
 --- 재료 투입 (Input 슬롯)
@@ -546,6 +564,80 @@ function FacilityService.collectOutput(player: Player, structureId: string)
 		return true, nil, { added = totalAdded }
 	else
 		return false, firstError or Enums.ErrorCode.SLOT_EMPTY, nil
+	end
+end
+
+--- 재료 회수 (Input 슬롯)
+function FacilityService.removeInput(player: Player, structureId: string)
+	local runtime = facilityStates[structureId]
+	if not runtime or not runtime.inputSlot then
+		return false, Enums.ErrorCode.SLOT_EMPTY, nil
+	end
+	
+	-- Lazy Update 선행 (중도 포기 시 진행률 초기화)
+	lazyUpdate(runtime)
+	
+	local itemId = runtime.inputSlot.itemId
+	local count = runtime.inputSlot.count
+	
+	local added, remaining = InventoryService.addItem(player.UserId, itemId, count)
+	
+	if added > 0 then
+		if remaining <= 0 then
+			runtime.inputSlot = nil
+			runtime.currentRecipeId = nil
+			runtime.processProgress = 0
+		else
+			runtime.inputSlot.count = remaining
+		end
+		
+		runtime.state = determineState(runtime)
+		emitFacilityEvent("Facility.StateChanged", player, {
+			structureId = structureId,
+			state = runtime.state,
+			inputSlot = runtime.inputSlot,
+		})
+		
+		return true, nil, { added = added }
+	else
+		return false, Enums.ErrorCode.INV_FULL, nil
+	end
+end
+
+--- 연료 회수 (Fuel 슬롯)
+--- 주의: currentFuel은 남겨두고 fuelSlot에 기록된 아이템만 회수 (이미 연소 중인 것은 회수 불가)
+function FacilityService.removeFuel(player: Player, structureId: string)
+	local runtime = facilityStates[structureId]
+	if not runtime or not runtime.fuelSlot then
+		return false, Enums.ErrorCode.SLOT_EMPTY, nil
+	end
+	
+	lazyUpdate(runtime)
+	
+	local itemId = runtime.fuelSlot.itemId
+	local count = runtime.fuelSlot.count
+	
+	local added, remaining = InventoryService.addItem(player.UserId, itemId, count)
+	
+	if added > 0 then
+		if remaining <= 0 then
+			runtime.fuelSlot = nil
+		else
+			runtime.fuelSlot.count = remaining
+		end
+		
+		-- currentFuel은 그대로 둠 (이미 충전된 시간은 취소 불가)
+		
+		runtime.state = determineState(runtime)
+		emitFacilityEvent("Facility.StateChanged", player, {
+			structureId = structureId,
+			state = runtime.state,
+			fuelSlot = runtime.fuelSlot,
+		})
+		
+		return true, nil, { added = added }
+	else
+		return false, Enums.ErrorCode.INV_FULL, nil
 	end
 end
 
@@ -732,6 +824,22 @@ local function handleCollectOutput(player: Player, payload: any)
 	return { success = true, data = data }
 end
 
+local function handleRemoveInput(player: Player, payload: any)
+	local structureId = payload.structureId
+	if not structureId then return { success = false, errorCode = Enums.ErrorCode.BAD_REQUEST } end
+	local success, errorCode, data = FacilityService.removeInput(player, structureId)
+	if not success then return { success = false, errorCode = errorCode } end
+	return { success = true, data = data }
+end
+
+local function handleRemoveFuel(player: Player, payload: any)
+	local structureId = payload.structureId
+	if not structureId then return { success = false, errorCode = Enums.ErrorCode.BAD_REQUEST } end
+	local success, errorCode, data = FacilityService.removeFuel(player, structureId)
+	if not success then return { success = false, errorCode = errorCode } end
+	return { success = true, data = data }
+end
+
 local function handleAssignPal(player: Player, payload: any)
 	local structureId = payload.structureId
 	local palUID = payload.palUID
@@ -790,6 +898,8 @@ function FacilityService.GetHandlers()
 		["Facility.AddFuel.Request"] = handleAddFuel,
 		["Facility.AddInput.Request"] = handleAddInput,
 		["Facility.CollectOutput.Request"] = handleCollectOutput,
+		["Facility.RemoveInput.Request"] = handleRemoveInput,
+		["Facility.RemoveFuel.Request"] = handleRemoveFuel,
 		-- Phase 5-5: 팰 작업 배치
 		["Facility.AssignPal.Request"] = handleAssignPal,
 		["Facility.UnassignPal.Request"] = handleUnassignPal,

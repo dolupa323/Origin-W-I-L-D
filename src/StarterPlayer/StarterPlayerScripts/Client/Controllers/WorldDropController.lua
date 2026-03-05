@@ -43,16 +43,56 @@ local function getItemDisplayName(itemId: string): string
 end
 
 local function findLootModel(itemId: string): Instance?
-	local assets = ReplicatedStorage:FindFirstChild("Assets")
-	if not assets then return nil end
+	-- 1. 검색 시작 지점 (Assets 우선, 없으면 ReplicatedStorage 전체)
+	local root = ReplicatedStorage:FindFirstChild("Assets") or ReplicatedStorage
 	
-	local modelsFolder = assets:FindFirstChild("LootModels") or assets:FindFirstChild("Models")
-	if not modelsFolder then return nil end
+	-- 2. 검색 대상 이름 (기본 POUCH)
+	local modelName = (Balance and Balance.DROP_MODEL_DEFAULT) or "POUCH"
 	
-	-- Balance에 정의된 기본 모델 이름 사용
-	local modelName = Balance.DROP_MODEL_DEFAULT
-	local template = modelsFolder:FindFirstChild(modelName) or modelsFolder:FindFirstChild(modelName:lower():gsub("^%l", string.upper))
-	return template
+	-- 3. 재귀 검색 함수
+	local function searchRecursive(folder, target)
+		if not folder then return nil end
+		
+		-- 직접 자식 확인 (대소문자 구분 없이)
+		local found = folder:FindFirstChild(target)
+		if not found then
+			for _, child in ipairs(folder:GetChildren()) do
+				if child.Name:upper() == target:upper() then
+					found = child
+					break
+				end
+			end
+		end
+		
+		if found then return found end
+		
+		-- 하위 폴더 검색 (LootModels, ItemModels, Models 순으로 우선순위)
+		local priority = {"LootModels", "ItemModels", "Models"}
+		for _, pName in ipairs(priority) do
+			local pFolder = folder:FindFirstChild(pName)
+			if pFolder then
+				local res = searchRecursive(pFolder, target)
+				if res then return res end
+			end
+		end
+		
+		-- 기타 모든 자식 검색
+		for _, child in ipairs(folder:GetChildren()) do
+			if (child:IsA("Folder") or child:IsA("Model")) and not table.find(priority, child.Name) then
+				local res = searchRecursive(child, target)
+				if res then return res end
+			end
+		end
+		
+		return nil
+	end
+	
+	-- 4. POUCH 최우선 검색 (모든 드롭아이템은 POUCH로 통일)
+	local template = searchRecursive(root, modelName)
+	if template then return template end
+	
+	-- 5. POUCH가 없는 경우에만 원래 아이템 모델 검색 (폴백)
+	return searchRecursive(root, itemId)
 end
 
 local function createDropModel(dropData)
@@ -101,7 +141,7 @@ local function createDropModel(dropData)
 		mainObject.Shape = Enum.PartType.Ball
 		mainObject.Color = getDropColor(dropData.itemId)
 		mainObject.Material = Enum.Material.SmoothPlastic
-		mainObject.Position = dropData.pos
+		mainObject.Position = dropData.pos + Vector3.new(0, mainObject.Size.Y / 2, 0)
 		mainObject.Anchored = true
 		mainObject.CanCollide = false
 		mainObject.CanQuery = true
@@ -129,6 +169,7 @@ local function createDropModel(dropData)
 	-- 속성 설정 (InteractController 인식용)
 	mainObject:SetAttribute("DropId", dropData.dropId)
 	mainObject:SetAttribute("ItemId", dropData.itemId)
+	mainObject:SetAttribute("DisplayName", getItemDisplayName(dropData.itemId))
 	
 	-- attachmentPoint에도 호환성을 위해 유지
 	if isModel then

@@ -54,27 +54,46 @@ function EquipmentUI.Init(parent, UIManager, Enums, isMobile)
 	
 	-- Slots Container
 	local slotsContainer = Utils.mkFrame({name="SlotsContainer", size=UDim2.new(1, 0, 1, 0), pos=UDim2.new(0,0,0,0), bgT=1, parent=eqArea})
-	local sList = Instance.new("UIListLayout"); sList.Padding=UDim.new(0, 20); sList.HorizontalAlignment=Enum.HorizontalAlignment.Center; sList.VerticalAlignment=Enum.VerticalAlignment.Center; sList.Parent=slotsContainer
+	local sList = Instance.new("UIListLayout")
+	sList.SortOrder = Enum.SortOrder.LayoutOrder
+	sList.Padding = UDim.new(0, 10)
+	sList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	sList.VerticalAlignment = Enum.VerticalAlignment.Center
+	sList.Parent = slotsContainer
 	
 	local slotConfigs = {
-		{id="Head"},
-		{id="Body"},
-		{id="Feet"},
-		{id="Hand"}
+		{id="HEAD", name="머리"},
+		{id="SUIT", name="한벌옷"},
+		{id="TOP", name="상의"},
+		{id="BOTTOM", name="하의"},
+		{id="HAND", name="도구/무기"},
 	}
-	for _, conf in ipairs(slotConfigs) do
+	
+	for i, conf in ipairs(slotConfigs) do
+		local wrapper = Utils.mkFrame({name=conf.id.."Wrap", size=UDim2.new(0.8, 0, 0, 80), bgT=1, parent=slotsContainer})
+		wrapper.LayoutOrder = i
+		
+		local wList = Instance.new("UIListLayout")
+		wList.FillDirection = Enum.FillDirection.Horizontal
+		wList.VerticalAlignment = Enum.VerticalAlignment.Center
+		wList.Padding = UDim.new(0,10)
+		wList.Parent = wrapper
+		
 		local slot = Utils.mkSlot({
 			name = conf.id.."Slot", 
-			size = UDim2.new(0, 70, 0, 70), -- Fixed offset for vertical aligned slots
+			size = UDim2.new(0, 60, 0, 60),
 			bgT = 0.3, 
 			stroke = 1, 
-			parent = slotsContainer
+			parent = wrapper
 		})
+		
+		Utils.mkLabel({text=conf.name, size=UDim2.new(0, 80, 1, 0), ts=14, color=C.GRAY, ax=Enum.TextXAlignment.Left, parent=wrapper})
+		
 		slot.click.MouseButton1Click:Connect(function()
-			if UIManager.onEquipmentSlotClick then UIManager.onEquipmentSlotClick(conf.id) end
+			if _UIManager.onEquipmentSlotClick then _UIManager.onEquipmentSlotClick(conf.id) end
 		end)
 		slot.click.MouseButton2Click:Connect(function()
-			if UIManager.onEquipmentSlotRightClick then UIManager.onEquipmentSlotRightClick(conf.id) end
+			if _UIManager.onEquipmentSlotRightClick then _UIManager.onEquipmentSlotRightClick(conf.id) end
 		end)
 		
 		EquipmentUI.Refs.Slots[conf.id] = slot
@@ -134,40 +153,99 @@ function EquipmentUI.Init(parent, UIManager, Enums, isMobile)
 	local actionFrame = Utils.mkFrame({size=UDim2.new(1,-20,0.15,0), pos=UDim2.new(0,10,1,-5), anchor=Vector2.new(0,1), bgT=1, vis=false, parent=statArea})
 	EquipmentUI.Refs.ActionFrame = actionFrame
 	local aList = Instance.new("UIListLayout"); aList.FillDirection=Enum.FillDirection.Horizontal; aList.Padding=UDim.new(0.05,0); aList.HorizontalAlignment=Enum.HorizontalAlignment.Center; aList.VerticalAlignment=Enum.VerticalAlignment.Center; aList.Parent=actionFrame
-	
+
 	Utils.mkBtn({text="적용", size=UDim2.new(0.45,0,0.8,0), bg=C.GREEN, font=F.TITLE, color=C.BG_PANEL, fn=function() UIManager.confirmPendingStats() end, parent=actionFrame})
 	Utils.mkBtn({text="초기화", size=UDim2.new(0.45,0,0.8,0), bg=C.BTN, font=F.TITLE, fn=function() UIManager.cancelPendingStats() end, parent=actionFrame})
+	
+	-- [New] Tooltip Frame (Initially Hidden)
+	EquipmentUI.Refs.Tooltip = Utils.mkFrame({
+		name = "Tooltip",
+		size = UDim2.new(0, 220, 0, 160),
+		bg = Color3.fromRGB(10, 10, 12),
+		bgT = 0.2,
+		r = 6, stroke = 1, strokeC = C.GOLD,
+		vis = false,
+		parent = parent -- ScreenGui parent to show above everything
+	})
+	EquipmentUI.Refs.Tooltip.ZIndex = 100
+	
+	local tt = EquipmentUI.Refs.Tooltip
+	EquipmentUI.Refs.TooltipName = Utils.mkLabel({text="아이템 이름", size=UDim2.new(1,-20,0,30), pos=UDim2.new(0,10,0,5), ts=16, font=F.TITLE, color=C.GOLD, ax=Enum.TextXAlignment.Left, parent=tt})
+	EquipmentUI.Refs.TooltipInfo = Utils.mkLabel({text="정보", size=UDim2.new(1,-20,1,-70), pos=UDim2.new(0,10,0,35), ts=14, color=C.WHITE, ax=Enum.TextXAlignment.Left, ay=Enum.TextYAlignment.Top, wrap=true, rich=true, parent=tt})
+	EquipmentUI.Refs.TooltipSet = Utils.mkLabel({text="[ 세트 효과 ]", size=UDim2.new(1,-20,0,30), pos=UDim2.new(0,10,1,-5), anchor=Vector2.new(0,1), ts=13, color=Color3.fromRGB(150, 255, 150), ax=Enum.TextXAlignment.Left, wrap=true, rich=true, parent=tt})
 end
 
 function EquipmentUI.Refresh(cachedStats, totalPending, equipmentData, getItemIcon, Enums)
 	local refs = EquipmentUI.Refs
 	if not refs.Frame or not refs.Frame.Visible then return end
 	
-	-- 장비 아이콘 업데이트
+	-- 장비 아이콘 업데이트 및 호버 이벤트
 	if equipmentData then
+		local ReplicatedStorage = game:GetService("ReplicatedStorage")
+		local ArmorSetData = require(ReplicatedStorage:WaitForChild("Data").ArmorSetData)
+		local DataHelper = require(ReplicatedStorage:WaitForChild("Shared").Util.DataHelper)
+		
 		for name, slot in pairs(refs.Slots) do
 			local item = equipmentData[name]
 			if item then
 				slot.icon.Image = getItemIcon(item.itemId)
 				slot.icon.Visible = true
 				
-				local DataHelper = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared").Util.DataHelper)
 				local itemData = DataHelper.GetData("ItemData", item.itemId)
 				
+				-- 내구도 바
 				if item.durability and itemData and itemData.durability then
 					local ratio = math.clamp(item.durability / itemData.durability, 0, 1)
 					slot.durBg.Visible = true
 					slot.durFill.Size = UDim2.new(ratio, 0, 1, 0)
-					if ratio > 0.5 then
-						slot.durFill.BackgroundColor3 = Color3.fromRGB(150, 255, 150)
-					elseif ratio > 0.2 then
-						slot.durFill.BackgroundColor3 = Color3.fromRGB(255, 200, 100)
-					else
-						slot.durFill.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
-					end
+					if ratio > 0.5 then slot.durFill.BackgroundColor3 = Color3.fromRGB(150, 255, 150)
+					elseif ratio > 0.2 then slot.durFill.BackgroundColor3 = Color3.fromRGB(255, 200, 100)
+					else slot.durFill.BackgroundColor3 = Color3.fromRGB(255, 100, 100) end
 				else
 					if slot.durBg then slot.durBg.Visible = false end
 				end
+				
+				-- 툴팁 이벤트 연결 (기존 연결 해제 불필요, mkSlot의 click은 ImageButton임)
+				local conn1 = slot.click.MouseEnter:Connect(function()
+					if not EquipmentUI.Refs.Tooltip then return end
+					EquipmentUI.Refs.Tooltip.Visible = true
+					EquipmentUI.Refs.TooltipName.Text = itemData.name
+					
+					local info = string.format("등급: %s\n방어력: %d\n내구도: %d/%d", 
+						itemData.rarity or "COMMON", 
+						itemData.defense or 0,
+						item.durability or 0,
+						itemData.durability or 0
+					)
+					EquipmentUI.Refs.TooltipInfo.Text = info
+					
+					if itemData.armorSet then
+						local setData = ArmorSetData[itemData.armorSet]
+						if setData then
+							EquipmentUI.Refs.TooltipSet.Text = string.format("<b>[%s]</b>\n%s", setData.name, setData.bonusText)
+							EquipmentUI.Refs.TooltipSet.Visible = true
+						else
+							EquipmentUI.Refs.TooltipSet.Visible = false
+						end
+					else
+						EquipmentUI.Refs.TooltipSet.Visible = false
+					end
+				end)
+				
+				local conn2 = slot.click.MouseLeave:Connect(function()
+					if EquipmentUI.Refs.Tooltip then EquipmentUI.Refs.Tooltip.Visible = false end
+				end)
+				
+				-- 매 틱마다 툴팁 위치 업데이트
+				local conn3 = game:GetService("RunService").RenderStepped:Connect(function()
+					if EquipmentUI.Refs.Tooltip and EquipmentUI.Refs.Tooltip.Visible then
+						local mousePos = game:GetService("UserInputService"):GetMouseLocation()
+						EquipmentUI.Refs.Tooltip.Position = UDim2.new(0, mousePos.X + 20, 0, mousePos.Y + 20)
+					end
+				end)
+				
+				-- 슬롯 데이터가 바뀔 때를 대비해 이전 연결 관리 로직이 필요할 수 있으나, 
+				-- 여기선 간단히 Refresh 시마다 갱신되는 구조임. (성능 최적화는 추후 검토)
 			else
 				slot.icon.Image = ""
 				slot.icon.Visible = false

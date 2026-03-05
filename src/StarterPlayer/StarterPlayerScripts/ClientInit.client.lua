@@ -73,6 +73,10 @@ if success then
 	-- VirtualizationController 초기화 (성능 최적화: 가상화)
 	local VirtualizationController = require(Controllers.VirtualizationController)
 	VirtualizationController.Init()
+
+	-- CreatureAnimationController 초기화 (공룡 애니메이션)
+	local CreatureAnimationController = require(Controllers.CreatureAnimationController)
+	CreatureAnimationController.Init()
 	
 	-- UIManager 초기화 (UI 생성 - 컨트롤러들 초기화 후)
 	UIManager.Init()

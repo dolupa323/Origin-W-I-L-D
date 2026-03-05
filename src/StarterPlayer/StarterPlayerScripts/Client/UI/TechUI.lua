@@ -41,41 +41,6 @@ local function resolveNodeIcon(node, getItemIcon)
 end
 
 ----------------------------------------------------------------
--- 유틸: 선긋기 (Arrow)
-----------------------------------------------------------------
-local function drawLine(parent, ptA, ptB, isRed, zIndex)
-	local f = Instance.new("Frame")
-	f.Name = "Line"
-	f.AnchorPoint = Vector2.new(0.5, 0.5)
-	
-	local center = (ptA + ptB) / 2
-	local len = (ptB - ptA).Magnitude
-	local angle = math.deg(math.atan2(ptB.Y - ptA.Y, ptB.X - ptA.X))
-	
-	f.Position = UDim2.new(0, center.X, 0, center.Y)
-	f.Size = UDim2.new(0, len, 0, 3)
-	f.Rotation = angle
-	f.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
-	f.BorderSizePixel = 0
-	f.ZIndex = zIndex
-	f.Parent = parent
-	
-	table.insert(TechUI.Refs.Lines, f)
-	
-	local arr = Instance.new("TextLabel")
-	arr.Size = UDim2.new(0, 15, 0, 15)
-	arr.AnchorPoint = Vector2.new(1, 0.5)
-	arr.Position = UDim2.new(1, 3, 0.5, 0)
-	arr.BackgroundTransparency = 1
-	arr.Text = "▶"
-	arr.TextColor3 = f.BackgroundColor3
-	arr.TextSize = 14
-	arr.Font = Enum.Font.ArialBold
-	arr.ZIndex = zIndex + 1
-	arr.Parent = f
-end
-
-----------------------------------------------------------------
 -- 선택 상태 업데이트
 ----------------------------------------------------------------
 local function updateSelectionHighlight()
@@ -112,7 +77,7 @@ local function renderTree(techList, unlocked, playerLevel, getItemIcon, UIManage
 		if c:IsA("GuiObject") and c ~= bgGrid then c:Destroy() end
 	end
 	for _, c in ipairs(bgGrid:GetChildren()) do
-		if c.Name == "VLine" then c:Destroy() end
+		if c.Name == "HLine" then c:Destroy() end
 	end
 	
 	TechUI.Refs.Nodes = {}
@@ -122,9 +87,9 @@ local function renderTree(techList, unlocked, playerLevel, getItemIcon, UIManage
 	local currentKeys = CATEGORY_TABS[activeTab].keys
 	local filteredReqs = {}
 	local nodePositions = {}
-	local nodeSize = Vector2.new(78, 78)
-	local xSpacing = 160
-	local ySpacing = 120
+	local nodeSize = Vector2.new(68, 68) -- 노드 크기 살짝 축소
+	local xSpacing = 90  -- 가로 간격 대폭 축소
+	local ySpacing = 110 -- 세로 간격 대폭 축소 (레벨 섹션간 간격)
 	
 	local levelSet = {}
 	for _, node in ipairs(techList) do
@@ -143,9 +108,9 @@ local function renderTree(techList, unlocked, playerLevel, getItemIcon, UIManage
 	for l, _ in pairs(levelSet) do table.insert(activeLevels, l) end
 	table.sort(activeLevels)
 	
-	local levelToCol = {}
-	for col, l in ipairs(activeLevels) do
-		levelToCol[l] = col
+	local levelToRow = {}
+	for row, l in ipairs(activeLevels) do
+		levelToRow[l] = row
 	end
 	
 	local lvlCols = {} -- lvlCols[lvl] = current_row
@@ -156,46 +121,48 @@ local function renderTree(techList, unlocked, playerLevel, getItemIcon, UIManage
 	
 	for _, node in ipairs(filteredReqs) do
 		local lvl = tonumber(node.requireLevel) or 1
-		local col = levelToCol[lvl] or 1
+		local row = levelToRow[lvl] or 1
 		
-		local row = (lvlCols[lvl] or 0)
-		local cx = (col - 1) * xSpacing + 70
-		local cy = row * ySpacing + 80
+		local col = (lvlCols[lvl] or 0)
+		-- 세로 배치: cx 시작점을 레벨 글씨 바로 옆으로 당김
+		local cx = col * xSpacing + 75 
+		local cy = (row - 1) * ySpacing + 45 -- 위쪽 여백 줄임
 		
 		nodePositions[node.id] = Vector2.new(cx, cy)
-		lvlCols[lvl] = row + 1
+		lvlCols[lvl] = col + 1
 		
 		if cx > maxX then maxX = cx end
 		if cy > maxY then maxY = cy end
 	end
 	
-	-- 배경 그리선 배치 (존재하는 Lv 표시)
-	for col, l in ipairs(activeLevels) do
-		local cx = (col - 1) * xSpacing + 70 + nodeSize.X/2
+	-- 배경 그리선 배치 (존재하는 Lv 표시 - 가로선 방식)
+	for row, l in ipairs(activeLevels) do
+		local cy = (row - 1) * ySpacing + 45 + nodeSize.Y/2
 		-- 선
 		local line = Instance.new("Frame")
-		line.Name = "VLine"
-		line.Size = UDim2.new(0, 1, 1, 0)
-		line.Position = UDim2.new(0, cx, 0, 0)
-		line.BackgroundColor3 = Color3.fromRGB(30,30,30)
+		line.Name = "HLine"
+		line.Size = UDim2.new(1, -20, 0, 1)
+		line.Position = UDim2.new(0, 10, 0, cy)
+		line.BackgroundColor3 = Color3.fromRGB(35, 35, 38)
 		line.BorderSizePixel = 0
 		line.ZIndex = 0
 		line.Parent = bgGrid
 		-- 글씨
 		local txt = Instance.new("TextLabel")
-		txt.Name = "VLine" -- 같이 삭제되게
-		txt.Size = UDim2.new(0, 50, 0, 20)
-		txt.Position = UDim2.new(0, cx - 25, 0, 8)
+		txt.Name = "HLine"
+		txt.Size = UDim2.new(0, 60, 0, 20)
+		txt.Position = UDim2.new(0, 12, 0, cy - 25) -- 위치 살짝 조정
 		txt.BackgroundTransparency = 1
 		txt.Text = "Lv. " .. l
 		txt.Font = F.TITLE
 		txt.TextSize = 13
-		txt.TextColor3 = Color3.fromRGB(150, 150, 150)
+		txt.TextColor3 = Color3.fromRGB(180, 150, 50)
+		txt.TextXAlignment = Enum.TextXAlignment.Left
 		txt.ZIndex = 1
 		txt.Parent = bgGrid
 	end
 	
-	canvas.CanvasSize = UDim2.new(0, maxX + 300, 0, maxY + 200)
+	canvas.CanvasSize = UDim2.new(0, maxX + 200, 0, maxY + 200)
 	
 	-- 노드 생성 및 선 그리기
 	local lvl = type(playerLevel)=="number" and playerLevel or (tonumber(tostring(playerLevel)) or 1)
@@ -205,20 +172,10 @@ local function renderTree(techList, unlocked, playerLevel, getItemIcon, UIManage
 		local isUnlocked = unlocked[node.id] == true
 		local preMet = true
 		
-		-- 선 연결 처리
+		-- 선행 조건 체크 (UI 시각화 로직만 남김)
 		if node.prerequisites then
 			for _, pid in ipairs(node.prerequisites) do
-				local pDone = unlocked[pid] == true
-				if not pDone then preMet = false end
-				
-				local pPos = nodePositions[pid]
-				if pPos then
-					-- 현재 탭 내에 선행이 있음
-					local ptA = pPos + Vector2.new(nodeSize.X, nodeSize.Y/2)
-					local ptB = pos + Vector2.new(0, nodeSize.Y/2)
-					-- 꺾인 선 보단 직관적인 직선 사용
-					drawLine(canvas, ptA, ptB, not pDone, 100)
-				end
+				if not unlocked[pid] then preMet = false break end
 			end
 		end
 		
@@ -337,10 +294,10 @@ function TechUI.Init(parent, UIManager, isMobile)
 
 	local main = Utils.mkWindow({
 		name = "Main",
-		size = UDim2.new(isMobile and 1 or 0.95, 0, isMobile and 1 or 0.9, 0),
-		maxSize = Vector2.new(1400, 900),
+		size = UDim2.new(isMobile and 1 or 0.7, 0, isMobile and 1 or 0.85, 0),
+		maxSize = Vector2.new(950, 850),
 		pos = UDim2.new(0.5,0,0.5,0), anchor = Vector2.new(0.5,0.5),
-		bg = Color3.fromRGB(15, 15, 18), bgT = 0, stroke = 1, strokeC = Color3.fromRGB(40,40,40),
+		bg = Color3.fromRGB(15, 15, 18), bgT = 0.5, stroke = 1, strokeC = Color3.fromRGB(60,60,60),
 		parent = TechUI.Refs.Frame,
 	})
 
@@ -434,6 +391,8 @@ function TechUI.Init(parent, UIManager, isMobile)
 	TechUI.Refs.Canvas.BackgroundTransparency = 1
 	TechUI.Refs.Canvas.BorderSizePixel = 0
 	TechUI.Refs.Canvas.ScrollBarThickness = 6
+	TechUI.Refs.Canvas.CanvasSize = UDim2.new(0, 0, 0, 0)
+	TechUI.Refs.Canvas.VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar
 	TechUI.Refs.Canvas.Parent = canvasWrapper
 	
 	TechUI.Refs.BgGrid = Instance.new("Frame")
@@ -444,11 +403,11 @@ function TechUI.Init(parent, UIManager, isMobile)
 	TechUI.Refs.BgGrid.Parent = TechUI.Refs.Canvas
 	
 	-- 우측 상세 패널 (팝업 대신 사이드 바 고정)
-	local detailSize = 250
+	local detailSize = 320
 	TechUI.Refs.DetailFrame = Utils.mkFrame({
 		name="Detail", size=UDim2.new(0, detailSize, 1, -16),
 		pos=UDim2.new(1, -detailSize - 8, 0, 8),
-		bg=Color3.fromRGB(12,12,15), bgT=0.1, r=6, stroke=1, strokeC=Color3.fromRGB(40,40,40),
+		bg=Color3.fromRGB(10,10,12), bgT=0.4, r=6, stroke=1, strokeC=Color3.fromRGB(60,60,60),
 		parent=canvasWrapper
 	})
 	-- 선택 전엔 숨김
@@ -460,29 +419,29 @@ function TechUI.Init(parent, UIManager, isMobile)
 		parent=TechUI.Refs.DetailFrame
 	})
 	TechUI.Refs.D_Name = Utils.mkLabel({
-		text="이름", size=UDim2.new(1,-20,0,30), pos=UDim2.new(0,10,0,50),
-		color=C.WHITE, ts=18, font=F.TITLE, ax=Enum.TextXAlignment.Left, parent=TechUI.Refs.DetailFrame
+		text="이름", size=UDim2.new(1,-20,0,40), pos=UDim2.new(0,12,0,50),
+		color=C.WHITE, ts=20, font=F.TITLE, ax=Enum.TextXAlignment.Left, parent=TechUI.Refs.DetailFrame
 	})
 	TechUI.Refs.D_Icon = Instance.new("ImageLabel")
-	TechUI.Refs.D_Icon.Size = UDim2.new(0, 60, 0, 60); TechUI.Refs.D_Icon.Position = UDim2.new(0,10,0,85)
+	TechUI.Refs.D_Icon.Size = UDim2.new(0, 80, 0, 80); TechUI.Refs.D_Icon.Position = UDim2.new(0,12,0,95)
 	TechUI.Refs.D_Icon.BackgroundTransparency = 1; TechUI.Refs.D_Icon.Parent = TechUI.Refs.DetailFrame
 	
 	TechUI.Refs.D_Desc = Utils.mkLabel({
-		text="설명", size=UDim2.new(1,-90,0,60), pos=UDim2.new(0,80,0,85),
-		color=Color3.fromRGB(180,180,180), ts=12, wrap=true,
+		text="설명", size=UDim2.new(1,-110,0,100), pos=UDim2.new(0,100,0,95),
+		color=Color3.fromRGB(220,220,220), ts=16, wrap=true,
 		ax=Enum.TextXAlignment.Left, ay=Enum.TextYAlignment.Top, parent=TechUI.Refs.DetailFrame
 	})
 	
 	-- 통합된 경고 메시지 박스
 	TechUI.Refs.D_WarnBox = Instance.new("Frame")
-	TechUI.Refs.D_WarnBox.Size=UDim2.new(1,-20,0,0); TechUI.Refs.D_WarnBox.Position=UDim2.new(0,10,0,160)
+	TechUI.Refs.D_WarnBox.Size=UDim2.new(1,-24,0,0); TechUI.Refs.D_WarnBox.Position=UDim2.new(0,12,0,210)
 	TechUI.Refs.D_WarnBox.AutomaticSize=Enum.AutomaticSize.Y
-	TechUI.Refs.D_WarnBox.BackgroundColor3=Color3.fromRGB(40,15,15); TechUI.Refs.D_WarnBox.BorderSizePixel=0
+	TechUI.Refs.D_WarnBox.BackgroundColor3=Color3.fromRGB(50,20,20); TechUI.Refs.D_WarnBox.BorderSizePixel=0
 	local wc=Instance.new("UICorner"); wc.CornerRadius=UDim.new(0,4); wc.Parent=TechUI.Refs.D_WarnBox
-	local wp=Instance.new("UIPadding"); wp.PaddingTop=UDim.new(0,8); wp.PaddingBottom=UDim.new(0,8)
-	wp.PaddingLeft=UDim.new(0,10); wp.PaddingRight=UDim.new(0,10); wp.Parent=TechUI.Refs.D_WarnBox
+	local wp=Instance.new("UIPadding"); wp.PaddingTop=UDim.new(0,12); wp.PaddingBottom=UDim.new(0,12)
+	wp.PaddingLeft=UDim.new(0,15); wp.PaddingRight=UDim.new(0,15); wp.Parent=TechUI.Refs.D_WarnBox
 	TechUI.Refs.D_WarnTxt = Utils.mkLabel({
-		text="", size=UDim2.new(1,0,0,0), ts=12, color=Color3.fromRGB(255,100,100), font=F.TITLE,
+		text="", size=UDim2.new(1,0,0,0), ts=16, color=Color3.fromRGB(255,140,140), font=F.TITLE,
 		ax=Enum.TextXAlignment.Left, wrap=true, parent=TechUI.Refs.D_WarnBox
 	})
 	TechUI.Refs.D_WarnTxt.AutomaticSize = Enum.AutomaticSize.Y

@@ -200,7 +200,6 @@ local function setupModelForNode(model: Model, position: Vector3, nodeData: any)
 		local minY = math.huge
 		for _, p in ipairs(model:GetDescendants()) do
 			if p:IsA("BasePart") then
-				-- 특정 이름의 파트(예: 원점에서 멀리 떨어진 헬퍼 가시 등)는 제외할 수 있으나 기본은 전체 포함
 				local pMinY = p.Position.Y - (p.Size.Y / 2)
 				if pMinY < minY then minY = pMinY end
 			end
@@ -214,11 +213,17 @@ local function setupModelForNode(model: Model, position: Vector3, nodeData: any)
 		local currentPivot = model:GetPivot()
 		local pivotOffset = currentPivot.Position.Y - minY
 		
-		-- Y축 랜덤 회전 (자연스러운 배치)
+		-- [수정] 누락된 randomYRot 선언 복구
 		local randomYRot = math.rad(math.random(0, 359))
+		
 		-- 지면(position)에서 pivotOffset만큼 위로 띄워야 하단이 지면에 맞음
 		local targetCF = CFrame.new(position) * CFrame.Angles(0, randomYRot, 0) * CFrame.new(0, pivotOffset, 0)
 		model:PivotTo(targetCF)
+		
+		-- [추가] 물리 엔진이 지면을 인식할 수 있도록 살짝 위에서 떨어 뜨리는 효과 (나무는 Anchored이므로 위치 확정)
+		if primaryPart.Anchored == false then
+			model:PivotTo(targetCF * CFrame.new(0, 0.5, 0))
+		end
 	else
 		-- PrimaryPart가 없으면 모든 파트 이동
 		for _, part in ipairs(model:GetDescendants()) do
@@ -371,19 +376,30 @@ local function getToolType(player: Player, toolSlot: number?): string?
 		local character = player.Character
 		local tool = character and character:FindFirstChildOfClass("Tool")
 		if tool then
-			return tool:GetAttribute("ToolType") or tool.Name:upper()
+			-- 고유 속성이 있으면 그것을 반환
+			local attr = tool:GetAttribute("ToolType")
+			if attr and attr ~= "" then return attr end
+			
+			-- 아이템 데이터에서 타입 확인
+			if DataService then
+				local itm = DataService.getItem(tool.Name)
+				if itm and itm.type == "TOOL" then
+					return itm.optimalTool or itm.id:upper()
+				end
+			end
+			return nil -- 툴이 아니면 맨손 판정
 		end
 	end
 	
-	-- 3. 아이템 데이터의 optimalTool(타입) 확인
+	-- 3. 아이템 데이터의 타입 확인 (TOOL만 유효)
 	if toolItem and DataService then
 		local itemData = DataService.getItem(toolItem.itemId)
-		if itemData then
+		if itemData and (itemData.type == "TOOL" or itemData.id == "BOLA") then
 			return itemData.optimalTool or itemData.id:upper()
 		end
 	end
 	
-	return nil
+	return nil -- RESOURCE, FOOD 등은 모두 nil (맨손 판정)
 end
 
 --- 도구와 노드 타입 호환성 확인
@@ -398,17 +414,28 @@ local function isCompatible(toolType: string?, optimalType: string?): boolean
 end
 
 local function validateTool(player: Player, nodeData: any, toolSlot: number?): (boolean, string?)
-	-- nodeData가 nil인 경우 (비정상)
 	if not nodeData then return false, Enums.ErrorCode.NOT_FOUND end
 	
+	-- 인벤토리에서 직접 데이터 조회 (서버 신뢰)
+	local toolItem = nil
+	if toolSlot and InventoryService then
+		toolItem = InventoryService.getSlot(player.UserId, toolSlot)
+	end
+	
+	-- 내구도 체크: 장착된 아이템의 내구도가 0 이하면 사용 불가
+	if toolItem and toolItem.durability and toolItem.durability <= 0 then
+		-- [UX] 내구도 0인 도구는 맨손 취급하거나 사용 불가 메시지
+		return false, Enums.ErrorCode.INVALID_STATE -- "도구가 파손되었습니다"
+	end
+
 	local equippedToolType = getToolType(player, toolSlot)
 	
-	-- 도구 필수 여부 확인
+	-- [설계 변경] 도구 필수 여부 확인 (강제 적용)
 	if nodeData.requiresTool then
+		-- 도구가 아예 없거나 (nil), 엉뚱한 타입이면 자원 종류에 따라 적절한 에러 반환
 		if not equippedToolType then
-			-- [설계 변경] 나무(TREE), 바위(ROCK)는 맨손 타격 시 데미지 1 + 플레이어 HP 감소
-			-- 여기서는 true를 리턴하되, hit 함수에서 후처리를 하도록 유도
-			return true, "BAREHANDED_PENALTY"
+			-- 나무/바위/광석 등 도구 필수 노드인 경우 WRONG_TOOL을 주어 상세 안내 유도
+			return false, Enums.ErrorCode.WRONG_TOOL
 		end
 		
 		-- 최적 도구(optimalTool)가 지정된 경우, 호환되는 도구여야만 함
@@ -557,16 +584,17 @@ function HarvestService._findSpawnPosition(playerRootPart: Part): (Vector3?, Enu
 		local offset = Vector3.new(math.sin(angle) * distance, 0, math.cos(angle) * distance)
 		local origin = playerRootPart.Position + offset + Vector3.new(0, 200, 0)
 		
-		-- Raycast
+		-- Raycast (지형과 맵만 확실히 감지)
 		local params = RaycastParams.new()
 		local filterList = { workspace.Terrain }
-		if workspace:FindFirstChild("Map") then
-			table.insert(filterList, workspace.Map)
-		end
+		local map = workspace:FindFirstChild("Map")
+		if map then table.insert(filterList, map) end
+		
 		params.FilterDescendantsInstances = filterList
 		params.FilterType = Enum.RaycastFilterType.Include
 		
-		local result = workspace:Raycast(origin, Vector3.new(0, -600, 0), params)
+		-- 더 높은 곳에서 더 깊게 쏨 (맵 밖이나 겹친 파트 무시)
+		local result = workspace:Raycast(origin, Vector3.new(0, -1000, 0), params)
 		if result then
 			-- 물/바다 Material 체크 (육지만 허용)
 			local isWater = result.Material == Enum.Material.Water
@@ -843,31 +871,14 @@ function HarvestService.hit(player: Player, nodeUID: string, toolSlot: number?, 
 	local efficiency = calculateEfficiency(player, nodeData.optimalTool, toolSlot)
 	
 	-- 7. 타격 처리 (Power 계산)
-	local isBareHandedPenalty = (toolError == "BAREHANDED_PENALTY")
 	local power = 1
 	
-	if not isBareHandedPenalty then
-		local workSpeedStat = 0
-		if PlayerStatService then
-			local stats = PlayerStatService.getStats(player.UserId)
-			workSpeedStat = (stats and stats.statInvested and stats.statInvested[Enums.StatId.WORK_SPEED]) or 0
-		end
-		power = 1 + math.floor(workSpeedStat / 10)
-	else
-		-- [설계] 맨손 패널티: 데미지 무조건 1 + 플레이어 HP 감소
-		power = 1
-		local character = player.Character
-		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-		if humanoid then
-			-- CombatService의 damagePlayer는 userId(number)를 첫 번째 인자로 받음
-			local success, CombatService = pcall(function() return require(game:GetService("ServerScriptService").Server.Services.CombatService) end)
-			if success and CombatService then
-				CombatService.damagePlayer(userId, Balance.HARVEST_BAREHAND_HP_PENALTY or 2)
-			else
-				humanoid:TakeDamage(Balance.HARVEST_BAREHAND_HP_PENALTY or 2)
-			end
-		end
+	local workSpeedStat = 0
+	if PlayerStatService then
+		local stats = PlayerStatService.getStats(player.UserId)
+		workSpeedStat = (stats and stats.statInvested and stats.statInvested[Enums.StatId.WORK_SPEED]) or 0
 	end
+	power = 1 + math.floor(workSpeedStat / 10)
 	
 	-- 8. 실제 데미지 적용
 	-- [FIX] 보안 결함: 수동 채집(Manual Hit) 시 클라이언트가 보낸 hitCount를 무조건 신뢰하지 않음 (Exploit 방지)
