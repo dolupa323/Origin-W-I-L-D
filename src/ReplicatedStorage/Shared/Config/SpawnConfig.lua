@@ -7,6 +7,9 @@ local PORTAL_MAP = {
 
 local SpawnConfig = {}
 
+-- 신규 유저가 처음 게임에 접속했을 때 스폰될 기본 절대 좌표 (Island/Place 에 따라 분리 가능)
+SpawnConfig.DEFAULT_START_SPAWN = Vector3.new(0, 50, 0) -- 임시로 x:0, y:50, z:0으로 설정. 추후 디자인하시는 스폰포인트 좌표로 수정하시면 됩니다!
+
 local ISLAND_CONFIGS = {
 	-- [기본] 초원 섬 생태계 설정
 	[PORTAL_MAP.GRASSLAND] = {

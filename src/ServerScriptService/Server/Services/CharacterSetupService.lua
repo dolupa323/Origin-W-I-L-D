@@ -179,8 +179,23 @@ local function onCharacterAdded(player: Player, character)
 						))
 						print(string.format("[CharacterSetupService] Existing player %s spawned at previous sleep location", player.Name))
 					else
-						-- 신규 유저: 기본(첫 게임 시작 스폰 포인트) - 아무 동작도 하지 않으면 기본 SpawnLocation 으로 나타남
-						print(string.format("[CharacterSetupService] New player %s spawned at default starting point", player.Name))
+						-- 신규 유저: 기본(첫 게임 시작 스폰 포인트)
+						task.wait(0.2)
+						local spawnPos = Vector3.new(0, 50, 0)
+						-- 개발자가 맵에 올려둔 실제 파트가 있다면 그것을 우선순위로 채택
+						local defaultSpawnPart = workspace:FindFirstChild("SpawnLocation")
+						if defaultSpawnPart and defaultSpawnPart:IsA("SpawnLocation") then
+							spawnPos = defaultSpawnPart.Position + Vector3.new(0, 5, 0)
+						else
+							-- 없다면 하드코딩된 설정 좌표 사용
+							local okConfig, SpawnConfig = pcall(function() return require(game:GetService("ReplicatedStorage").Shared.Config.SpawnConfig) end)
+							if okConfig and SpawnConfig and SpawnConfig.DEFAULT_START_SPAWN then
+								spawnPos = SpawnConfig.DEFAULT_START_SPAWN
+							end
+						end
+						
+						character:PivotTo(CFrame.new(spawnPos))
+						print(string.format("[CharacterSetupService] New player %s spawned at starting point %s", player.Name, tostring(spawnPos)))
 					end
 				end
 			end
