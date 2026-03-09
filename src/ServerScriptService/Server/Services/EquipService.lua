@@ -281,7 +281,9 @@ function EquipService.equipItem(player: Player, itemId: string?)
 				end
 			end
 		else
-			warn("[EquipService] Missing template for:", itemId)
+			if itemType ~= "RESOURCE" then
+				warn("[EquipService] Missing template for:", itemId)
+			end
 			handle.Transparency = 0
 			handle.Material = Enum.Material.Neon
 			handle.Color = Color3.fromRGB(255, 255, 0)

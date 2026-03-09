@@ -148,7 +148,7 @@ end
 
 -- TechService 초기화 (Phase 6) - 제작/건설 잠금 체크를 위해 일찍 초기화
 local TechService = require(Services.TechService)
-TechService.Init(NetController, DataService, PlayerStatService, SaveService)
+TechService.Init(NetController, DataService, PlayerStatService, SaveService, InventoryService)
 
 -- TechService 핸들러 등록
 for command, handler in pairs(TechService.GetHandlers()) do

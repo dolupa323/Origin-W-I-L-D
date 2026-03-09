@@ -12,6 +12,7 @@ local NetController
 local DataService
 local PlayerStatService
 local SaveService
+local InventoryService
 
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Enums = require(Shared.Enums.Enums)
@@ -113,9 +114,9 @@ local function _initPlayerUnlocks(userId: number)
 		end
 	end
 	
-	-- 기본 기술 자동 해금 (TECH_BASICS 등 cost=0인 것들)
+	-- 기본 기술 자동 해금 (TECH_BASICS 등 cost가 없는 것들)
 	for techId, tech in pairs(techDataMap) do
-		if tech.techPointCost == 0 and not playerUnlocks[userId][techId] then
+		if (not tech.cost or #tech.cost == 0) and not playerUnlocks[userId][techId] then
 			playerUnlocks[userId][techId] = true
 			_updateUnlockCache(userId, techId)
 		end
@@ -182,26 +183,22 @@ function TechService.unlock(userId: number, techId: string): (boolean, string?)
 	if not _checkPrerequisites(userId, techId) then
 		return false, Enums.ErrorCode.PREREQUISITES_NOT_MET
 	end
-	
-	-- 레벨 제한 확인
-	local reqLevel = tech.requireLevel or 1
-	local playerLevel = PlayerStatService.getLevel(userId)
-	if playerLevel < reqLevel then
-		return false, Enums.ErrorCode.LEVEL_NOT_MET
-	end
 
-	-- 기술 포인트 확인 및 소모
-	local cost = tech.techPointCost or 0
-	if cost > 0 then
-		local available = PlayerStatService.getTechPoints(userId)
-		if available < cost then
-			return false, Enums.ErrorCode.INSUFFICIENT_TECH_POINTS
+	-- 해금 아이템 비용(cost) 확인
+	local player = game:GetService("Players"):GetPlayerByUserId(userId)
+	if not player then return false, Enums.ErrorCode.BAD_REQUEST end
+
+	if tech.cost and #tech.cost > 0 then
+		for _, req in ipairs(tech.cost) do
+			local count = InventoryService.countItem(player, req.itemId)
+			if count < req.amount then
+				return false, Enums.ErrorCode.INSUFFICIENT_MATERIALS
+			end
 		end
-		
-		-- 포인트 소모
-		local spent = PlayerStatService.spendTechPoints(userId, cost)
-		if not spent then
-			return false, Enums.ErrorCode.INSUFFICIENT_TECH_POINTS
+
+		-- 비용 차감
+		for _, req in ipairs(tech.cost) do
+			InventoryService.consumeCount(player, req.itemId, req.amount)
 		end
 	end
 	
@@ -210,14 +207,13 @@ function TechService.unlock(userId: number, techId: string): (boolean, string?)
 	_updateUnlockCache(userId, techId)
 	_savePlayerUnlocks(userId)
 	
-	-- 이벤트 발행
-	local player = game:GetService("Players"):GetPlayerByUserId(userId)
 	if player and NetController then
 		NetController.FireClient(player, "Tech.Unlocked", {
 			techId = techId,
 			name = tech.name,
 			unlocks = tech.unlocks,
-			techPointsRemaining = PlayerStatService.getTechPoints(userId),
+			-- techPointsRemaining 은 더 이상 사용하지 않음 (nil 또는 제거 가능하나 하위호환 유지)
+			techPointsRemaining = 0,
 		})
 	end
 	
@@ -248,20 +244,13 @@ function TechService.relinquish(userId: number): (boolean, number)
 	local unlocks = playerUnlocks[userId]
 	if not unlocks then return false, 0 end
 	
+	-- 아이템 기반으로 바뀌면서 Relinquish 시 아이템 반환은 생략됨/또는 추후 개발 필요
 	local totalRefund = 0
-	for techId, isUnlocked in pairs(unlocks) do
-		if isUnlocked then
-			local tech = techDataMap[techId]
-			if tech and tech.techPointCost then
-				totalRefund = totalRefund + tech.techPointCost
-			end
-		end
-	end
 	
-	-- 초기 상태로 회귀 (cost=0인 기초 기술만 남김)
+	-- 초기 상태로 회귀 (cost가 없는 기초 기술만 남김)
 	local newUnlocks = {}
 	for techId, tech in pairs(techDataMap) do
-		if tech.techPointCost == 0 then
+		if not tech.cost or #tech.cost == 0 then
 			newUnlocks[techId] = true
 		end
 	end
@@ -277,11 +266,6 @@ function TechService.relinquish(userId: number): (boolean, number)
 	end
 	
 	_savePlayerUnlocks(userId)
-	
-	-- 포인트 환급은 StatService에서 담당 (spent 수치 감소)
-	if PlayerStatService and PlayerStatService.refundTechPoints then
-		PlayerStatService.refundTechPoints(userId, totalRefund)
-	end
 	
 	-- 클라이언트에 전체 해금 상태 갱신 알림
 	local player = game:GetService("Players"):GetPlayerByUserId(userId)
@@ -322,8 +306,7 @@ function TechService.getAvailableTech(userId: number): { [string]: any }
 					id = tech.id,
 					name = tech.name,
 					description = tech.description,
-					requireLevel = tech.requireLevel,
-					techPointCost = tech.techPointCost,
+					cost = tech.cost,
 					prerequisites = tech.prerequisites,
 					unlocks = tech.unlocks,
 					category = tech.category,
@@ -427,8 +410,7 @@ local function handleTree(player: Player, payload: any)
 			id = tech.id,
 			name = tech.name,
 			description = tech.description,
-			requireLevel = tech.requireLevel,
-			techPointCost = tech.techPointCost,
+			cost = tech.cost,
 			prerequisites = tech.prerequisites,
 			category = tech.category,
 			unlocks = tech.unlocks,
@@ -447,7 +429,7 @@ end
 -- Lifecycle
 --========================================
 
-function TechService.Init(netController, dataService, playerStatService, saveService)
+function TechService.Init(netController, dataService, playerStatService, saveService, inventoryService)
 	if initialized then return end
 	initialized = true
 	
@@ -455,6 +437,7 @@ function TechService.Init(netController, dataService, playerStatService, saveSer
 	DataService = dataService
 	PlayerStatService = playerStatService
 	SaveService = saveService
+	InventoryService = inventoryService
 	
 	-- 기술 데이터 로드
 	_loadTechData()

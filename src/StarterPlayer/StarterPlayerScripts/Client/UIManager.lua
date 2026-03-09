@@ -1034,9 +1034,20 @@ function UIManager._onTechNodeClick(node)
 	
 	selectedTechId = node.id
 	local unlocked = TechController.getUnlockedTech()
-	local tp = TechController.getTechPoints()
 	local isUnlocked = unlocked[node.id]
-	local canAfford = (tp >= (node.techPointCost or 0))
+	
+	local canAfford = true
+	local playerItemCounts = InventoryController.getItemCounts()
+	if node.cost then
+		for _, req in ipairs(node.cost) do
+			local amount = playerItemCounts[req.itemId] or 0
+			if amount < req.amount then
+				canAfford = false
+				break
+			end
+		end
+	end
+	
 	local playerLevel = (cachedStats and cachedStats.level) or 1
 	
 	TechUI.UpdateDetail(node, isUnlocked, canAfford, playerLevel, UIManager, getItemIcon)
@@ -1579,6 +1590,7 @@ local function setupEventListeners()
 				activeDebuffs[data.debuffId] = {
 					id = data.debuffId,
 					name = data.name,
+					description = data.description, -- 설명 추가
 					startTime = os.time(),
 					duration = data.duration
 				}

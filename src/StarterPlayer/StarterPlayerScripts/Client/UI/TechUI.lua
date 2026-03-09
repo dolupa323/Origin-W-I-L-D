@@ -217,14 +217,12 @@ local function renderTree(techList, unlocked, playerLevel, getItemIcon, UIManage
 		nameL.TextColor3 = isUnlocked and C.GOLD or (preMet and lvlMet and C.WHITE or Color3.fromRGB(150,150,150))
 		nameL.ZIndex = 201; nameL.Parent = cell
 		
-		-- 필요포인트 (SP) 뱃지
-		local tpBadge = Instance.new("TextLabel")
-		tpBadge.Size=UDim2.new(0,34,0,16); tpBadge.Position=UDim2.new(1,-4,0,-10); tpBadge.AnchorPoint=Vector2.new(1,0)
-		tpBadge.BackgroundColor3=Color3.fromRGB(20,20,20)
-		tpBadge.Text="SP " .. tostring(node.techPointCost or 0)
-		tpBadge.TextColor3=Color3.fromRGB(220,180,80)
-		tpBadge.TextSize=11; tpBadge.Font=F.TITLE; tpBadge.ZIndex=205; tpBadge.Parent=cell
-		local tbc=Instance.new("UICorner"); tbc.CornerRadius=UDim.new(0,4); tbc.Parent=tpBadge
+		-- (SP 뱃지 제거)
+		local tbc=Instance.new("UICorner"); tbc.CornerRadius=UDim.new(0,4)
+		-- (사용처가 없지만 레이아웃 버그 생길 수 있어 빈 Frame 삽입)
+		local tpBadge = Instance.new("Frame")
+		tpBadge.BackgroundTransparency = 1
+		tpBadge.Parent = cell
 
 		local glow = Instance.new("Frame")
 		glow.Name = "GlowBox"
@@ -470,6 +468,8 @@ function TechUI.UpdateDetail(node, isUnlocked, canAfford, playerLevel, UIManager
 	local box = TechUI.Refs.D_WarnBox
 	local txt = TechUI.Refs.D_WarnTxt
 	local btn = TechUI.Refs.D_ActionBtn
+
+	txt.RichText = true
 	
 	if isUnlocked then
 		box.Visible = false
@@ -490,10 +490,36 @@ function TechUI.UpdateDetail(node, isUnlocked, canAfford, playerLevel, UIManager
 			end
 		end
 		
-		if lvl < reqLvl then table.insert(lines, string.format("✗ 레벨 부족: Lv.%d 필요", reqLvl)) end
+		if lvl < reqLvl then table.insert(lines, string.format("✗ 레벨 부족: Lv.%d 필요", reqLvl)) 		end
+		
+		-- 비용 표시 문자열 생성
+		local costStr = ""
+		if node.cost and #node.cost > 0 then
+			local invCounts = require(game.Players.LocalPlayer.PlayerScripts.Client.Controllers.InventoryController).getItemCounts()
+			-- 서버/클라이언트 공통 Data 폴더에 직접 접근
+			local itemDataList = require(game.ReplicatedStorage:WaitForChild("Data"):WaitForChild("ItemData"))
+			
+			local cLines = {}
+			for _, req in ipairs(node.cost) do
+				local currentAmount = invCounts[req.itemId] or 0
+				
+				local name = req.itemId
+				for _, iData in ipairs(itemDataList) do
+					if iData.id == req.itemId then
+						name = iData.name
+						break
+					end
+				end
+				
+				local color = currentAmount >= req.amount and "#aaffaa" or "#ffaaaa"
+				table.insert(cLines, string.format(" • %s: <font color='%s'>%d</font> / %d", name, color, currentAmount, req.amount))
+			end
+			costStr = "필요 자원:\n" .. table.concat(cLines, "\n")
+		end
 		
 		if #lines > 0 then
 			txt.Text = table.concat(lines, "\n")
+			if costStr ~= "" then txt.Text = txt.Text .. "\n\n" .. costStr end
 			txt.TextColor3 = Color3.fromRGB(240, 100, 100)
 			box.BackgroundColor3 = Color3.fromRGB(50, 15, 15)
 			box.Visible = true
@@ -505,20 +531,28 @@ function TechUI.UpdateDetail(node, isUnlocked, canAfford, playerLevel, UIManager
 			btn.AutoButtonColor = false
 		else
 			if not canAfford then
-				txt.Text = string.format("💰 보유 SP 부족 (%d / %d)", TechUI.lastTP or 0, node.techPointCost or 0)
-				txt.TextColor3 = Color3.fromRGB(230, 180, 50)
+				txt.Text = "💰 자원 부족\n" .. costStr
+				txt.TextColor3 = Color3.fromRGB(230, 230, 230)
 				box.BackgroundColor3 = Color3.fromRGB(40, 30, 10)
 				box.Visible = true
 				
 				btn.Visible = true
-				btn.Text = "SP 부족"
+				btn.Text = "자원 부족"
 				btn.BackgroundColor3 = Color3.fromRGB(40,40,40)
 				btn.TextColor3 = Color3.fromRGB(150,150,150)
 				btn.AutoButtonColor = false
 			else
-				box.Visible = false
+				if costStr ~= "" then
+					txt.Text = "✅ 필요 자원\n" .. costStr
+					txt.TextColor3 = Color3.fromRGB(230, 230, 230)
+					box.BackgroundColor3 = Color3.fromRGB(20, 30, 20)
+					box.Visible = true
+				else
+					box.Visible = false
+				end
+				
 				btn.Visible = true
-				btn.Text = "연구 시작 (SP: "..tostring(node.techPointCost or 0)..")"
+				btn.Text = "연구 시작"
 				btn.BackgroundColor3 = C.GOLD
 				btn.TextColor3 = Color3.fromRGB(20,20,20)
 				btn.AutoButtonColor = true

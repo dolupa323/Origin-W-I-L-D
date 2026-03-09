@@ -167,12 +167,12 @@ function TechController.Init()
 	NetClient.On("Tech.Unlocked", onTechUnlockedSvr)
 	NetClient.On("Tech.List.Changed", onTechListChanged)
 	
-	-- 로컬 폴백 및 기본 해금(cost 0) 처리
+	-- 로컬 폴백 및 기본 해금(cost 없음) 처리
 	local TechUnlockData = require(ReplicatedStorage:WaitForChild("Data"):WaitForChild("TechUnlockData"))
 	for _, tech in ipairs(TechUnlockData) do
 		techTreeData[tech.id] = tech
-		-- 서버 응답 전이라도 포인트 0짜리는 기본 해금된 것으로 간주
-		if tech.techPointCost == 0 then
+		-- 서버 응답 전이라도 cost가 없는 것은 기본 해금된 것으로 간주
+		if not tech.cost or #tech.cost == 0 then
 			unlockedTech[tech.id] = true
 		end
 	end
