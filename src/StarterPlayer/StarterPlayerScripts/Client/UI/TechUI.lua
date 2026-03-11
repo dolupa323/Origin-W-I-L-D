@@ -26,7 +26,7 @@ local selectedNodeId = nil
 ----------------------------------------------------------------
 local function resolveNodeIcon(node, getItemIcon)
 	local icon = getItemIcon and getItemIcon(node.id) or ""
-	if icon ~= "" and not icon:find("15573752528") then return icon end
+	if icon ~= "" then return icon end
 	if node.unlocks then
 		if node.unlocks.facilities and #node.unlocks.facilities > 0 then
 			local i = getItemIcon and getItemIcon(node.unlocks.facilities[1]) or ""

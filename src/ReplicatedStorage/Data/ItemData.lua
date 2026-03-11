@@ -51,7 +51,6 @@ local ItemData = {
 		rarity = "COMMON",
 		maxStack = 99,
 		weight = 1.0,
-		icon = "rbxassetid://15573752528",
 		description = "가장 기본적인 자원. 도구와 건물에 사용된다.",
 		dropDespawn = "GATHER",
 		color = Color3.fromRGB(128, 128, 128),
@@ -538,8 +537,6 @@ local ItemData = {
 		defense = 12,
 		slot = "SUIT",
 		armorSet = "LEATHER",
-		shirtId = "rbxassetid://15573752528",
-		pantsId = "rbxassetid://15573752528",
 		description = "질긴 가죽으로 만든 생존용 의상. 몸 전체를 보호합니다.",
 	},
 	{

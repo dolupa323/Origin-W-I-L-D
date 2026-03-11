@@ -711,14 +711,14 @@ function UIManager.refreshPersonalCrafting(forceRefresh)
 				if recipe.outputs and recipe.outputs[1] then
 					iconId = getItemIcon(recipe.outputs[1].itemId)
 				end
-				if iconId == "" or iconId == "rbxassetid://15573752528" then
+				if iconId == "" then
 					local ridIcon = getItemIcon(recipe.id)
-					if ridIcon ~= "" and ridIcon ~= "rbxassetid://15573752528" then iconId = ridIcon end
+					if ridIcon ~= "" then iconId = ridIcon end
 				end
 				icon.Image = iconId
 				
 				local iconLbl = mkLabel({text=recipe.name, size=UDim2.new(0.9,0,0.9,0), pos=UDim2.new(0.5,0,0.5,0), anchor=Vector2.new(0.5,0.5), ts=8, color=C.WHITE, wrap=true, z=14, parent=nf})
-				iconLbl.Visible = (iconId == "" or iconId == "rbxassetid://15573752528")
+				iconLbl.Visible = (iconId == "")
 
 				local lockBG = mkFrame({name="LockBG", size=UDim2.new(1,0,1,0), bg=Color3.new(0.1,0.1,0.1), bgT=0.5, r=6, z=20, parent=nf})
 				local lockIcon = Instance.new("ImageLabel")
