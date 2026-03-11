@@ -414,6 +414,11 @@ function CreatureService.spawn(creatureId, position)
 		-- 어떤 구조든 자동 설정
 		model, rootPart, humanoid = setupModelForCreature(model, position, data)
 		
+		-- [추가] 모델 스케일 적용 (아기 공룡 등)
+		if data.scale and data.scale ~= 1 then
+			model:ScaleTo(data.scale)
+		end
+		
 		print(string.format("[CreatureService] Loaded model '%s' for %s", template.Name, creatureId))
 	else
 		-- 폴백: 임시 플레이스홀더 모델 생성
@@ -693,10 +698,13 @@ function CreatureService.processAttack(instanceId: string, hpDamage: number, tor
 		local attackerName = attacker and attacker.Name or "Unknown"
 		local deathPos = creature.rootPart.Position
 		
-		-- 경험치 보상
+		-- 경험치 보상 및 도감 등록
 		if PlayerStatService and attacker then
 			local xpAmount = creature.data.xpReward or 25
 			PlayerStatService.addXP(attacker.UserId, xpAmount, Enums.XPSource.CREATURE_KILL)
+			
+			-- 개별 도감 누적 (DNA 획득)
+			PlayerStatService.addCollectionDna(attacker.UserId, creature.creatureId, 1)
 		end
 		
 		-- 리소스 제거 연출
@@ -940,9 +948,16 @@ function CreatureService._initialSpawn()
 		local pos = CreatureService._findMapSpawnPosition(MAP_CENTER, SPAWN_RADIUS)
 		if pos then
 			local cid = SpawnConfig.GetRandomCreature()
-			local result = CreatureService.spawn(cid, pos)
-			if result then
-				spawned = spawned + 1
+			local data = DataService.getCreature(cid)
+			local groupSize = (data and data.groupSize) or 1
+			
+			for i = 1, groupSize do
+				if spawned >= INITIAL_COUNT then break end
+				local offset = groupSize > 1 and Vector3.new(math.random(-8, 8), 0, math.random(-8, 8)) or Vector3.zero
+				local result = CreatureService.spawn(cid, pos + offset)
+				if result then
+					spawned = spawned + 1
+				end
 			end
 		end
 	end
@@ -973,7 +988,14 @@ function CreatureService._replenishLoop()
 			local pos = CreatureService._findSpawnPosition(char.HumanoidRootPart)
 			if pos then
 				local cid = SpawnConfig.GetRandomCreature()
-				CreatureService.spawn(cid, pos)
+				local data = DataService.getCreature(cid)
+				local groupSize = (data and data.groupSize) or 1
+				
+				for i = 1, groupSize do
+					if creatureCount >= CREATURE_CAP then break end
+					local offset = groupSize > 1 and Vector3.new(math.random(-5, 5), 0, math.random(-5, 5)) or Vector3.zero
+					CreatureService.spawn(cid, pos + offset)
+				end
 				toSpawn = toSpawn - 1
 			end
 		end
@@ -1473,7 +1495,10 @@ function CreatureService._updateAILoop()
 								local currentCreature = activeCreatures[id]
 								if not currentCreature or not currentCreature.model or not currentCreature.model.Parent then return end
 								
-								local playerChar = Players:GetPlayerByUserId(closestPlayerUserId).Character
+								local player = Players:GetPlayerByUserId(closestPlayerUserId)
+								if not player then return end
+								
+								local playerChar = player.Character
 								local playerHrp = playerChar and playerChar:FindFirstChild("HumanoidRootPart")
 								if not playerHrp then return end
 								

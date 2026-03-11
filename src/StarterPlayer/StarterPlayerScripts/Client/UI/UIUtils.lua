@@ -303,4 +303,72 @@ function UIUtils.mkLine(p)
 	return line
 end
 
+--- CollectionUI 등에서 사용하는 Legacy 헬퍼들
+function UIUtils.CreateFrame(name, size, pos, bg, parent)
+	local f = Instance.new("Frame")
+	f.Name = name
+	f.Size = size
+	f.Position = pos
+	f.BackgroundColor3 = bg or C.BG_PANEL
+	f.BorderSizePixel = 0
+	if parent then f.Parent = parent end
+	return f
+end
+
+function UIUtils.CreateTextLabel(name, size, pos, text, parent)
+	local l = Instance.new("TextLabel")
+	l.Name = name
+	l.Size = size
+	l.Position = pos
+	l.BackgroundTransparency = 1
+	l.Text = text or ""
+	l.TextColor3 = C.WHITE
+	l.Font = F.NORMAL
+	l.TextSize = 14
+	if parent then l.Parent = parent end
+	return l
+end
+
+function UIUtils.CreateImage(name, size, pos, img, parent)
+	local i = Instance.new("ImageLabel")
+	i.Name = name
+	i.Size = size
+	i.Position = pos
+	i.BackgroundTransparency = 1
+	i.ScaleType = Enum.ScaleType.Fit
+	i.Image = img or ""
+	if parent then i.Parent = parent end
+	return i
+end
+
+function UIUtils.AddCorner(guiObject, radius)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, radius)
+	c.Parent = guiObject
+	return c
+end
+
+function UIUtils.CreateCloseButton(UIManager, winId)
+	local btn = UIUtils.mkBtn({
+		name = "CloseBtn",
+		size = UDim2.new(0, 30, 0, 30),
+		text = "X",
+		bg = Color3.fromRGB(200, 50, 50),
+		r = "full"
+	})
+	btn.MouseButton1Click:Connect(function()
+		if UIManager.closeCollection and winId == "COLLECTION" then
+			UIManager.closeCollection()
+		elseif UIManager.closeInventory and winId == "INV" then
+			UIManager.closeInventory()
+		elseif UIManager.closeTechTree and winId == "TECH" then
+			UIManager.closeTechTree()
+		else
+			-- Fallback
+			btn.Parent.Visible = false
+		end
+	end)
+	return btn
+end
+
 return UIUtils

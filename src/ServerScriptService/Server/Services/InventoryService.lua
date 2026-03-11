@@ -34,6 +34,31 @@ local PlayerStatService = nil
 -- EquipService 참조 (시각화용)
 local EquipService = nil
 
+local function _getDefaultEquipment()
+	return {
+		HEAD = nil,
+		TOP = nil,
+		BOTTOM = nil,
+		SUIT = nil,
+		HAND = nil,
+	}
+end
+
+local function _normalizeEquipmentSlots(equipment: any): any
+	local normalized = _getDefaultEquipment()
+	if type(equipment) ~= "table" then
+		return normalized
+	end
+
+	normalized.HEAD = equipment.HEAD or equipment.Head
+	normalized.TOP = equipment.TOP or equipment.Top or equipment.Body
+	normalized.BOTTOM = equipment.BOTTOM or equipment.Bottom or equipment.Feet
+	normalized.SUIT = equipment.SUIT or equipment.Suit
+	normalized.HAND = equipment.HAND or equipment.Hand
+
+	return normalized
+end
+
 --========================================
 -- Internal: Validation Functions
 --========================================
@@ -413,22 +438,6 @@ function InventoryService.unequipItem(player: Player, equipmentSlotName: string)
 	return true
 end
 
-function InventoryService.getTotalDefense(userId: number): number
-	local inv = playerInventories[userId]
-	if not inv then return 0 end
-	
-	local total = 0
-	for _, equip in pairs(inv.equipment) do
-		if equip and equip.itemId then
-			local itemData = DataService.getItem(equip.itemId)
-			if itemData and itemData.defense then
-				total = total + itemData.defense
-			end
-		end
-	end
-	return total
-end
-
 --========================================
 -- Public API: Inventory Management
 --========================================
@@ -442,27 +451,85 @@ function InventoryService.getOrCreateInventory(userId: number): any
 	-- SaveService에서 로드 시도
 	local savedInv = nil
 	local savedEquip = nil
+	
+	-- [Race Condition FIX] 클라이언트의 Get Request가 ServerInit 주입(Init)보다 먼저 도달한 경우 동적 할당
+	if not SaveService then
+		local ServerService = game:GetService("ServerScriptService"):WaitForChild("Server"):WaitForChild("Services")
+		SaveService = require(ServerService:WaitForChild("SaveService"))
+	end
+	if not DataService then
+		local ServerService = game:GetService("ServerScriptService"):WaitForChild("Server"):WaitForChild("Services")
+		DataService = require(ServerService:WaitForChild("DataService"))
+	end
+
 	if SaveService then
 		local state = SaveService.getPlayerState(userId)
+		if not state then
+			-- [수정] 5초 -> 30초 대기 증가 및 접속 중/성공 체크 추가
+			local deadline = os.clock() + 30
+			while not state and os.clock() < deadline do
+				task.wait(0.1)
+				state = SaveService.getPlayerState(userId)
+				if not game.Players:GetPlayerByUserId(userId) then break end
+			end
+		end
+
 		if state then
 			if state.inventory then savedInv = state.inventory end
 			if state.equipment then savedEquip = state.equipment end
+		else
+			-- [FATAL FIX] 30초가 지나도 데이터가 없다면 빈 인벤토리를 부여하는 것이 "아니라" 플레이어를 킥하여 덮어쓰기 사고 방지
+			warn(string.format("[InventoryService] Timed out waiting for player state %d! Kicking to prevent wipe.", userId))
+			local plr = game.Players:GetPlayerByUserId(userId)
+			if plr then
+				plr:Kick("데이터 로드 시간이 초과되었습니다. 재접속해 주세요.")
+			end
+			return nil -- 중단
+		end
+	end
+
+	-- [중요] Yield(대기)하는 동안 다른 스레드(예: Get.Request)에서 인벤토리를 생성했을 수 있으므로 다시 체크
+	if playerInventories[userId] then
+		return playerInventories[userId]
+	end
+
+	-- 데이터 정규화 및 마이그레이션 (내구도 누락 등 대응 및 숫자 인덱스 강제)
+	local normalizedSlots = {}
+	if savedInv then
+		for k, node in pairs(savedInv) do
+			local numKey = tonumber(k) or (node and node.slot)
+			if numKey and type(node) == "table" and node.itemId then
+				local item = DataService.getItem(node.itemId)
+				if item and item.durability and not node.durability then
+					node.durability = item.durability -- 누락된 내구도 초기화
+				end
+				
+				-- 명시적으로 새로운 숫자키 기반 딕셔너리로 구축 (JSON 문자열 키 오류 원천 차단)
+				normalizedSlots[numKey] = {
+					itemId = node.itemId,
+					count = node.count or 1,
+					durability = node.durability,
+				}
+			end
+		end
+	end
+	
+	if savedEquip then
+		for _, node in pairs(savedEquip) do
+			if node and node.itemId then
+				local item = DataService.getItem(node.itemId)
+				if item and item.durability and not node.durability then
+					node.durability = item.durability
+				end
+			end
 		end
 	end
 
 	-- 새 인벤토리 객체 생성
 	local inv = {
-		slots = savedInv or {},
-		equipment = savedEquip or {
-			HEAD = nil,
-			TOP = nil,
-			BOTTOM = nil,
-			SUIT = nil,
-			HAND = nil,
-		}
+		slots = normalizedSlots,
+		equipment = _normalizeEquipmentSlots(savedEquip)
 	}
-	
-	-- (Optional) 슬롯 구조 정규화 등 필요 시 수행
 	
 	playerInventories[userId] = inv
 	return inv
@@ -878,6 +945,17 @@ function InventoryService.addItem(userId: number, itemId: string, count: number,
 	local added = 0
 	local changedSlots = {}
 	
+	-- [추가] HIDDEN_STACK 타입 처리 (DNA 등 도감 아이템) - 인벤토리 슬롯 대신 도감 누적
+	local itemData = DataService and DataService.getItem(itemId)
+	if itemData and itemData.type == "HIDDEN_STACK" then
+		if PlayerStatService and (itemId:find("DNA") or itemData.id:find("DNA")) then
+			local creatureId = itemId:gsub("_DNA", "") -- COMPY_DNA -> COMPY
+			PlayerStatService.addCollectionDna(userId, creatureId, count)
+			return count, 0 -- 모두 성공적으로 "도감"에 추가됨
+		end
+		-- 만약 다른 타입의 HIDDEN_STACK이 있다면 여기서 핸들링 가능
+	end
+	
 	-- 무게 체크
 	local currentWeight = _getTotalWeight(inv)
 	local maxWeight = _getMaxWeight(userId)
@@ -901,7 +979,10 @@ function InventoryService.addItem(userId: number, itemId: string, count: number,
 			local canAddByWeight = math.floor((maxWeight - currentWeight) / itemWeight)
 			
 			local canAdd = math.min(remaining, canAddByStack, math.max(0, canAddByWeight))
-			if canAdd <= 0 then break end -- 무게 초과
+			if canAdd <= 0 then 
+				warn(string.format("[InventoryService] Cannot add item %s: weight limit reached (%d/%d)", itemId, currentWeight, maxWeight))
+				break 
+			end -- 무게 초과
 
 			slotData.count = slotData.count + canAdd
 			remaining = remaining - canAdd
@@ -920,7 +1001,10 @@ function InventoryService.addItem(userId: number, itemId: string, count: number,
 			local canAddByWeight = math.floor((maxWeight - currentWeight) / itemWeight)
 			
 			local canAdd = math.min(remaining, canAddByStack, math.max(0, canAddByWeight))
-			if canAdd <= 0 then break end -- 무게 초과
+			if canAdd <= 0 then 
+				warn(string.format("[InventoryService] Cannot add item %s: weight limit reached in new slot (%d/%d)", itemId, currentWeight, maxWeight))
+				break 
+			end -- 무게 초과
 
 			inv.slots[slot] = {
 				itemId = itemId,
@@ -964,7 +1048,8 @@ function InventoryService.sort(userId: number)
 	-- 아이템 압축 (같은 아이템 합치기, 내구도 보존)
 	local compressed = {}
 	for _, item in ipairs(items) do
-		local remaining = item.count
+		-- [수정] 무기/도구처럼 count가 명시되지 않은 경우 1로 처리하여 nil 에러 방지
+		local remaining = item.count or 1
 		
 		for _, comp in ipairs(compressed) do
 			if remaining <= 0 then break end
@@ -985,12 +1070,24 @@ function InventoryService.sort(userId: number)
 			})
 		end
 	end
+
+	inv.slots = {}
+	for index, item in ipairs(compressed) do
+		if index > Balance.INV_SLOTS then
+			break
+		end
+		inv.slots[index] = {
+			itemId = item.itemId,
+			count = item.count,
+			durability = item.durability,
+		}
+	end
 	
 	local player = Players:GetPlayerByUserId(userId)
 	
 	if player then
-		-- [최적화] 모든 슬롯 델타 대신 FullStack 전송
-		_emitChanged(player, {}, inv.slots)
+		-- [최적화] 모든 슬롯 델타 대신 FullStack 전송 (인덱스 유실 방지를 위해 getFullInventory 배열 사용)
+		_emitChanged(player, {}, InventoryService.getFullInventory(userId))
 		
 		-- [추가 FIX] 정렬 후 현재 활성 슬롯(1~8)에 대한 시각적 장착 갱신 강제 수행
 		local active = playerActiveSlots[userId] or 1
@@ -1392,8 +1489,9 @@ end
 
 local function handleGetInventory(player: Player, payload: any)
 	local userId = player.UserId
+	-- [중요] 클라이언트가 데이터를 요청할 때 서버 로드가 끝나지 않았을 수 있으므로 대기 (Race Condition 해결)
+	local inv = InventoryService.getOrCreateInventory(userId)
 	local slots = InventoryService.getFullInventory(userId)
-	local inv = playerInventories[userId]
 	
 	return {
 		success = true,
@@ -1458,7 +1556,7 @@ local function onPlayerAdded(player: Player)
 	
 	-- 디버그: 기본 아이템 지급 (Studio에서만)
 	if game:GetService("RunService"):IsStudio() then
-		InventoryService.addItem(userId, "STONE", 30)
+		InventoryService.addItem(userId, "SMALL_STONE", 30)
 	end
 end
 

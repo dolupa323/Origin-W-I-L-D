@@ -28,6 +28,7 @@ local NetController = nil
 local DataService = nil
 local InventoryService = nil
 local TimeService = nil
+local PlayerStatService = nil -- DNA 수집을 위해 추가
 
 --========================================
 -- Private State
@@ -325,7 +326,33 @@ function WorldDropService.loot(player: Player, dropId: string): (boolean, string
 		return false, Enums.ErrorCode.OUT_OF_RANGE, nil
 	end
 	
-	-- 인벤토리에 추가 (부분 줍기 허용을 위해 canAdd 체크 제거)
+	-- [추가] HIDDEN_STACK 타입 처리 (DNA 등 도감 아이템)
+	local itemData = DataService.getItem(drop.itemId)
+	if itemData and itemData.type == "HIDDEN_STACK" then
+		-- DNA 아이템인 경우 PlayerStatService로 수집 처리
+		if PlayerStatService and (drop.itemId:find("DNA") or itemData.id:find("DNA")) then
+			local creatureId = drop.itemId:gsub("_DNA", "") -- COMPY_DNA -> COMPY
+			PlayerStatService.addCollectionDna(userId, creatureId, drop.count)
+			
+			-- 습득 효과음/이펙트 등을 위해 클라이언트에 별도 통보 가능 (현재는 loot 성공으로 충분)
+		else
+			warn("[WorldDropService] HIDDEN_STACK item detected but no handler found:", drop.itemId)
+		end
+		
+		-- 전량 습득 처리 (HIDDEN_STACK은 인벤토리에 들어가지 않으므로 한 번에 모두 사라짐)
+		emitDespawned(dropId, "LOOTED_HIDDEN")
+		drops[dropId] = nil
+		dropCount = dropCount - 1
+		
+		return true, nil, {
+			dropId = dropId,
+			itemId = drop.itemId,
+			count = drop.count,
+			hidden = true,
+		}
+	end
+
+	-- 일반 아이템: 인벤토리에 추가
 	local added, remaining = InventoryService.addItem(userId, drop.itemId, drop.count)
 	
 	if added <= 0 then
@@ -426,7 +453,7 @@ end
 -- Initialization
 --========================================
 
-function WorldDropService.Init(netController: any, dataService: any, inventoryService: any, timeService: any)
+function WorldDropService.Init(netController: any, dataService: any, inventoryService: any, timeService: any, _PlayerStatService: any)
 	if initialized then
 		warn("[WorldDropService] Already initialized")
 		return
@@ -436,6 +463,7 @@ function WorldDropService.Init(netController: any, dataService: any, inventorySe
 	DataService = dataService
 	InventoryService = inventoryService
 	TimeService = timeService
+	PlayerStatService = _PlayerStatService
 	
 	-- Heartbeat 연결
 	RunService.Heartbeat:Connect(onHeartbeat)

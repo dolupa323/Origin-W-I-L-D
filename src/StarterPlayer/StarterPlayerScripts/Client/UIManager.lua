@@ -56,6 +56,9 @@ local BuildUI = require(UI.BuildUI)
 local EquipmentUI = require(UI.EquipmentUI)
 local StorageUI = require(UI.StorageUI)
 local FacilityUI = require(UI.FacilityUI)
+local CollectionUI = require(UI.CollectionUI)
+
+local CollectionController = require(Controllers.CollectionController)
 
 local C = Theme.Colors
 local F = Theme.Fonts
@@ -286,24 +289,39 @@ function UIManager.getSelectedSlot()
 	return selectedSlot
 end
 
+local ITEM_ICONS_FOLDER = nil
+task.spawn(function()
+	local assets = ReplicatedStorage:WaitForChild("Assets")
+	ITEM_ICONS_FOLDER = assets:WaitForChild("ItemIcons", 5) or assets:WaitForChild("Images", 2) or assets:WaitForChild("Icons", 2)
+	
+	-- 아이콘 폴더가 로드되면 UI를 한 번 새로고침 해줍니다. (처음에 안 보이던 아이템 렌더링 복구)
+	if UIManager.refreshInventory then
+		task.wait(0.5) -- 완전히 복제될 시간을 약간 부여
+		UIManager.refreshInventory()
+		UIManager.refreshHotbar()
+	end
+end)
+
 -- 아이템 아이콘 가져오기 (폴더 검색 우선, 데이터 폴백)
 local function getItemIcon(itemId: string): string
 	if not itemId then return "" end
 	
-	-- CRAFT_ 나 SMELT_ 접두사가 있으면 제거
-	local coreId = itemId:gsub("^CRAFT_", ""):gsub("^SMELT_", "")
+	-- 0. 아이템 데이터 조회 (alias 확인용)
+	local itemDataRef = DataHelper and DataHelper.GetData("ItemData", itemId)
+	local searchId = (itemDataRef and itemDataRef.iconName) or itemId
 	
-	-- 1. Assets/ItemIcons 폴더에서 검색
-	local assets = ReplicatedStorage:FindFirstChild("Assets")
-	local iconsFolder = assets and (assets:FindFirstChild("ItemIcons") or assets:FindFirstChild("Images") or assets:FindFirstChild("Icons"))
-	if iconsFolder then
-		local iconObj = iconsFolder:FindFirstChild(coreId) or iconsFolder:FindFirstChild(itemId)
+	-- CRAFT_ 나 SMELT_ 접두사가 있으면 제거
+	local coreId = searchId:gsub("^CRAFT_", ""):gsub("^SMELT_", "")
+	
+	-- 1. 로드된 아이콘 폴더에서 검색
+	if ITEM_ICONS_FOLDER then
+		local iconObj = ITEM_ICONS_FOLDER:FindFirstChild(coreId) or ITEM_ICONS_FOLDER:FindFirstChild(searchId)
 		if not iconObj then
 			-- Case & Underscore insensitive search
 			local target = coreId:lower():gsub("_", "")
-			for _, child in ipairs(iconsFolder:GetChildren()) do
+			for _, child in ipairs(ITEM_ICONS_FOLDER:GetChildren()) do
 				local cname = child.Name:lower():gsub("_", "")
-				if cname == target or cname:match("^"..target) then
+				if cname == target then
 					iconObj = child
 					break
 				end
@@ -321,8 +339,13 @@ local function getItemIcon(itemId: string): string
 		end
 	end
 
-	-- 2. If it's not found in folders, we return an empty string to be safe.
-	return ""
+	-- 2. ItemData에서 직접 아이콘 ID 확인 (데이터 기반 우선)
+	if itemDataRef and itemDataRef.icon then
+		return itemDataRef.icon
+	end
+
+	-- 3. If it's not found in folders or data, we return an empty string or placeholder.
+	return "rbxassetid://0" -- 투명 아이콘
 end
 UIManager.getItemIcon = getItemIcon
 
@@ -656,10 +679,12 @@ function UIManager.refreshPersonalCrafting(forceRefresh)
 		cachedPersonalRecipes = {}
 		
 		for _, recipe in ipairs(allRecipes) do
-			-- 작업대가 없으므로 모든 레시피를 인벤토리에서 보여줍니다 (단, 기술 해금 필요)
-			local r = table.clone(recipe)
-			r._isFacility = false
-			table.insert(cachedPersonalRecipes, r)
+			-- [필터] 인벤토리 제작탭은 시설이 필요 없는(Hand Craft) 레시피만 보여줍니다.
+			if not recipe.requiredFacility then
+				local r = table.clone(recipe)
+				r._isFacility = false
+				table.insert(cachedPersonalRecipes, r)
+			end
 		end
 		
 		table.sort(cachedPersonalRecipes, function(a, b) 
@@ -1273,6 +1298,35 @@ function UIManager._onCloseFacility()
 	FacilityController.closeFacility()
 end
 
+----------------------------------------------------------------
+-- Collection UI
+----------------------------------------------------------------
+
+function UIManager.openCollection()
+	WindowManager.open("COLLECTION")
+end
+
+function UIManager._onOpenCollection()
+	if not blurEffect and not WindowManager.isOpen("INV") then
+		blurEffect = Instance.new("BlurEffect"); blurEffect.Size = 15; blurEffect.Parent = Lighting
+	end
+	
+	CollectionUI.Show()
+end
+
+function UIManager.closeCollection()
+	WindowManager.close("COLLECTION")
+end
+
+function UIManager._onCloseCollection()
+	if blurEffect and not WindowManager.isAnyOpen() then blurEffect:Destroy(); blurEffect = nil end
+	CollectionUI.Hide()
+end
+
+function UIManager.toggleCollection()
+	WindowManager.toggle("COLLECTION")
+end
+
 function UIManager.refreshFacility()
 	if not isFacilityOpen or not currentFacilityData then return end
 	
@@ -1737,9 +1791,11 @@ function UIManager.Init()
 	BuildUI.Init(mainGui, UIManager, isMobile)
 	StorageUI.Init(mainGui, UIManager, isMobile)
 	FacilityUI.Init(mainGui, UIManager, isMobile)
+	CollectionUI.Init(mainGui, UIManager)
 
 	StorageController.Init()
 	FacilityController.Init()
+	CollectionController.Init()
 
 	-- 슬롯 참조만 유지 (드래그 앤 드롭 및 리프레시 로직용)
 	hotbarSlots = HUDUI.Refs.hotbarSlots
@@ -1753,6 +1809,8 @@ function UIManager.Init()
 	
 	setupEventListeners()
 
+	UIManager.refreshInventory()
+	UIManager.refreshHotbar()
 	UIManager.updateHealth(100,100)
 	UIManager.updateStamina(100,100)
 	UIManager.updateXP(0,100)
@@ -1770,6 +1828,7 @@ function UIManager.Init()
 	WindowManager.register("BUILD", UIManager._onOpenBuild, UIManager._onCloseBuild)
 	WindowManager.register("STORAGE", UIManager._onOpenStorage, UIManager._onCloseStorage)
 	WindowManager.register("FACILITY", UIManager._onOpenFacility, UIManager._onCloseFacility)
+	WindowManager.register("COLLECTION", UIManager._onOpenCollection, UIManager._onCloseCollection)
 
 	-- [Refactor] DragDropController 초기화
 	DragDropController.Init(UIManager, InventoryController, Balance, mainGui)

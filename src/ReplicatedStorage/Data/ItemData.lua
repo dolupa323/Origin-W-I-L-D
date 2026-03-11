@@ -15,6 +15,7 @@ local ItemData = {
 		weight = 0.5,
 		description = "맨손으로 주울 수 있는 나뭇가지. 기초 도구의 뼈대가 된다.",
 		dropDespawn = "GATHER",
+		modelName = "Twig",
 	},
 	{
 		id = "SMALL_STONE",
@@ -25,25 +26,11 @@ local ItemData = {
 		weight = 1.0,
 		description = "맨손으로 주울 수 있는 작은 돌. 기초 도구의 날이 된다.",
 		dropDespawn = "GATHER",
+		icon = "rbxassetid://13515086700",
+		modelName = "SmallStone",
 	},
-	{
-		id = "VINE",
-		name = "넝쿨",
-		type = "RESOURCE",
-		rarity = "COMMON",
-		maxStack = 99,
-		weight = 0.5,
-		description = "섬유를 엮어 만든 질긴 밧줄 대용품. 도구를 묶는 용도.",
-	},
-	{
-		id = "BOUND_LOG",
-		name = "묶은 통나무",
-		type = "RESOURCE",
-		rarity = "UNCOMMON",
-		maxStack = 20,
-		weight = 5.0,
-		description = "건축에 쓸 수 있게 단단히 묶어둔 통나무 기초 자재.",
-	},
+
+
 	{
 		id = "STONE",
 		name = "돌",
@@ -54,6 +41,7 @@ local ItemData = {
 		description = "가장 기본적인 자원. 도구와 건물에 사용된다.",
 		dropDespawn = "GATHER",
 		color = Color3.fromRGB(128, 128, 128),
+		modelName = "Stone",
 	},
 	{
 		id = "WOOD",
@@ -66,6 +54,7 @@ local ItemData = {
 		dropDespawn = "GATHER",
 		fuelValue = 15,
 		color = Color3.fromRGB(139, 90, 43),
+		modelName = "WOOD",
 	},
 	{
 		id = "FIBER",
@@ -99,6 +88,8 @@ local ItemData = {
 		weight = 5.0,
 		description = "가는 나무에서 얻은 무거운 통나무. 건축물의 기초 뼈대로 사용된다.",
 		dropDespawn = "GATHER",
+		iconName = "WOOD",  -- Assets/ItemIcons/WOOD 사용
+		modelName = "WOOD", -- Assets/ItemModels/WOOD 사용
 	},
 	{
 		id = "FLINT",
@@ -107,7 +98,7 @@ local ItemData = {
 		rarity = "COMMON",
 		maxStack = 99,
 		weight = 0.2,
-		description = "단단한 돌. 불을 피우거나 도구를 수리하는 데 사용된다.",
+		description = "단단한 돌. 불을 피우거나 아이템 제작에 사용된다.",
 		dropDespawn = "GATHER",
 	},
 	{
@@ -208,11 +199,13 @@ local ItemData = {
 		rarity = "COMMON",
 		maxStack = 1,
 		weight = 2.0,
-		durability = 50,
-		damage = 5,
+		durability = 30,
+		damage = 15,
 		slot = "HAND",
-		description = "나뭇가지와 잔돌을 엮어 만든 임시 도끼. 통나무를 캘 수 있지만 내구도가 매우 낮다.",
+		description = "가는 나무 타격 시 (스탯+15)의 데미지를 줌. 내구도 0 시 완전 파괴. (수리 불가)",
 		optimalTool = "AXE",
+		icon = "rbxassetid://13515086700", -- 돌 아이콘 대체
+		modelName = "StoneAxe",
 	},
 	{
 		id = "CRUDE_STONE_PICKAXE",
@@ -221,11 +214,13 @@ local ItemData = {
 		rarity = "COMMON",
 		maxStack = 1,
 		weight = 2.0,
-		durability = 50,
-		damage = 5,
+		durability = 30,
+		damage = 15,
 		slot = "HAND",
-		description = "초반 바위를 겨우 깰 수 있는 임시 곡괭이.",
+		description = "무른 바위 타격 시 (스탯+15)의 데미지를 줌. 내구도 0 시 완전 파괴. (수리 불가)",
 		optimalTool = "PICKAXE",
+		icon = "rbxassetid://13515086700", -- 돌 아이콘 대체
+		modelName = "StonePickaxe",
 	},
 	{
 		id = "CRUDE_WOODEN_SPEAR",
@@ -234,11 +229,24 @@ local ItemData = {
 		rarity = "COMMON",
 		maxStack = 1,
 		weight = 3.0,
-		durability = 40,
-		damage = 15,
+		durability = 20,
+		damage = 20,
 		slot = "HAND",
-		description = "호신용으로 급하게 깎아 만든 찌르기 무기.",
+		description = "초원섬의 초식동물(콤피 등) 사냥 시 HP를 깎는 무기.",
 		optimalTool = "SPEAR",
+		icon = "rbxassetid://13515091728", -- 나뭇가지 아이콘 대체
+		modelName = "WoodenSpear",
+	},
+	{
+		id = "COMPY_DNA",
+		name = "콤피 DNA",
+		type = "HIDDEN_STACK",
+		rarity = "COMMON",
+		maxStack = 9999,
+		weight = 0,
+		description = "콤피 처치 시 필드 드롭. 습득 시 인벤토리가 아닌 도감 수집량이 즉시 증가합니다.",
+		icon = "rbxassetid://0",
+		modelName = "DnaBottle",
 	},
 	{
 		id = "FIRM_STONE_AXE",
@@ -250,8 +258,9 @@ local ItemData = {
 		durability = 150,
 		damage = 12,
 		slot = "HAND",
-		description = "통나무와 돌을 견고하게 엮어 만든 채집 도끼. 채집 속도가 우수하다.",
+		description = "통나무와 돌을 견고하게 엮어 만든 채집 도끼. 내구도 0 시 파괴. (수리 불가)",
 		optimalTool = "AXE",
+		modelName = "FirmStoneAxe", -- 실제 모델 이름으로 매핑
 	},
 	{
 		id = "FIRM_STONE_PICKAXE",
@@ -263,8 +272,9 @@ local ItemData = {
 		durability = 150,
 		damage = 12,
 		slot = "HAND",
-		description = "돌을 효율적으로 캘 수 있는 단단한 곡괭이.",
+		description = "돌을 효율적으로 캘 수 있는 단단한 곡괭이. 내구도 0 시 파괴. (수리 불가)",
 		optimalTool = "PICKAXE",
+		modelName = "FirmStonePickaxe",
 	},
 	{
 		id = "BONE_SPEAR",
@@ -276,8 +286,9 @@ local ItemData = {
 		durability = 150,
 		damage = 35,
 		slot = "HAND",
-		description = "짐승의 뼈를 덧대어 사냥 효율이 급상승하는 본격적인 창 무기.",
+		description = "짐승의 뼈를 덧대어 사냥 효율이 급상승하는 본격적인 창 무기. (수리 불가)",
 		optimalTool = "SPEAR",
+		modelName = "BONE_SPEAR",
 	},
 	{
 		id = "STONE_SICKLE",
@@ -288,7 +299,7 @@ local ItemData = {
 		durability = 100,
 		damage = 5,
 		slot = "HAND",
-		description = "풀을 효율적으로 벨 수 있는 기본 도구.",
+		description = "풀을 효율적으로 벨 수 있는 기본 도구. (수리 불가)",
 		optimalTool = "SICKLE",
 	},
 	{
@@ -300,7 +311,7 @@ local ItemData = {
 		durability = 60,
 		damage = 5,
 		slot = "HAND",
-		description = "시야 확보 및 체온 유지. 장착 중 내구도가 서서히 감소합니다.",
+		description = "시야 확보 및 체온 유지. 내구도 0 시 파괴. (수리 불가)",
 		passiveDurabilityDrain = 1,
 	},
 	{
@@ -313,19 +324,8 @@ local ItemData = {
 		damage = 15,
 		isBlunt = true,
 		slot = "HAND",
-		description = "야수를 때려서 기절시키거나 체력을 깎는 둔기.",
+		description = "야수를 때려서 기절시키거나 체력을 깎는 둔기. (수리 불가)",
 		optimalTool = "CLUB",
-	},
-	{
-		id = "VINE_BOLA",
-		name = "넝쿨 볼라",
-		type = "CONSUMABLE",
-		rarity = "COMMON",
-		maxStack = 10,
-		description = "소형 크리처에게 던져 묶고 길들이는 기초 투척 도구. 도도새 등.",
-		captureMultiplier = 1.0,
-		tier = 1,
-		optimalTool = "BOLA",
 	},
 
 	--========================================
@@ -340,7 +340,7 @@ local ItemData = {
 		durability = 150,
 		damage = 40,
 		slot = "HAND",
-		description = "원거리 공격이 가능한 기초적인 활.",
+		description = "원거리 공격이 가능한 기초적인 활. (수리 불가)",
 	},
 	{
 		id = "STONE_ARROW",
@@ -359,18 +359,8 @@ local ItemData = {
 		durability = 100,
 		damage = 5,
 		slot = "HAND",
-		description = "농경지 개간용 기초 도구.",
-	},
-	{
-		id = "BONE_BOLA",
-		name = "뼈 볼라",
-		type = "CONSUMABLE",
-		rarity = "UNCOMMON",
-		maxStack = 10,
-		description = "포획 확률을 높인 강화된 투척 도구.",
-		captureMultiplier = 1.5,
-		tier = 2,
-		optimalTool = "BOLA",
+		description = "농경지 개간용 기초 도구. (수리 불가)",
+		modelName = "STONE_HOE",
 	},
 
 	--========================================
@@ -385,8 +375,9 @@ local ItemData = {
 		durability = 250,
 		damage = 25,
 		slot = "HAND",
-		description = "더 단단한 광석을 캘 수 있는 청동 곡괭이.",
+		description = "더 단단한 광석을 캘 수 있는 청동 곡괭이. (수리 불가)",
 		optimalTool = "PICKAXE",
+		modelName = "BronzePickaxe",
 	},
 	{
 		id = "BRONZE_AXE",
@@ -397,8 +388,9 @@ local ItemData = {
 		durability = 250,
 		damage = 25,
 		slot = "HAND",
-		description = "벌목 속도가 향상된 청동 도끼.",
+		description = "벌목 속도가 향상된 청동 도끼. (수리 불가)",
 		optimalTool = "AXE",
+		modelName = "BronzeAxe",
 	},
 	{
 		id = "BRONZE_SPEAR",
@@ -409,7 +401,7 @@ local ItemData = {
 		durability = 250,
 		damage = 75,
 		slot = "HAND",
-		description = "공격력이 향상된 청동 창.",
+		description = "공격력이 향상된 청동 창. (수리 불가)",
 	},
 	{
 		id = "BRONZE_BOW",
@@ -420,7 +412,7 @@ local ItemData = {
 		durability = 300,
 		damage = 90,
 		slot = "HAND",
-		description = "안정적인 사격이 가능한 청동 활.",
+		description = "안정적인 사격이 가능한 청동 활. (수리 불가)",
 	},
 	{
 		id = "BRONZE_ARROW",
@@ -429,17 +421,6 @@ local ItemData = {
 		rarity = "UNCOMMON",
 		maxStack = 100,
 		description = "높은 관통력을 가진 청동 화살.",
-	},
-	{
-		id = "BRONZE_BOLA",
-		name = "청동 볼라",
-		type = "CONSUMABLE",
-		rarity = "RARE",
-		maxStack = 10,
-		description = "중형 공룡을 제압하는 강력한 투척 도구.",
-		captureMultiplier = 2.0,
-		tier = 3,
-		optimalTool = "BOLA",
 	},
 
 	--========================================
@@ -454,8 +435,9 @@ local ItemData = {
 		durability = 500,
 		damage = 50,
 		slot = "HAND",
-		description = "모든 광석을 캘 수 있는 가장 강력한 곡괭이.",
+		description = "모든 광석을 캘 수 있는 가장 강력한 곡괭이. (수리 불가)",
 		optimalTool = "PICKAXE",
+		modelName = "IronPickaxe",
 	},
 	{
 		id = "IRON_AXE",
@@ -466,8 +448,9 @@ local ItemData = {
 		durability = 500,
 		damage = 50,
 		slot = "HAND",
-		description = "최고의 벌목 성능을 자랑하는 철 도끼.",
+		description = "최고의 벌목 성능을 자랑하는 철 도끼. (수리 불가)",
 		optimalTool = "AXE",
+		modelName = "IronAxe",
 	},
 	{
 		id = "IRON_SPEAR",
@@ -478,7 +461,7 @@ local ItemData = {
 		durability = 500,
 		damage = 130,
 		slot = "HAND",
-		description = "가장 강력한 위력을 가진 철 창.",
+		description = "가장 강력한 위력을 가진 철 창. (수리 불가)",
 	},
 	{
 		id = "CROSSBOW",
@@ -489,7 +472,7 @@ local ItemData = {
 		durability = 400,
 		damage = 180,
 		slot = "HAND",
-		description = "파괴력이 높고 조준이 쉬운 기계식 무기.",
+		description = "파괴력이 높고 조준이 쉬운 기계식 무기. (수리 불가)",
 	},
 	{
 		id = "IRON_BOLT",
@@ -498,16 +481,6 @@ local ItemData = {
 		rarity = "RARE",
 		maxStack = 100,
 		description = "석궁 전용 강력한 탄약.",
-	},
-	{
-		id = "IRON_BOLA",
-		name = "철제 볼라",
-		type = "CONSUMABLE",
-		rarity = "EPIC",
-		maxStack = 10,
-		description = "대형 포식자 공룡을 포획하기 위한 최강의 도구.",
-		captureMultiplier = 3.5,
-		optimalTool = "BOLA",
 	},
 
 	--========================================
@@ -524,7 +497,7 @@ local ItemData = {
 		defense = 10,
 		slot = "SUIT",
 		armorSet = "GRASS",
-		description = "풀잎과 넝쿨을 대충 엮어 만든 초반 방어구. 콤피의 공격을 어느 정도 막아준다.",
+		description = "풀잎과 넝쿨을 대충 엮어 만든 초반 방어구. (수리 불가)",
 	},
 	{
 		id = "LEATHER_ARMOR",
@@ -537,7 +510,7 @@ local ItemData = {
 		defense = 12,
 		slot = "SUIT",
 		armorSet = "LEATHER",
-		description = "질긴 가죽으로 만든 생존용 의상. 몸 전체를 보호합니다.",
+		description = "질긴 가죽으로 만든 생존용 의상. (수리 불가)",
 	},
 	{
 		id = "LEATHER_HAT",
@@ -551,7 +524,7 @@ local ItemData = {
 		slot = "HEAD",
 		armorSet = "LEATHER",
 		modelId = "LEATHER_HAT_MODEL",
-		description = "단단한 가죽으로 만든 모자.",
+		description = "단단한 가죽으로 만든 모자. (수리 불가)",
 	},
 	{
 		id = "BRONZE_ARMOR",
@@ -565,7 +538,7 @@ local ItemData = {
 		slot = "SUIT",
 		armorSet = "BRONZE",
 		modelId = "BRONZE_ARMOR_MODEL",
-		description = "청동 주괴를 덧댄 튼튼한 갑옷. 몸 전체를 덮는 한벌옷입니다.",
+		description = "청동 주괴를 덧댄 튼튼한 갑옷. (수리 불가)",
 	},
 	{
 		id = "BRONZE_HELMET",
@@ -579,7 +552,7 @@ local ItemData = {
 		slot = "HEAD",
 		armorSet = "BRONZE",
 		modelId = "BRONZE_HELMET_MODEL",
-		description = "머리를 완벽하게 보호하는 청동 투구.",
+		description = "머리를 완벽하게 보호하는 청동 투구. (수리 불가)",
 	},
 	{
 		id = "IRON_ARMOR",
@@ -593,7 +566,7 @@ local ItemData = {
 		slot = "SUIT",
 		armorSet = "IRON",
 		modelId = "IRON_ARMOR_MODEL",
-		description = "묵직하고 견고한 철제 갑옷. 최상급 방어 성능을 제공합니다.",
+		description = "묵직하고 견고한 철제 갑옷. (수리 불가)",
 	},
 	{
 		id = "IRON_HELMET",
@@ -607,7 +580,7 @@ local ItemData = {
 		slot = "HEAD",
 		armorSet = "IRON",
 		modelId = "IRON_HELMET_MODEL",
-		description = "철로 주조된 단단한 투구.",
+		description = "철로 주조된 단단한 투구. (수리 불가)",
 	},
 
 	--========================================
@@ -634,20 +607,12 @@ local ItemData = {
 		dropDespawn = "MONSTER",
 	},
 	{
-		id = "FEATHER",
-		name = "일반 깃털",
-		type = "RESOURCE",
-		rarity = "COMMON",
-		maxStack = 99,
-		description = "새에게서 얻은 일반적인 깃털.",
-	},
-	{
 		id = "DODO_FEATHER",
 		name = "도도새 깃털",
 		type = "RESOURCE",
-		rarity = "UNCOMMON",
+		rarity = "COMMON", -- 통합되었으므로 COMMON으로 변경
 		maxStack = 99,
-		description = "도도새가 흘린 고품질 깃털. 볼라 제작의 핵심 재료.",
+		description = "도도새가 흘린 깃털. 화살 제작 및 장비 해금에 사용된다.",
 	},
 	{
 		id = "SHARP_TOOTH",
@@ -656,14 +621,8 @@ local ItemData = {
 		rarity = "UNCOMMON",
 		maxStack = 99,
 		description = "육식 공룡의 날카로운 이빨. 무기 제작의 훌륭한 재료가 된다.",
-	},
-	{
-		id = "COMPY_DNA",
-		name = "콤피 DNA",
-		type = "RESOURCE",
-		rarity = "RARE",
-		maxStack = 99,
-		description = "콤프소그나투스에게서 얻은 귀중한 유전자 조각. 연구 및 고대 포탈 복구에 필요하다.",
+		icon = "rbxassetid://0",
+		modelName = "Tooth",
 	},
 	{
 		id = "SMALL_BONE",
@@ -672,6 +631,8 @@ local ItemData = {
 		rarity = "COMMON",
 		maxStack = 99,
 		description = "작은 짐승에게서 얻은 뼈. 원시 도구 제작에 유용하다.",
+		icon = "rbxassetid://0",
+		modelName = "SmallBone",
 	},
 	{
 		id = "COOKED_MEAT", 
@@ -694,10 +655,14 @@ local ItemData = {
 	{
 		id = "LEATHER", name = "가죽", type = "RESOURCE", rarity = "COMMON", maxStack = 99,
 		description = "방어구 제작에 사용된다.",
+		icon = "rbxassetid://0",
+		modelName = "Leather",
 	},
 	{
 		id = "BONE", name = "뼈", type = "RESOURCE", rarity = "COMMON", maxStack = 99,
-		description = "강화된 도구와 볼라 제작에 사용된다.",
+		description = "강화된 도구 제작에 사용된다.",
+		icon = "rbxassetid://0",
+		modelName = "Bone",
 	},
 	{
 		id = "HORN", name = "뿔", type = "RESOURCE", rarity = "UNCOMMON", maxStack = 99,

@@ -11,19 +11,20 @@ local SpawnConfig = {}
 SpawnConfig.DEFAULT_START_SPAWN = Vector3.new(0, 50, 0) -- 임시로 x:0, y:50, z:0으로 설정. 추후 디자인하시는 스폰포인트 좌표로 수정하시면 됩니다!
 
 local ISLAND_CONFIGS = {
-	-- [기본] 초원 섬 생태계 설정
 	[PORTAL_MAP.GRASSLAND] = {
 		Creatures = {
-			-- 초기 초식공룡 위주 설계
-			{ id = "TRICERATOPS", weight = 100 },
-			{ id = "RAPTOR", weight = 30 }
+			-- 각 종류가 체감상 균등하게 나오도록 가중치 조정
+			-- (콤피는 무리 스폰이므로 가중치를 높여야 발견 빈도가 유사해짐)
+			{ id = "DODO", weight = 50 },
+			{ id = "BABY_TRICERATOPS", weight = 50 },
+			{ id = "COMPY", weight = 120 }
 		},
 		Harvests = {
 			-- 초원섬 전용 자원 노드 구성
 			{ id = "TREE_THIN", weight = 50 },     -- 가는 나무
 			{ id = "ROCK_SOFT", weight = 40 },     -- 무른 바위
 			{ id = "BUSH_BERRY", weight = 45 },    -- 열매 덤불
-			{ id = "FIBER_GRASS", weight = 55 },   -- 섬유 풀
+			{ id = "GROUND_FIBER", weight = 55 },  -- 섬유 (바닥)
 			{ id = "GROUND_BRANCH", weight = 80 }, -- 나뭇가지 (바닥)
 			{ id = "GROUND_STONE", weight = 90 }   -- 잔돌 (바닥)
 		}
@@ -41,7 +42,7 @@ local ISLAND_CONFIGS = {
 			-- 열대 느낌에 맞춘 자원 비중 변화 (예: 야자수, 희귀식물 중심)
 			{ id = "TREE_OAK", weight = 80 }, -- 차후 열대 나무 모델 생기면 TREE_PALM 등으로 교체 가능
 			{ id = "BUSH_BERRY", weight = 70 },
-			{ id = "FIBER_GRASS", weight = 60 },
+			{ id = "GROUND_FIBER", weight = 60 },
 			{ id = "GROUND_BRANCH", weight = 60 },
 			{ id = "ROCK_NORMAL", weight = 50 },
 			{ id = "GROUND_STONE", weight = 60 }
@@ -83,6 +84,21 @@ end
 function SpawnConfig.GetRandomHarvest()
 	local config = SpawnConfig.GetCurrentConfig()
 	return getRandomFromWeight(config.Harvests)
+end
+
+-- [추가] 잔돌, 나뭇가지 등 소형 바닥 자원 전용 랜덤 선택 (자동 스폰용)
+function SpawnConfig.GetRandomGroundHarvest()
+	local config = SpawnConfig.GetCurrentConfig()
+	local groundList = {}
+	for _, item in ipairs(config.Harvests) do
+		-- GROUND_STONE, GROUND_BRANCH 등 ID에 GROUND가 포함된 것만 추출
+		if item.id:find("GROUND") then
+			table.insert(groundList, item)
+		end
+	end
+	
+	if #groundList == 0 then return nil end
+	return getRandomFromWeight(groundList)
 end
 
 return SpawnConfig

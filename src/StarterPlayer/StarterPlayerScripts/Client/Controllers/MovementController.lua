@@ -144,12 +144,18 @@ local function updateSprint()
 	local shouldSprint = shiftHeld and not isDodging and currentStamina >= Balance.SPRINT_MIN_STAMINA
 	
 	local character = player.Character
+	if not character then
+		shouldSprint = false
+	end
+
 	if character then
 		local humanoid = character:FindFirstChild("Humanoid")
 		if humanoid then
 			-- 이동 중인지 체크
 			local isMoving = humanoid.MoveDirection.Magnitude > 0
 			shouldSprint = shouldSprint and isMoving
+		else
+			shouldSprint = false
 		end
 	end
 	

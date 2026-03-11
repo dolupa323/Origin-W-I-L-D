@@ -83,9 +83,8 @@ for command, handler in pairs(DurabilityService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)
 end
 
--- WorldDropService 초기화
+-- WorldDropService register (Init called later after PlayerStatService)
 local WorldDropService = require(Services.WorldDropService)
-WorldDropService.Init(NetController, DataService, InventoryService, TimeService)
 
 -- WorldDropService 핸들러 등록
 for command, handler in pairs(WorldDropService.GetHandlers()) do
@@ -145,6 +144,9 @@ PlayerStatService.Init(NetController, SaveService, DataService, StaminaService)
 for command, handler in pairs(PlayerStatService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)
 end
+
+-- WorldDropService 최종 초기화 (PlayerStatService 의존성 주입)
+WorldDropService.Init(NetController, DataService, InventoryService, TimeService, PlayerStatService)
 
 -- TechService 초기화 (Phase 6) - 제작/건설 잠금 체크를 위해 일찍 초기화
 local TechService = require(Services.TechService)
@@ -257,14 +259,6 @@ local PalAIService = require(Services.PalAIService)
 PalAIService.Init(NetController, CreatureService, DataService, PalboxService, BuildService)
 FacilityService.SetPalAIService(PalAIService)
 
--- CaptureService 초기화 (+ PlayerStatService 추가)
-local CaptureService = require(Services.CaptureService)
-CaptureService.Init(NetController, DataService, CreatureService, InventoryService, PalboxService, PlayerStatService)
-
--- CaptureService 핸들러 등록
-for command, handler in pairs(CaptureService.GetHandlers()) do
-	NetController.RegisterHandler(command, handler)
-end
 
 -- PartyService 초기화 (Phase 5-4)
 local PartyService = require(Services.PartyService)

@@ -102,12 +102,12 @@ end
 local function findResourceModel(modelsFolder, modelName, nodeId)
 	if not modelsFolder then return nil end
 	
-	-- 1. 정확한 이름 매칭
-	local template = modelsFolder:FindFirstChild(modelName)
+	-- 1. 정확한 이름 매칭 (하위 폴더 포함 탐색)
+	local template = modelsFolder:FindFirstChild(modelName, true)
 	if template then return template end
 	
-	-- 2. nodeId로 매칭 (ex: "TREE_OAK" -> "Tree_Oak", "TreeOak")
-	template = modelsFolder:FindFirstChild(nodeId)
+	-- 2. nodeId로 매칭
+	template = modelsFolder:FindFirstChild(nodeId, true)
 	if template then return template end
 	
 	-- 3. 대소문자 무시 매칭
@@ -160,7 +160,7 @@ local function cleanModelForHarvest(model: Model)
 end
 
 --- 모델을 자원 노드로 설정 (어떤 구조든 지원)
-local function setupModelForNode(model: Model, position: Vector3, nodeData: any): Model
+local function setupModelForNode(model: Model, position: Vector3, nodeData: any, isAutoSpawn: boolean): Model
 	-- Toolbox 모델 정리
 	cleanModelForHarvest(model)
 	
@@ -178,8 +178,8 @@ local function setupModelForNode(model: Model, position: Vector3, nodeData: any)
 		end
 	end
 	
-	-- 위치 설정 (기존 모델 방향 유지, Y축만 랜덤 회전 추가)
-	if primaryPart then
+	-- 위치 설정 (자동 스폰일 때만 Y축 하단 정렬 및 위치 지정)
+	if primaryPart and isAutoSpawn then
 		-- 모델 하단이 지면에 닿도록 조정 (모든 파트 중 가장 낮은 Y값 추적)
 		local minY = math.huge
 		for _, p in ipairs(model:GetDescendants()) do
@@ -204,11 +204,11 @@ local function setupModelForNode(model: Model, position: Vector3, nodeData: any)
 		local targetCF = CFrame.new(position) * CFrame.Angles(0, randomYRot, 0) * CFrame.new(0, pivotOffset, 0)
 		model:PivotTo(targetCF)
 		
-		-- [추가] 물리 엔진이 지면을 인식할 수 있도록 살짝 위에서 떨어 뜨리는 효과 (나무는 Anchored이므로 위치 확정)
+		-- [수정] 0.5 유격 제거 (물리 낙하 효과 제거 및 지면 밀착)
 		if primaryPart.Anchored == false then
-			model:PivotTo(targetCF * CFrame.new(0, 0.5, 0))
+			model:PivotTo(targetCF)
 		end
-	else
+	elseif not primaryPart and isAutoSpawn then
 		-- PrimaryPart가 없으면 모든 파트 이동
 		for _, part in ipairs(model:GetDescendants()) do
 			if part:IsA("BasePart") then
@@ -230,6 +230,7 @@ local function setupModelForNode(model: Model, position: Vector3, nodeData: any)
 	
 	-- 7. 하단 상호작용 판정 강화 (Hitbox 추가)
 	-- 특히 오크나무처럼 하단이 비어있는 경우를 위해 지면 부근에 투명 박스 생성
+	-- [수정] 부쉬 베리(BUSH_BERRY)의 경우 지면에 묻혀도 상호작용 가능하도록 머리 부분에 히트박스 배치
 	local hitbox = Instance.new("Part")
 	hitbox.Name = "Hitbox"
 	hitbox.Size = Vector3.new(6, 5, 6) -- 넓고 낮은 박스
@@ -238,9 +239,15 @@ local function setupModelForNode(model: Model, position: Vector3, nodeData: any)
 	hitbox.CanCollide = false
 	hitbox.CanQuery = true
 	hitbox.CanTouch = true
-	-- 지면 위치에 배치 (yOffset 고려)
+	
 	local _, modelSize = model:GetBoundingBox()
-	hitbox.CFrame = model.PrimaryPart.CFrame * CFrame.new(0, -modelSize.Y/2 + 2.5, 0)
+	local yOffset = -modelSize.Y/2 + 2.5
+	if nodeData and nodeData.id == "BUSH_BERRY" then
+		-- 부쉬 베리는 상단(머리) 부분에 히트박스 배치
+		yOffset = modelSize.Y/2 - 2.5
+	end
+	
+	hitbox.CFrame = model:GetPivot() * CFrame.new(0, yOffset, 0)
 	hitbox.Parent = model
 	
 	-- Humanoid 제거 (자원 노드는 필요 없음)
@@ -271,14 +278,26 @@ function HarvestService.spawnNodeModel(nodeId: string, position: Vector3, nodeUI
 		nodeFolder.Parent = workspace
 	end
 	
-	-- Assets/ResourceNodeModels 폴더 찾기
-	local modelsFolder = ReplicatedStorage:FindFirstChild("Assets")
-	if modelsFolder then
-		modelsFolder = modelsFolder:FindFirstChild("ResourceNodeModels")
-	end
+	-- Assets 내 여러 폴더에서 템플릿 탐색 (사용자 폴더링 대응)
+	local assets = ReplicatedStorage:FindFirstChild("Assets")
+	local nodeFolder = workspace:FindFirstChild("ResourceNodes")
+	
+	local searchFolders = {
+		assets and assets:FindFirstChild("ResourceNodeModels"),
+		assets and assets:FindFirstChild("ItemModels"),
+		assets and assets:FindFirstChild("Models"),
+		assets,
+		nodeFolder -- 워크스페이스 내 ResourceNodes 폴더도 탐색 범위에 포함
+	}
 	
 	local modelName = nodeData.modelName or nodeId
-	local template = findResourceModel(modelsFolder, modelName, nodeId)
+	local template = nil
+	for _, folder in ipairs(searchFolders) do
+		if folder then
+			template = findResourceModel(folder, modelName, nodeId)
+			if template then break end
+		end
+	end
 	
 	local model
 	if template then
@@ -286,7 +305,7 @@ function HarvestService.spawnNodeModel(nodeId: string, position: Vector3, nodeUI
 		model = template:Clone()
 		model.Name = nodeId
 		model.Parent = nodeFolder -- Parent early to avoid joint warnings
-		model = setupModelForNode(model, position, nodeData)
+		model = setupModelForNode(model, position, nodeData, true)
 		print(string.format("[HarvestService] Loaded model '%s' for %s", template.Name, nodeId))
 	else
 		-- 폴백: 간단한 플레이스홀더 생성
@@ -610,12 +629,15 @@ function HarvestService._findSpawnPosition(playerRootPart: Part): (Vector3?, Enu
 				local tooClose = false
 				local nodeFolder = workspace:FindFirstChild("ResourceNodes")
 				if nodeFolder then
-					for _, existingNode in ipairs(nodeFolder:GetChildren()) do
-						local existingPart = existingNode.PrimaryPart or existingNode:FindFirstChildWhichIsA("BasePart")
-						if existingPart then
-							if (existingPart.Position - result.Position).Magnitude < 8 then
-								tooClose = true
-								break
+					-- [수정] 폴더 구조가 있어도 모델만 골라내어 거리 체크
+					for _, descendant in ipairs(nodeFolder:GetDescendants()) do
+						if descendant:IsA("Model") then
+							local existingPart = descendant.PrimaryPart or descendant:FindFirstChildWhichIsA("BasePart")
+							if existingPart then
+								if (existingPart.Position - result.Position).Magnitude < 8 then
+									tooClose = true
+									break
+								end
 							end
 						end
 					end
@@ -666,8 +688,8 @@ function HarvestService._spawnLoop()
 			if math.random() <= 0.5 then
 				local pos, material = HarvestService._findSpawnPosition(char.HumanoidRootPart)
 				if pos and material then
-					-- [변경] 지형에 상관없이 섬(Place ID)별 설정된 랜덤 자원을 스폰
-					local nodeId = SpawnConfig.GetRandomHarvest()
+					-- [수정] 잔돌, 나뭇가지 등 소형 바닥 자원 위주로 플레이어 주변 자동 스폰
+					local nodeId = SpawnConfig.GetRandomGroundHarvest()
 					if nodeId then
 						HarvestService._spawnAutoNode(nodeId, pos)
 						
@@ -762,10 +784,11 @@ function HarvestService.registerNode(nodeId: string, position: Vector3, isAutoSp
 	
 	activeNodes[nodeUID] = {
 		nodeId = nodeId,
-		remainingHits = nodeData.maxHits,
+		remainingHits = nodeData.maxHealth, -- maxHits 대신 maxHealth 사용 (호환성을 위해 변수명은 유지 가능하나 내부 값은 Health)
 		depletedAt = nil,
 		position = position,
 		isAutoSpawned = isAutoSpawned,
+		nodeModel = nil, -- 노드 모델 참조 (숨김 복원용)
 	}
 	
 	-- 타입별 카운트 증가 (모든 노드 추적)
@@ -780,7 +803,7 @@ function HarvestService.registerNode(nodeId: string, position: Vector3, isAutoSp
 			nodeUID = nodeUID,
 			nodeId = nodeId,
 			position = position,
-			maxHits = nodeData.maxHits,
+			maxHits = nodeData.maxHealth, -- 클라이언트 UI에서도 maxHealth 수치로 쓰게 함
 		})
 	end
 	
@@ -879,29 +902,28 @@ function HarvestService.hit(player: Player, nodeUID: string, toolSlot: number?, 
 	-- 6. 효율 계산
 	local efficiency = calculateEfficiency(player, nodeData.optimalTool, toolSlot)
 	
-	-- 7. 타격 처리 (Power 계산)
-	local power = 1
+	-- 7. 타격 처리 (Power 계산) - "데미지 공식: 현재 채집 스탯 + 도구의 데미지"
+	local power = 5 -- 맨손 기본 데미지
+	if toolSlot and InventoryService and DataService then
+		local slotData = InventoryService.getSlot(userId, toolSlot)
+		if slotData then
+			local itemData = DataService.getItem(slotData.itemId)
+			if itemData and itemData.damage then
+				power = itemData.damage
+			end
+		end
+	end
 	
-	local workSpeedStat = 0
+	-- 레벨업(스탯) 등에서 오는 채집스탯 추가 (예: WORK_SPEED 등 투자 스탯을 그대로 데미지에 더함)
 	if PlayerStatService then
 		local stats = PlayerStatService.getStats(player.UserId)
-		workSpeedStat = (stats and stats.statInvested and stats.statInvested[Enums.StatId.WORK_SPEED]) or 0
+		local workSpeedStat = (stats and stats.statInvested and stats.statInvested[Enums.StatId.WORK_SPEED]) or 0
+		power = power + workSpeedStat
 	end
-	power = 1 + math.floor(workSpeedStat / 10)
 	
 	-- 8. 실제 데미지 적용
-	-- [FIX] 보안 결함: 수동 채집(Manual Hit) 시 클라이언트가 보낸 hitCount를 무조건 신뢰하지 않음 (Exploit 방지)
-	local finalHitCount = 1
-	
-	-- 노드 타입이 BUSH(덤불)나 FIBER(풀) 등 상호작용으로 한 번에 수확 가능한 경우에만 예외 허용
-	if nodeData.nodeType == "BUSH" or nodeData.nodeType == "FIBER" then
-		finalHitCount = math.clamp(hitCount or 1, 1, 10)
-	else
-		-- 나무, 바위 등은 무조건 1회 타격만 허용
-		finalHitCount = 1
-	end
-
-	local success, err, drops = HarvestService.damageNode(nodeUID, power * finalHitCount, efficiency, userId)
+	local finalDamage = power
+	local success, err, drops = HarvestService.damageNode(nodeUID, finalDamage, efficiency, userId)
 	
 	-- 9. (Player-specific) 도구 내구도 감소
 	if success and toolSlot and DurabilityService and InventoryService then
@@ -952,7 +974,7 @@ function HarvestService.damageNode(nodeUID: string, damage: number, efficiency: 
 		NetController.FireClientsInRange(nodeState.position, 400, "Harvest.Node.Hit", {
 			nodeUID = nodeUID,
 			remainingHits = nodeState.remainingHits,
-			maxHits = nodeData.maxHits
+			maxHits = nodeData.maxHealth
 		})
 	end
 	
@@ -972,8 +994,17 @@ function HarvestService.damageNode(nodeUID: string, damage: number, efficiency: 
 			if WorldDropService then
 				local angle = math.random() * math.pi * 2
 				local radius = math.random() * 2 + 1
-				local dropPosition = nodeState.position + Vector3.new(math.cos(angle) * radius, 1.5, math.sin(angle) * radius)
-				WorldDropService.spawnDrop(dropPosition, drop.itemId, drop.count)
+				local baseDropPos = nodeState.position + Vector3.new(math.cos(angle) * radius, 5, math.sin(angle) * radius)
+				
+				-- [개선] 지면 인식 레이캐스트 (노드 자체를 제외하여 정확히 바닥 찾기)
+				local rayParams = RaycastParams.new()
+				rayParams.FilterDescendantsInstances = { model } -- 생성된 노드 모델 제외
+				rayParams.FilterType = Enum.RaycastFilterType.Exclude
+				
+				local rayResult = workspace:Raycast(baseDropPos, Vector3.new(0, -30, 0), rayParams)
+				local finalDropPos = rayResult and rayResult.Position or (nodeState.position + Vector3.new(math.cos(angle) * radius, 0, math.sin(angle) * radius))
+				
+				WorldDropService.spawnDrop(finalDropPos, drop.itemId, drop.count)
 			end
 		end
 		
@@ -1008,21 +1039,49 @@ function HarvestService.damageNode(nodeUID: string, damage: number, efficiency: 
 	return true, nil, drops
 end
 
---- 노드 모델 파괴 (내부) - 모델을 완전히 비활성화
+--- 노드 모델 파괴 (내부) - 파괴 대신 숨김 처리
 function HarvestService._destroyNodeModel(nodeUID: string)
-	local nodeFolder = workspace:FindFirstChild("ResourceNodes")
-	if not nodeFolder then return nil end
+	local nodeState = activeNodes[nodeUID] or depletedNodes[nodeUID]
+	if not nodeState then return nil end
 	
-	for _, nodeModel in ipairs(nodeFolder:GetChildren()) do
-		if nodeModel:GetAttribute("NodeUID") == nodeUID then
-			-- 고갈 표시
-			nodeModel:SetAttribute("Depleted", true)
-			
-			-- 완전히 제거 (투명화 방식보다 확실하고 성능에 좋음)
-			nodeModel:Destroy()
-			
-			return {} -- 성공 표시 (데이터는 필요 없음)
+	local nodeModel = nodeState.nodeModel
+	
+	-- 미리 배치된 모델이 없다면 (혹은 AutoSpawned 등) 폴더 스캔
+	if not nodeModel then
+		local nodeFolder = workspace:FindFirstChild("ResourceNodes")
+		if nodeFolder then
+			-- [수정] 하위 폴더까지 뒤져서 해당 UID를 가진 모델 검색
+			for _, m in ipairs(nodeFolder:GetDescendants()) do
+				if m:IsA("Model") and m:GetAttribute("NodeUID") == nodeUID then
+					nodeModel = m
+					break
+				end
+			end
 		end
+	end
+	
+	if nodeModel then
+		nodeModel:SetAttribute("Depleted", true)
+		
+		-- 삭제 대신 투명화/콜리전 비활성화 (리스폰시 복구 위해)
+		for _, part in ipairs(nodeModel:GetDescendants()) do
+			if part:IsA("BasePart") then
+				if part.Name ~= "Hitbox" then
+					part.Transparency = 1
+					if part:IsA("Texture") or part:IsA("Decal") then
+						part.Transparency = 1
+					end
+				end
+				-- Hitbox 포함 콜리전은 전부 Off
+				part.CanCollide = false
+				part.CanQuery = false
+				part.CanTouch = false
+			elseif part:IsA("ParticleEmitter") or part:IsA("Trail") then
+				part.Enabled = false
+			end
+		end
+		
+		return {}
 	end
 	return nil
 end
@@ -1038,20 +1097,39 @@ function HarvestService._respawnNode(nodeUID: string)
 	local nodeData = DataService.getResourceNode(depletedNode.nodeId)
 	if not nodeData then return end
 	
-	-- 서버에 새 모델 스폰 (기존의 복구 방식 대신 새로 생성)
-	local newModel = HarvestService.spawnNodeModel(depletedNode.nodeId, depletedNode.position)
-	if newModel then
-		newModel:SetAttribute("NodeUID", nodeUID)
+	-- activeNodes로 복귀 (기존 숨겼던 모델 복구)
+	if depletedNode.nodeModel then
+		-- 다시 보이게 하고 콜리전 복구
+		local nodeModel = depletedNode.nodeModel
+		nodeModel:SetAttribute("Depleted", false)
+		-- 투명도 복원 (원래 값 저장/복원을 완벽히 안 하더라도 0으로 통일하거나 기본값)
+		for _, part in ipairs(nodeModel:GetDescendants()) do
+			if part:IsA("BasePart") then
+				if part.Name ~= "Hitbox" then
+					part.Transparency = 0
+				end
+				-- 콜리전 복원
+				part.CanCollide = (part.Name ~= "Hitbox")
+				part.CanQuery = true
+				part.CanTouch = true
+			elseif part:IsA("ParticleEmitter") or part:IsA("Trail") then
+				part.Enabled = true
+			end
+		end
+	else
+		-- 도저히 모델이 없으면 재생성 시도
+		local newModel = HarvestService.spawnNodeModel(depletedNode.nodeId, depletedNode.position, nodeUID)
+		depletedNode.nodeModel = newModel
 	end
 	
-	-- activeNodes로 복귀
 	activeNodes[nodeUID] = {
 		nodeId = depletedNode.nodeId,
 		position = depletedNode.position,
-		remainingHits = nodeData.maxHits,
+		remainingHits = nodeData.maxHealth, -- 다시 maxHealth 풀로
 		depletedAt = nil,
 		respawnAt = nil,
 		isAutoSpawned = depletedNode.isAutoSpawned,
+		nodeModel = depletedNode.nodeModel,
 	}
 	
 	-- 고갈된 노드 목록에서 제거
@@ -1126,6 +1204,50 @@ local function ensureResourceNodesFolder()
 	return nodeFolder
 end
 
+--- 맵에 미리 배치된 노드(ResourceNodes 폴더 안)를 태깅/활성화
+function HarvestService._setupPrePlacedNodes()
+	local nodeFolder = ensureResourceNodesFolder()
+	local count = 0
+	
+	-- [수정] GetChildren 대신 GetDescendants를 사용하여 하위 폴더(TREE_THIN 등) 안의 모델도 모두 등록
+	for _, nodeModel in ipairs(nodeFolder:GetDescendants()) do
+		if nodeModel:IsA("Model") then
+			local nodeId = nodeModel.Name -- 모델 이름 기준
+			local nodeData = DataService.getResourceNode(nodeId)
+			
+			-- 모델 이름이 데이터에 없으면 부모 폴더 이름으로도 시도 (폴더링 대응)
+			if not nodeData and nodeModel.Parent and nodeModel.Parent:IsA("Folder") then
+				nodeId = nodeModel.Parent.Name
+				nodeData = DataService.getResourceNode(nodeId)
+			end
+			
+			if nodeData then
+				local primaryPart = nodeModel.PrimaryPart or nodeModel:FindFirstChildWhichIsA("BasePart", true)
+				if primaryPart then
+					-- [수정] 미리 배치된 모델도 셋업 로직을 거치게 함 (히트박스, 태그, 앵커링 등)
+					setupModelForNode(nodeModel, primaryPart.Position, nodeData, false)
+					
+					-- 등록 진행 (수동 배치 노드는 isAutoSpawned = false)
+					local uid = HarvestService.registerNode(nodeId, primaryPart.Position, false)
+					
+					-- ActiveNode의 모델 포인터 설정
+					if activeNodes[uid] then
+						activeNodes[uid].nodeModel = nodeModel
+					end
+					
+					-- 속성 설정 (setupModelForNode에서 일부 수행하지만 UID 등 명시적 설정)
+					nodeModel:SetAttribute("NodeId", nodeId)
+					nodeModel:SetAttribute("NodeUID", uid)
+					nodeModel:SetAttribute("Depleted", false)
+					
+					count = count + 1
+				end
+			end
+		end
+	end
+	print("[HarvestService] Pre-placed nodes setup complete. Total:", count)
+end
+
 function HarvestService.Init(
 	netController: any,
 	dataService: any,
@@ -1145,35 +1267,33 @@ function HarvestService.Init(
 	WorldDropService = worldDropService
 	TechService = techService
 	
-	-- ResourceNodes 폴더 생성
+	-- ResourceNodes 폴더 사전 배치 노드 초기화
 	task.spawn(function()
 		task.wait(1) -- 맵 로드 대기
-		ensureResourceNodesFolder()
+		HarvestService._setupPrePlacedNodes()
 		
-		-- ★ 초기 대량 스폰 (서버 시작 시 즉시)
+		-- [추가] 초기 맵 전체 분포 스폰 (바닥 자원 풍부화)
 		HarvestService._initialSpawn()
 	end)
 	
-	-- 보충 스폰 루프 (채집/소멸된 만큼만 보충)
+	-- [수정] 자동스폰 루프 다시 활성화 (잔돌/나뭇가지 전용)
 	task.spawn(function()
-		task.wait(10) -- 초기 스폰 완료 후 시작
 		while true do
 			task.wait(NODE_SPAWN_INTERVAL)
-			HarvestService._replenishLoop()
+			HarvestService._spawnLoop()
 		end
 	end)
-	
-	-- 디스폰 체크 루프 (30초마다)
+
+	-- 디스폰 체크 (플레이어와 너무 멀면 제거하여 성능 확보)
 	task.spawn(function()
-		task.wait(5)
 		while true do
-			task.wait(30)
+			task.wait(NODE_SPAWN_INTERVAL * 2)
 			HarvestService._despawnCheck()
 		end
 	end)
 	
 	initialized = true
-	print("[HarvestService] Initialized with initial spawn + replenish system")
+	print("[HarvestService] Initialized — PRE-PLACED + AUTO-SPAWN MIXED system")
 end
 
 --- ★ 초기 대량 스폰 (서버 시작 시 맵 전체에 자원 노드 배치)
@@ -1233,11 +1353,13 @@ function HarvestService._initialSpawn()
 				-- 기존 노드와 거리 체크 (최소 12 studs 간격)
 				local tooClose = false
 				if nodeFolder then
-					for _, existing in ipairs(nodeFolder:GetChildren()) do
-						local ePart = existing.PrimaryPart or existing:FindFirstChildWhichIsA("BasePart")
-						if ePart and (ePart.Position - result.Position).Magnitude < 12 then
-							tooClose = true
-							break
+					for _, existing in ipairs(nodeFolder:GetDescendants()) do
+						if existing:IsA("Model") then
+							local ePart = existing.PrimaryPart or existing:FindFirstChildWhichIsA("BasePart")
+							if ePart and (ePart.Position - result.Position).Magnitude < 12 then
+								tooClose = true
+								break
+							end
 						end
 					end
 				end

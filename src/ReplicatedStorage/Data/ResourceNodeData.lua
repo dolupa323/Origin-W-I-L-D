@@ -13,9 +13,9 @@ local ResourceNodeData = {
 		nodeType = "TREE",
 		optimalTool = nil,
 		resources = {
-			{ itemId = "BRANCH", min = 1, max = 2, weight = 1.0 },
+			{ itemId = "BRANCH", min = 1, max = 1, weight = 1.0 },
 		},
-		maxHits = 1,
+		maxHealth = 10,
 		respawnTime = 60,
 		xpPerHit = 1,
 		requiresTool = false, -- 맨손 가능
@@ -27,9 +27,23 @@ local ResourceNodeData = {
 		nodeType = "ROCK",
 		optimalTool = nil,
 		resources = {
-			{ itemId = "SMALL_STONE", min = 1, max = 2, weight = 1.0 },
+			{ itemId = "SMALL_STONE", min = 1, max = 1, weight = 1.0 },
 		},
-		maxHits = 1,
+		maxHealth = 10,
+		respawnTime = 60,
+		xpPerHit = 1,
+		requiresTool = false,
+	},
+	{
+		id = "GROUND_FIBER",
+		name = "섬유",
+		modelName = "Grass", -- 기존 Grass 모델 사용
+		nodeType = "FIBER",
+		optimalTool = nil,
+		resources = {
+			{ itemId = "FIBER", min = 1, max = 2, weight = 1.0 },
+		},
+		maxHealth = 10,
 		respawnTime = 60,
 		xpPerHit = 1,
 		requiresTool = false,
@@ -45,29 +59,14 @@ local ResourceNodeData = {
 		nodeType = "BUSH",
 		optimalTool = nil,
 		resources = {
-			{ itemId = "BERRY", min = 2, max = 4, weight = 1.0 },
-			{ itemId = "FIBER", min = 1, max = 3, weight = 0.8 },
+			{ itemId = "BERRY", min = 2, max = 3, weight = 1.0 },
 		},
-		maxHits = 3,
+		maxHealth = 30,
 		respawnTime = 180,
 		xpPerHit = 1,
 		requiresTool = false,
 	},
-	{
-		id = "FIBER_GRASS",
-		name = "섬유 풀",
-		modelName = "Grass",
-		nodeType = "FIBER",
-		optimalTool = "SICKLE", -- 낫 사용 시 효율 증가
-		resources = {
-			{ itemId = "DURABLE_LEAF", min = 1, max = 2, weight = 1.0 },
-			{ itemId = "FIBER", min = 2, max = 4, weight = 0.7 },
-		},
-		maxHits = 1,
-		respawnTime = 120,
-		xpPerHit = 1,
-		requiresTool = false, -- 맨손 가능
-	},
+
 
 	--========================================
 	-- [초원섬 특화] 대형 자원 (도구 필수)
@@ -75,13 +74,13 @@ local ResourceNodeData = {
 	{
 		id = "TREE_THIN",
 		name = "가는 나무",
-		modelName = "ThinTree",
+		modelName = "TREE_THIN",
 		nodeType = "TREE",
 		optimalTool = "AXE",
 		resources = {
-			{ itemId = "LOG", min = 2, max = 4, weight = 1.0 },
+			{ itemId = "LOG", min = 1, max = 2, weight = 1.0 },
 		},
-		maxHits = 8,
+		maxHealth = 150,
 		respawnTime = 300,
 		xpPerHit = 3,
 		requiresTool = true, -- 도끼 필수
@@ -93,11 +92,10 @@ local ResourceNodeData = {
 		nodeType = "ROCK",
 		optimalTool = "PICKAXE",
 		resources = {
-			{ itemId = "STONE", min = 3, max = 5, weight = 1.0 },
-			{ itemId = "FLINT", min = 1, max = 2, weight = 0.6 },
+			{ itemId = "STONE", min = 1, max = 2, weight = 1.0 },
 		},
-		maxHits = 8,
-		respawnTime = 240,
+		maxHealth = 150,
+		respawnTime = 300,
 		xpPerHit = 3,
 		requiresTool = true, -- 곡괭이 필수
 	},
@@ -114,7 +112,7 @@ local ResourceNodeData = {
 		resources = {
 			{ itemId = "WOOD", min = 5, max = 10, weight = 1.0 },
 		},
-		maxHits = 15,
+		maxHealth = 250,
 		respawnTime = 400,
 		xpPerHit = 5,
 		requiresTool = true,
@@ -128,7 +126,7 @@ local ResourceNodeData = {
 		resources = {
 			{ itemId = "STONE", min = 4, max = 8, weight = 1.0 },
 		},
-		maxHits = 12,
+		maxHealth = 200,
 		respawnTime = 300,
 		xpPerHit = 4,
 		requiresTool = true,
@@ -146,7 +144,7 @@ local ResourceNodeData = {
 		resources = {
 			{ itemId = "COPPER_ORE", min = 3, max = 6, weight = 1.0 },
 		},
-		maxHits = 20,
+		maxHealth = 300,
 		respawnTime = 400,
 		xpPerHit = 5,
 		requiresTool = true,
@@ -160,7 +158,7 @@ local ResourceNodeData = {
 		resources = {
 			{ itemId = "TIN_ORE", min = 3, max = 6, weight = 1.0 },
 		},
-		maxHits = 20,
+		maxHealth = 300,
 		respawnTime = 400,
 		xpPerHit = 5,
 		requiresTool = true,
@@ -174,7 +172,7 @@ local ResourceNodeData = {
 		resources = {
 			{ itemId = "IRON_ORE", min = 4, max = 8, weight = 1.0 },
 		},
-		maxHits = 35,
+		maxHealth = 500,
 		respawnTime = 600,
 		xpPerHit = 10,
 		requiresTool = true,
@@ -188,7 +186,7 @@ local ResourceNodeData = {
 		resources = {
 			{ itemId = "COAL", min = 2, max = 4, weight = 1.0 },
 		},
-		maxHits = 15,
+		maxHealth = 250,
 		respawnTime = 420,
 		xpPerHit = 5,
 		requiresTool = true,

@@ -103,8 +103,8 @@ function InventoryController.swapSlots(fromSlot: number, toSlot: number)
 	
 	task.spawn(function()
 		local ok, data = NetClient.Request("Inventory.Move.Request", {
-			fromSlot = fromSlot,
-			toSlot = toSlot
+			fromSlot = tonumber(fromSlot) or fromSlot,
+			toSlot = tonumber(toSlot) or toSlot
 		})
 		
 		if ok then
@@ -183,14 +183,16 @@ local function onInventoryChanged(data)
 	end
 	
 	if data.fullInventory then
-		-- 전체 동기화 (Full Sync)
+		-- 전체 동기화 (Full Sync) - 배열 형식 [{slot, itemId, count}, ...]
 		inventoryCache = {}
-		for slot, item in pairs(data.fullInventory) do
-			inventoryCache[tonumber(slot) or slot] = {
-				itemId = item.itemId,
-				count = item.count,
-				durability = item.durability,
-			}
+		for _, item in ipairs(data.fullInventory) do
+			if item and item.slot then
+				inventoryCache[item.slot] = {
+					itemId = item.itemId,
+					count = item.count,
+					durability = item.durability,
+				}
+			end
 		end
 	elseif data.changes then
 		-- 부분 동기화 (Delta Sync)
@@ -262,25 +264,52 @@ function InventoryController.Init()
 		end
 	end)
 	
-	-- 초기 데이터 요청
+	-- 초기 데이터 요청 (서버쪽 SaveStore 지연으로 인한 타임아웃 방지 및 재시도)
 	task.spawn(function()
-		local ok, data = NetClient.Request("Inventory.Get.Request", {})
-		if ok and data and data.inventory then
+		local fetchedData = nil
+		local maxRetries = 15
+		local currentTry = 0
+		
+		while not fetchedData and currentTry < maxRetries do
+			local ok, data = NetClient.Request("Inventory.Get.Request", {})
+			if ok and data and data.inventory then
+				fetchedData = data
+				break
+			else
+				currentTry = currentTry + 1
+				warn(string.format("[InventoryController] Waiting for inventory sync... (Attempt %d/%d)", currentTry, maxRetries))
+				task.wait(2) -- 2초마다 동기화 상태 재요청
+			end
+		end
+		
+		if fetchedData then
 			inventoryCache = {}
-			for _, item in ipairs(data.inventory) do
+			for _, item in ipairs(fetchedData.inventory) do
 				inventoryCache[item.slot] = {
 					itemId = item.itemId,
 					count = item.count,
 					durability = item.durability,
 				}
 			end
-			if data.equipment then equipmentCache = data.equipment end
-			totalWeight = data.totalWeight or 0
-			maxWeight = data.maxWeight or 300
+			if fetchedData.equipment then equipmentCache = fetchedData.equipment end
+			totalWeight = fetchedData.totalWeight or 0
+			maxWeight = fetchedData.maxWeight or 300
 			fireChangeListeners()
 			
 			-- 초기 정렬 (Auto-stacking on first load)
 			InventoryController.requestSort()
+			
+			local player = game:GetService("Players").LocalPlayer
+			if player then
+				player:SetAttribute("InventoryLoaded", true)
+			end
+		else
+			warn("[InventoryController] FATAL: Failed to sync inventory data. The server might have kicked the player or is unreachable.")
+			-- 서버에서 킥을 시키겠지만 만일의 사태에 대비해 강제 로딩 해제
+			local player = game:GetService("Players").LocalPlayer
+			if player then
+				player:SetAttribute("InventoryLoaded", true)
+			end
 		end
 	end)
 

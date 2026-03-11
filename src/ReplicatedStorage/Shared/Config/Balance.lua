@@ -30,7 +30,7 @@ Balance.DROP_MERGE_RADIUS = 5      -- 드롭 병합 반경 (스터드)
 Balance.DROP_INACTIVE_DIST = 150   -- 비활성화 거리 (스터드)
 Balance.DROP_DESPAWN_DEFAULT = 300 -- 기본 디스폰 시간 (초)
 Balance.DROP_DESPAWN_GATHER = 600  -- 채집 드롭 디스폰 시간 (초)
-Balance.DROP_LOOT_RANGE = 10       -- 루팅 최대 거리 (스터드)
+Balance.DROP_LOOT_RANGE = 14       -- [상향] 루팅 최대 거리 (10 -> 14)
 
 --========================================
 -- 월드 / 맵 설정
@@ -110,6 +110,7 @@ Balance.XP_CREATURE_KILL = 200000        -- 크리처 처치 (10000 -> 200000)
 Balance.XP_CRAFT_ITEM = 50000          -- 아이템 제작 (2000 -> 50000)
 Balance.XP_CAPTURE_PAL = 500000         -- 팰 포획 성공 (20000 -> 500000)
 Balance.XP_HARVEST_RESOURCE = 1000000     -- 자원 채집 (100000 -> 1000000)
+Balance.XP_BUILD = 30                  -- 구조물 배치 보상 XP
 
 --========================================
 -- 플레이어 스탯 보너스 (Phase 6)
@@ -160,12 +161,12 @@ Balance.REACH_ANGLE = 75               -- 공격 인정 각도 (정면 기준 +-
 -- 배고픔 (생존) 시스템
 --========================================
 Balance.HUNGER_MAX = 100               -- 최대 배고픔 수치
-Balance.HUNGER_DECREASE_RATE = 0.5     -- 초당 배고픔 감소량 (예: 0.5면 200초 뒤 0)
-Balance.HUNGER_STARVATION_DAMAGE = 2   -- 배고픔이 0일 때 초당 잃는 체력
-Balance.HUNGER_SPRINT_COST = 0.5       -- 달리기 시 초당 배고픔 추가 소모량
-Balance.HUNGER_DODGE_COST = 2.0        -- 구르기 1회당 배고픔 소모량
-Balance.HUNGER_HARVEST_COST = 1.0      -- 채집 1회(또는 1스윙)당 배고픔 소모량
-Balance.HUNGER_COMBAT_COST = 1.0       -- 공격 1회당 배고픔 소모량
+Balance.HUNGER_DECREASE_RATE = 0.08     -- 초당 배고픔 감소량 (0.5 -> 0.08 완화)
+Balance.HUNGER_STARVATION_DAMAGE = 1   -- 배고픔이 0일 때 초당 잃는 체력
+Balance.HUNGER_SPRINT_COST = 0.15      -- 달리기 시 초당 배고픔 추가 소모량 (0.5 -> 0.15 완화)
+Balance.HUNGER_DODGE_COST = 0.5        -- 구르기 1회당 배고픔 소모량 (2.0 -> 0.5 완화)
+Balance.HUNGER_HARVEST_COST = 0.2      -- 채집 1회당 배고픔 소모량 (1.0 -> 0.2 완화)
+Balance.HUNGER_COMBAT_COST = 0.2       -- 공격 1회당 배고픔 소모량 (1.0 -> 0.2 완화)
 
 
 -- 채집 홀드 시스템 (E키 꿉 누르기)
@@ -210,8 +211,10 @@ Balance.GOLD_EARN_MULTIPLIER = 1.0     -- 골드 획득 배율 (이벤트용)
 
 -- 테이블 동결 (런타임 수정 방지)
 Balance.ARMOR_DURABILITY_LOSS_RATIO = 0.1 -- 피격 시 방어구 내구도 감소 비율
+Balance.KNOCKBACK_FORCE = 25               -- 피격 시 기본 넉백 강도
+Balance.PACK_AGGRO_RADIUS = 50             -- 피격 시 주변 동족 연쇄 어그로 반경
 Balance.DROP_BILLBOARD_MAX_DIST = 25       -- 드롭 아이템 라벨 표시 최대 거리
-Balance.DROP_PROMPT_RANGE = 8              -- 드롭 아이템 줍기 프롬프트 거리
+Balance.DROP_PROMPT_RANGE = 12              -- [상향] 드롭 아이템 줍기 프롬프트 거리 (8 -> 12)
 Balance.DROP_MODEL_DEFAULT = "POUCH"       -- 드롭 아이템 기본 모델 이름
 Balance.DROP_SIZE = Vector3.new(0.8, 0.8, 0.8) -- 드롭 아이템 기본 크기 (Fallback)
 Balance.DROP_BILLBOARD_OFFSET = Vector3.new(0, 2, 0) -- 드롭 라벨 상단 오프셋

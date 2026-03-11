@@ -179,13 +179,89 @@ local startButton = create("TextButton", {
 	Size = UDim2.new(0.12, 0, 0.05, 0), -- 가로 길이를 줄여서 더 아담하고 정돈된 비율로 조정
 	BackgroundColor3 = Color3.fromRGB(245, 185, 50),
 	BackgroundTransparency = 0.25, -- 게임 시작 버튼 약간 투명하게 조정 (글씨 가림 방지)
-	Text = "게임 시작",
+	Text = "START",
 	TextColor3 = Color3.fromRGB(30, 30, 30),
 	TextScaled = true, -- 크기가 변하면 안의 글자도 같이 반응형으로 커짐
 	Font = Enum.Font.GothamBold,
 	AutoButtonColor = false,
 	ZIndex = 4
 })
+
+-- Credits 버튼 추가
+local creditsButton = create("TextButton", {
+	Name = "CreditsButton",
+	Parent = titleFrame,
+	AnchorPoint = Vector2.new(1, 1),
+	Position = UDim2.new(1, -20, 1, -20),
+	Size = UDim2.new(0, 100, 0, 35),
+	BackgroundColor3 = Color3.fromRGB(50, 50, 50),
+	BackgroundTransparency = 0.5,
+	Text = "Credits",
+	TextColor3 = Color3.fromRGB(200, 200, 200),
+	TextSize = 14,
+	Font = Enum.Font.GothamMedium,
+	ZIndex = 4
+})
+
+create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = creditsButton })
+
+-- Credits GUI (Frame) 생성
+local creditsFrame = create("Frame", {
+	Name = "CreditsFrame",
+	Parent = screenGui,
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.new(0.5, 0, 0.5, 0),
+	Size = UDim2.new(0, 400, 0, 300),
+	BackgroundColor3 = Color3.fromRGB(20, 20, 20),
+	BackgroundTransparency = 0.1,
+	BorderSizePixel = 0,
+	Visible = false,
+	ZIndex = 20
+})
+
+create("UICorner", { CornerRadius = UDim.new(0, 10), Parent = creditsFrame })
+create("UIStroke", { Color = Color3.fromRGB(245, 185, 50), Thickness = 2, Parent = creditsFrame })
+
+local creditsTitle = create("TextLabel", {
+	Name = "Title",
+	Parent = creditsFrame,
+	Size = UDim2.new(1, 0, 0, 50),
+	BackgroundTransparency = 1,
+	Text = "CREDITS",
+	TextColor3 = Color3.fromRGB(245, 185, 50),
+	TextSize = 24,
+	Font = Enum.Font.GothamBold,
+	ZIndex = 21
+})
+
+local creditsContent = create("TextLabel", {
+	Name = "Content",
+	Parent = creditsFrame,
+	Position = UDim2.new(0.05, 0, 0.2, 0),
+	Size = UDim2.new(0.9, 0, 0.65, 0),
+	BackgroundTransparency = 1,
+	Text = "WildForge Development Team\n\n[Assets & Tools]\nTree by Poly by Google [CC-BY] via Poly Pizza\nTree-2 by Marc Solà [CC-BY] (https://poly.pizza/m/cRipmFHCEVU)\nBush with Berries by Quaternius (https://poly.pizza/m/TSbIxkDtxF)\nROBLOX Studio / ROJO\n\n(추후 출처 내용이 업데이트될 예정입니다.)",
+	TextColor3 = Color3.fromRGB(200, 200, 200),
+	TextSize = 14, -- 늘어나는 텍스트를 고려해 16에서 14로 약간 조정
+	Font = Enum.Font.Gotham,
+	TextYAlignment = Enum.TextYAlignment.Top,
+	TextWrapped = true,
+	ZIndex = 21
+})
+
+local closeCredits = create("TextButton", {
+	Name = "CloseButton",
+	Parent = creditsFrame,
+	AnchorPoint = Vector2.new(0.5, 1),
+	Position = UDim2.new(0.5, 0, 1, -15),
+	Size = UDim2.new(0, 100, 0, 30),
+	BackgroundColor3 = Color3.fromRGB(80, 80, 80),
+	Text = "CLOSE",
+	TextColor3 = Color3.new(1, 1, 1),
+	Font = Enum.Font.GothamBold,
+	ZIndex = 21
+})
+create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = closeCredits })
 
 -- 글자가 너무 커지거나 너무 작아지지 않게 한계값 설정
 local btnTextConstraint = create("UITextSizeConstraint", {
@@ -287,10 +363,23 @@ if not game:IsLoaded() then
 	game.Loaded:Wait()
 end
 
+statusText.Text = "에셋을 로딩 중입니다..."
+local assetsFolder = game.ReplicatedStorage:WaitForChild("Assets", 30)
+if assetsFolder then
+	assetsFolder:WaitForChild("ItemIcons", 15)
+end
+
+statusText.Text = "게임 정보를 동기화 중입니다..."
+local t = 0
+while not player:GetAttribute("InventoryLoaded") and t < 60 do
+	task.wait(0.2)
+	t = t + 0.2
+end
+
 -- 로딩 완료
 isLoading = false
 progress = 100
-statusText.Text = "에셋을 로딩 중입니다..."
+statusText.Text = "동기화 완료!"
 TweenService:Create(progressBarFill, TweenInfo.new(0.3, Enum.EasingStyle.Linear), {
 	Size = UDim2.new(1, 0, 1, 0)
 }):Play()
@@ -349,6 +438,15 @@ end
 
 -- 마우스 올렸을 때 조금 덜 투명하게 (0.15) 밝게 표시
 applyHoverEffect(startButton, Color3.fromRGB(245, 185, 50), Color3.fromRGB(255, 215, 100), 0.25, 0.15)
+applyHoverEffect(creditsButton, Color3.fromRGB(50, 50, 50), Color3.fromRGB(80, 80, 80), 0.5, 0.3)
+
+creditsButton.MouseButton1Click:Connect(function()
+	creditsFrame.Visible = true
+end)
+
+closeCredits.MouseButton1Click:Connect(function()
+	creditsFrame.Visible = false
+end)
 
 -- 게임 시작 버튼 클릭 이벤트
 startButton.MouseButton1Click:Connect(function()

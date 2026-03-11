@@ -19,23 +19,26 @@ local CreatureData = {
 		attackRange = 4,
 		detectRange = 12,
 		behavior = "NEUTRAL",
-		modelName = "DodoBird",
+		modelName = "DODO", -- 폴더 이름과 일치
 		xpReward = 5,
+		icon = "rbxassetid://0", -- 실제 아이콘 ID 추가 필요
 	},
 	{
 		id = "COMPY",
 		name = "콤프소그나투스",
 		description = "아주 작고 빠른 소형 공룡. 호기심이 많다",
-		maxHealth = 25,
-		maxTorpor = 20,
+		maxHealth = 12, -- 체력 대폭 하향 (무리 스폰 대응)
+		maxTorpor = 10, -- 기절 수치도 함께 하향
 		walkSpeed = 10,
-		runSpeed = 18,
+		runSpeed = 22, -- 더 기민하게 추격
 		damage = 10,
 		attackRange = 5,
-		detectRange = 8,
-		behavior = "NEUTRAL",
-		modelName = "Compy",
+		detectRange = 30, -- 탐지 범위 확대
+		behavior = "AGGRESSIVE", -- 선공형으로 변경
+		modelName = "COMPY", -- 폴더 이름과 일치
+		groupSize = 3, -- 3마리씩 무리지어 스폰
 		xpReward = 3,
+		icon = "rbxassetid://0",
 	},
 	{
 		id = "PARASAUR",
@@ -71,6 +74,22 @@ local CreatureData = {
 		modelName = "Triceratops",
 		xpReward = 40,
 		attackDelay = 1.3, -- 공격 애니메이션 종료 후 타격 판정 (Prep 0.6s + Charge 0.6s + 여유 0.1s)
+	},
+	{
+		id = "BABY_TRICERATOPS",
+		name = "아기 트리케라톱스",
+		description = "아직 뿔이 다 자라지 않은 어린 트리케라톱스. 겁이 많다.",
+		maxHealth = 150,
+		maxTorpor = 100,
+		walkSpeed = 12,
+		runSpeed = 20,
+		damage = 10,
+		attackRange = 6,
+		detectRange = 15,
+		behavior = "NEUTRAL", -- 아기도 성체처럼 반격함
+		modelName = "BABY_TRICERATOPS", -- 전용 모델 사용
+		scale = 1, -- 전용 모델이므로 스케일은 1 (필요 시 조절 가능)
+		xpReward = 15,
 	},
 	{
 		id = "STEGOSAURUS",

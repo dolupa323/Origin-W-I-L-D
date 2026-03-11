@@ -14,7 +14,7 @@ local TechUnlockData = {
 		unlocks = { 
 			recipes = { 
 				"CRAFT_CRUDE_STONE_PICKAXE", "CRAFT_CRUDE_STONE_AXE", 
-				"CRAFT_CRUDE_WOODEN_SPEAR", "CRAFT_VINE_BOLA", "CRAFT_TORCH" 
+				"CRAFT_CRUDE_WOODEN_SPEAR", "CRAFT_TORCH" 
 			}, 
 			facilities = { "CAMPFIRE" } 
 		},
@@ -26,23 +26,23 @@ local TechUnlockData = {
 		name = "정착의 시작",
 		cost = { { itemId = "LOG", amount = 10 }, { itemId = "SMALL_STONE", amount = 10 } },
 		prerequisites = { "TECH_BASICS" },
-		unlocks = { recipes = { "CRAFT_BOUND_LOG", "CRAFT_FIRM_STONE_AXE", "CRAFT_FIRM_STONE_PICKAXE" }, facilities = { "PRIMITIVE_WORKBENCH", "STORAGE_BOX" } },
+		unlocks = { recipes = { "CRAFT_FIRM_STONE_AXE", "CRAFT_FIRM_STONE_PICKAXE" }, facilities = { "PRIMITIVE_WORKBENCH", "STORAGE_BOX" } },
 		category = "SETTLEMENT",
 		description = "돌과 통나무를 이용해 조잡한 작업대와 상자를 지어 본격적인 정착을 준비합니다.",
 	},
 	{
 		id = "TECH_CLOTHES",
 		name = "기초 방어구",
-		cost = { { itemId = "VINE", amount = 10 }, { itemId = "DURABLE_LEAF", amount = 10 } },
+		cost = { { itemId = "FIBER", amount = 20 }, { itemId = "DURABLE_LEAF", amount = 10 } },
 		prerequisites = { "TECH_SETTLEMENT" },
 		unlocks = { recipes = { "CRAFT_GRASS_TUNIC" }, facilities = {} },
 		category = "SURVIVAL",
-		description = "주변 풀과 넝쿨을 엮어 초보적인 방어구를 만듭니다.",
+		description = "주변 풀과 섬유를 엮어 초보적인 방어구를 만듭니다.",
 	},
 	{
 		id = "TECH_BASE_TOTEM",
 		name = "거점 선언",
-		cost = { { itemId = "BOUND_LOG", amount = 5 }, { itemId = "COMPY_DNA", amount = 1 } },
+		cost = { { itemId = "LOG", amount = 10 }, { itemId = "COMPY_DNA", amount = 1 } },
 		prerequisites = { "TECH_SETTLEMENT" },
 		unlocks = { recipes = {}, facilities = { "CAMP_TOTEM" } },
 		category = "SETTLEMENT",
@@ -51,25 +51,16 @@ local TechUnlockData = {
 	{
 		id = "TECH_HUNTING",
 		name = "본격 수렵",
-		cost = { { itemId = "SHARP_TOOTH", amount = 2 }, { itemId = "VINE", amount = 10 } },
+		cost = { { itemId = "SHARP_TOOTH", amount = 2 }, { itemId = "FIBER", amount = 20 } },
 		prerequisites = { "TECH_SETTLEMENT" },
-		unlocks = { recipes = { "CRAFT_BONE_BOLA", "CRAFT_BONE_SPEAR" }, facilities = {} },
+		unlocks = { recipes = { "CRAFT_BONE_SPEAR" }, facilities = {} },
 		category = "WEAPONS",
-		description = "야수들의 부산물을 연마하여 강력한 창과 질긴 볼라를 제작합니다.",
-	},
-	{
-		id = "TECH_MAINTENANCE",
-		name = "장비 수리",
-		cost = { { itemId = "STONE", amount = 20 }, { itemId = "LOG", amount = 10 } },
-		prerequisites = { "TECH_SETTLEMENT" },
-		unlocks = { recipes = {}, facilities = { "REPAIR_BENCH" } },
-		category = "SURVIVAL",
-		description = "망가진 장비를 다시 쓸 수 있게 해주는 수리 작업대를 개발합니다.",
+		description = "야수들의 부산물을 연마하여 강력한 뼈 창을 제작합니다.",
 	},
 	{
 		id = "TECH_WOOD_BUILD",
 		name = "목조 건축",
-		cost = { { itemId = "BOUND_LOG", amount = 20 }, { itemId = "RESIN", amount = 10 } },
+		cost = { { itemId = "LOG", amount = 40 }, { itemId = "RESIN", amount = 10 } },
 		prerequisites = { "TECH_BASE_TOTEM" },
 		unlocks = { recipes = {}, facilities = { "WOODEN_FOUNDATION", "WOODEN_WALL", "WOODEN_ROOF", "WOODEN_DOOR" } },
 		category = "SETTLEMENT",
@@ -78,7 +69,7 @@ local TechUnlockData = {
 	{
 		id = "TECH_BOW",
 		name = "나무 활",
-		cost = { { itemId = "LOG", amount = 15 }, { itemId = "VINE", amount = 20 }, { itemId = "DODO_FEATHER", amount = 5 } },
+		cost = { { itemId = "LOG", amount = 15 }, { itemId = "FIBER", amount = 40 }, { itemId = "DODO_FEATHER", amount = 5 } },
 		prerequisites = { "TECH_HUNTING" },
 		unlocks = { recipes = { "CRAFT_WOODEN_BOW", "CRAFT_STONE_ARROW" }, facilities = {} },
 		category = "WEAPONS",
@@ -138,7 +129,7 @@ local TechUnlockData = {
 		name = "청동 무기 및 갑옷",
 		cost = { { itemId = "BRONZE_INGOT", amount = 30 }, { itemId = "LEATHER", amount = 20 } },
 		prerequisites = { "TECH_BRONZE_TOOLS", "TECH_BOW" },
-		unlocks = { recipes = { "CRAFT_BRONZE_SPEAR", "CRAFT_BRONZE_BOW", "CRAFT_BRONZE_ARROW", "CRAFT_BRONZE_ARMOR", "CRAFT_BRONZE_BOLA" }, facilities = {} },
+		unlocks = { recipes = { "CRAFT_BRONZE_SPEAR", "CRAFT_BRONZE_BOW", "CRAFT_BRONZE_ARROW", "CRAFT_BRONZE_ARMOR" }, facilities = {} },
 		category = "WEAPONS",
 		description = "청동 무기와 갑옷을 갖춰 더욱 치명적인 위협에 대비합니다.",
 	},
@@ -187,9 +178,9 @@ local TechUnlockData = {
 		name = "철제 도구 및 무기",
 		cost = { { itemId = "IRON_INGOT", amount = 50 } },
 		prerequisites = { "TECH_WORKBENCH3" },
-		unlocks = { recipes = { "CRAFT_IRON_PICKAXE", "CRAFT_IRON_AXE", "CRAFT_IRON_SPEAR", "CRAFT_CROSSBOW", "CRAFT_IRON_BOLT", "CRAFT_IRON_ARMOR", "CRAFT_IRON_BOLA" }, facilities = {} },
+		unlocks = { recipes = { "CRAFT_IRON_PICKAXE", "CRAFT_IRON_AXE", "CRAFT_IRON_SPEAR", "CRAFT_CROSSBOW", "CRAFT_IRON_BOLT", "CRAFT_IRON_ARMOR" }, facilities = {} },
 		category = "WEAPONS",
-		description = "강철 수준의 장비를 개발하여 환상의 야수와 강력한 적을 제압합니다.",
+		description = "강철 수준의 장비를 개발하여 최고 수준의 적을 제압합니다.",
 	},
 }
 

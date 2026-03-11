@@ -127,10 +127,10 @@ local function findNearbyInteractable(): (Instance?, string?)
 				-- 상호작용 가능한 루트 탐색 (ID 속성 우선)
 				local check = part
 				while check and check ~= folder do
-					if check:GetAttribute("FacilityId") or 
-					   check:GetAttribute("NPCId") or 
-					   check:GetAttribute("NodeId") or
-					   check:GetAttribute("ResourceNode") then
+					if check:GetAttribute("NodeId") or 
+					   check:GetAttribute("FacilityId") or 
+					   check:GetAttribute("NPCId") or
+					   game:GetService("CollectionService"):HasTag(check, "ResourceNode") then
 						entity = check
 						break
 					end
@@ -215,6 +215,11 @@ local function interactFacility(target: Instance)
 		-- 보관함 UI 열기
 		local StorageController = require(Client.Controllers.StorageController)
 		StorageController.openStorage(structureId)
+	elseif facilityData.functionType == "TECH_UNLOCK" then
+		-- 기술 연구소 UI 열기
+		if UIManager then
+			UIManager.toggleTechTree()
+		end
 	elseif facilityData.functionType == "RESPAWN" then
 		-- 리스폰 위치 설정
 		print("[InteractController] Respawn point set")

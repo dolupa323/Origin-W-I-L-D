@@ -93,7 +93,12 @@ local function _initPlayerStats(userId: number)
 			[Enums.StatId.WEIGHT] = 0,
 			[Enums.StatId.WORK_SPEED] = 0,
 			[Enums.StatId.ATTACK] = 0,
-		}
+		},
+		-- 연구 도감 (DNA 데이터 - Phase 11+)
+		dnaData = savedStats and savedStats.dnaData or {
+			COMPY = savedStats and savedStats.dnaCompy or 0,
+		},
+		dnaCompy = savedStats and savedStats.dnaCompy or 0, -- 하위 호환 유지
 	}
 end
 
@@ -110,6 +115,7 @@ local function _savePlayerStats(userId: number)
 			state.stats.totalXP = stats.totalXP
 			state.stats.techPointsSpent = stats.techPointsSpent
 			state.stats.statInvested = stats.statInvested
+			state.stats.dnaCompy = stats.dnaCompy
 			return state
 		end)
 	end
@@ -269,13 +275,28 @@ function PlayerStatService.GetCalculatedStats(userId: number)
 		if setBonuses.attackMult then finalAtk = finalAtk + setBonuses.attackMult end
 	end
 	
+	-- 3. 연구 도감(DNA) 보너스 계산
+	local dnaBonuses = { attackMult = 0, workSpeedMult = 0 }
+	local dData = playerStats[userId].dnaData or {}
+	
+	-- [콤피] 공격력 보너스: 20개당 1%, 최대 10% (200개)
+	local compyDna = dData.COMPY or playerStats[userId].dnaCompy or 0
+	local compyBonus = math.min(0.1, math.floor(compyDna / 20) * 0.01)
+	dnaBonuses.attackMult = dnaBonuses.attackMult + compyBonus
+	
+	-- 최종 합산
+	finalAtk = finalAtk + dnaBonuses.attackMult
+	local finalWork = 100 + ((stats[Enums.StatId.WORK_SPEED] or 0) * Balance.WORKSPEED_PER_POINT)
+	finalWork = finalWork + (dnaBonuses.workSpeedMult * 100)
+	
 	return {
 		maxHealth = finalHp,
 		maxStamina = finalSta,
 		maxWeight = 300 + ((stats[Enums.StatId.WEIGHT] or 0) * Balance.WEIGHT_PER_POINT),
-		workSpeed = 100 + ((stats[Enums.StatId.WORK_SPEED] or 0) * Balance.WORKSPEED_PER_POINT),
+		workSpeed = finalWork,
 		attackMult = finalAtk,
 		defense = defense,
+		dnaBonuses = dnaBonuses, -- 클라이언트 UI용 정보 포함
 	}
 end
 
@@ -340,6 +361,7 @@ function PlayerStatService.getStats(userId: number): { [string]: any }
 		statPointsAvailable = PlayerStatService.getStatPoints(userId),
 		statInvested = stats.statInvested,
 		calculated = PlayerStatService.GetCalculatedStats(userId),
+		dnaCompy = stats.dnaCompy,
 	}
 end
 
@@ -378,6 +400,41 @@ function PlayerStatService.refundTechPoints(userId: number, amount: number)
 	local currentSpent = playerStats[userId].techPointsSpent or 0
 	playerStats[userId].techPointsSpent = math.max(0, currentSpent - amount)
 	_savePlayerStats(userId)
+end
+
+--========================================
+-- Public API: DNA / Collections
+--========================================
+
+--- 콤피 DNA 수량 조회
+function PlayerStatService.getDnaCompy(userId: number): number
+	_initPlayerStats(userId)
+	return playerStats[userId].dnaCompy or 0
+end
+
+--- 콤피 DNA 누적
+function PlayerStatService.addCollectionDna(userId: number, creatureId: string, amount: number)
+	_initPlayerStats(userId)
+	local stats = playerStats[userId]
+	if not stats.dnaData then stats.dnaData = {} end
+	
+	local cid = string.upper(creatureId)
+	stats.dnaData[cid] = (stats.dnaData[cid] or 0) + amount
+	
+	-- 이전 dnaCompy 필드와 동기화 (하위 호환)
+	if cid == "COMPY" then
+		stats.dnaCompy = stats.dnaData[cid]
+	end
+	
+	_savePlayerStats(userId)
+	-- 스탯 재적용 (상시 효과 갱신)
+	PlayerStatService.applyStats(userId)
+	
+	-- 클라이언트 동기화
+	local player = game:GetService("Players"):GetPlayerByUserId(userId)
+	if player and NetController then
+		NetController.FireClient(player, "Player.Stats.Changed", PlayerStatService.getStats(userId))
+	end
 end
 
 --========================================

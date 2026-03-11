@@ -45,6 +45,16 @@ local NetController = nil
 -- Schema Definitions (Phase 1-3 초기 구조)
 --========================================
 
+local function _getDefaultEquipment()
+	return {
+		HEAD = nil,
+		TOP = nil,
+		BOTTOM = nil,
+		SUIT = nil,
+		HAND = nil,
+	}
+end
+
 --- 기본 플레이어 저장 스키마
 local function _getDefaultPlayerSave()
 	return {
@@ -90,12 +100,7 @@ local function _getDefaultPlayerSave()
 			}
 		},
 		-- 장착 중인 아이템 (Head, Body, Feet, Hand)
-		equipment = {
-			Head = nil,
-			Body = nil,
-			Feet = nil,
-			Hand = nil,
-		},
+		equipment = _getDefaultEquipment(),
 		-- 마지막 로그아웃/수면 위치 (Phase 4-3)
 		lastPosition = nil,
 		-- 세션 제어 (Session Locking)
@@ -121,6 +126,11 @@ local function _getDefaultWorldSave()
 		-- 외양간 (영속)
 		barns = {},
 		-- 통계
+		stats = {
+			lastSave = 0,
+			lastSnapshotTime = 0,
+		},
+		snapshots = {},
 		-- 중요: 다음 필드는 절대 저장 금지 (동적 객체)
 		-- drops, wildlife, resourceNodes
 	}
@@ -201,6 +211,53 @@ local function _makeWorldSnapshot(worldStateData: any): any
 	return snapshot
 end
 
+local function _normalizeEquipment(equipment: any): any
+	local normalized = _getDefaultEquipment()
+	if type(equipment) ~= "table" then
+		return normalized
+	end
+
+	normalized.HEAD = equipment.HEAD or equipment.Head
+	normalized.TOP = equipment.TOP or equipment.Top or equipment.Body
+	normalized.BOTTOM = equipment.BOTTOM or equipment.Bottom or equipment.Feet
+	normalized.SUIT = equipment.SUIT or equipment.Suit
+	normalized.HAND = equipment.HAND or equipment.Hand
+
+	return normalized
+end
+
+local function _normalizePlayerState(state: any): any
+	if type(state) ~= "table" then
+		state = _getDefaultPlayerSave()
+	end
+
+	state.inventory = type(state.inventory) == "table" and state.inventory or {}
+	state.equipment = _normalizeEquipment(state.equipment)
+	state.stats = type(state.stats) == "table" and state.stats or {}
+	state.stats.lastLogin = state.stats.lastLogin or 0
+	state.snapshots = type(state.snapshots) == "table" and state.snapshots or {}
+	state._session = type(state._session) == "table" and state._session or { jobId = nil, timestamp = 0 }
+
+	return state
+end
+
+local function _normalizeWorldState(state: any): any
+	if type(state) ~= "table" then
+		state = _getDefaultWorldSave()
+	end
+
+	state.structures = type(state.structures) == "table" and state.structures or {}
+	state.facilities = type(state.facilities) == "table" and state.facilities or {}
+	state.storages = type(state.storages) == "table" and state.storages or {}
+	state.barns = type(state.barns) == "table" and state.barns or {}
+	state.stats = type(state.stats) == "table" and state.stats or {}
+	state.stats.lastSave = state.stats.lastSave or 0
+	state.stats.lastSnapshotTime = state.stats.lastSnapshotTime or 0
+	state.snapshots = type(state.snapshots) == "table" and state.snapshots or {}
+
+	return state
+end
+
 --========================================
 -- Player Save/Load
 --========================================
@@ -245,7 +302,7 @@ function SaveService.loadPlayer(userId: number): (boolean, any)
 	end
 	
 	-- 데이터 전처리
-	local state = Serialization.deserialize(data)
+	local state = _normalizePlayerState(Serialization.deserialize(data))
 	state.stats.lastLogin = os.time()
 	
 	-- 메모리에 캐시
@@ -356,7 +413,7 @@ function SaveService.loadWorld(): (boolean, any)
 		data = _getDefaultWorldSave()
 	else
 		-- 기존 월드: 데이터 복구
-		data = Serialization.deserialize(data)
+		data = _normalizeWorldState(Serialization.deserialize(data))
 	end
 	
 	worldState = data

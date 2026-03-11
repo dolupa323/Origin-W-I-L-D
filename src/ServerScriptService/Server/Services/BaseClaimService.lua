@@ -53,7 +53,7 @@ local function loadBases()
 		for baseId, baseData in pairs(worldState.bases) do
 			-- 파티션 데이터 로드
 			local ok, pData = SaveService.loadPartition(baseId)
-			if ok and pData then
+			if ok then
 				-- Vector3 복원 및 캐싱
 				if baseData.centerPosition then
 					local pos = baseData.centerPosition
@@ -61,8 +61,12 @@ local function loadBases()
 				end
 				bases[baseData.ownerId] = baseData
 				
+				if not pData and SaveService.initPartition then
+					SaveService.initPartition(baseId, baseData.ownerId)
+				end
+
 				-- BuildService에 해당 파티션 구조물 로드 요청
-				if BuildService then
+				if pData and BuildService then
 					BuildService.loadStructuresFromPartition(baseId)
 				end
 				loadedCount = loadedCount + 1

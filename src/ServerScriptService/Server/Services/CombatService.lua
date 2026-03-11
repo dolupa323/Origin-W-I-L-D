@@ -21,6 +21,7 @@ local StaminaService
 local WorldDropService
 local PlayerStatService
 local HungerService -- Cached (Phase 11)
+local TechService
 
 -- Constants
 local DEFAULT_ATTACK_RANGE = Balance.REACH_BAREHAND or 12 -- 맨손 사거리 (Balance 반영)
@@ -66,6 +67,9 @@ function CombatService.Init(_NetController, _DataService, _CreatureService, _Inv
 	-- HungerService 로드 및 캐싱 (성능 최적화)
 	local HSuccess, HService = pcall(function() return require(game:GetService("ServerScriptService").Server.Services.HungerService) end)
 	if HSuccess then HungerService = HService end
+
+	local TSuccess, TService = pcall(function() return require(game:GetService("ServerScriptService").Server.Services.TechService) end)
+	if TSuccess then TechService = TService end
 	
 	-- 플레이어 퇴장 시 데이터 정리
 	Players.PlayerRemoving:Connect(function(player)
@@ -213,7 +217,7 @@ function CombatService.processPlayerAttack(player: Player, targetId: string)
 	end
 	
 	-- 5. 피냄새 디버프 및 드롭 생성 (크리처를 킬했을 때)
-	if killed and dropPos then
+	if killed and dropPos and targetType == "CREATURE" and creature then
 		-- 피냄새 적용
 		if DebuffService then
 			DebuffService.applyDebuff(player.UserId, "BLOOD_SMELL")
@@ -229,9 +233,19 @@ function CombatService.processPlayerAttack(player: Player, targetId: string)
 						-- 랜덤 오프셋
 						local angle = math.random() * math.pi * 2
 						local radius = math.random() * 2
-						local spawnPos = dropPos + Vector3.new(math.cos(angle) * radius, 1, math.sin(angle) * radius)
+						local baseSpawnPos = dropPos + Vector3.new(math.cos(angle) * radius, 5, math.sin(angle) * radius)
 						
-						WorldDropService.spawnDrop(spawnPos, entry.itemId, count)
+						-- [개선] 지면 인식 레이캐스트 (피격 대상 및 플레이어 제외하여 바닥 찾기)
+						local rayParams = RaycastParams.new()
+						local excludeList = {char}
+						if creature and creature.model then table.insert(excludeList, creature.model) end
+						rayParams.FilterDescendantsInstances = excludeList
+						rayParams.FilterType = Enum.RaycastFilterType.Exclude
+						
+						local rayResult = workspace:Raycast(baseSpawnPos, Vector3.new(0, -30, 0), rayParams)
+						local finalSpawnPos = rayResult and rayResult.Position or (dropPos + Vector3.new(math.cos(angle) * radius, 0, math.sin(angle) * radius))
+						
+						WorldDropService.spawnDrop(finalSpawnPos, entry.itemId, count)
 					end
 				end
 			end
@@ -239,7 +253,7 @@ function CombatService.processPlayerAttack(player: Player, targetId: string)
 	end
 	
 	-- 5.5 퀘스트 콜백 (Phase 8)
-	if killed and questCallback and creature.data then
+	if killed and targetType == "CREATURE" and questCallback and creature and creature.data then
 		questCallback(player.UserId, creature.data.id or creature.data.creatureId)
 	end
 	
@@ -253,8 +267,13 @@ function CombatService.processPlayerAttack(player: Player, targetId: string)
 		})
 	end
 	
+	local targetLabel = targetId
+	if targetType == "CREATURE" and creature and creature.data then
+		targetLabel = creature.data.name or creature.data.id or targetId
+	end
+
 	print(string.format("[CombatService] %s hit %s for %.1f (Torpor: %.1f) dmg%s", 
-		player.Name, creature.data and creature.data.name or "?", hpDamage, torporDamage, killed and " (KILLED)" or ""))
+		player.Name, targetLabel, hpDamage, torporDamage, killed and " (KILLED)" or ""))
 	
 	return true, nil, { damage = hpDamage, torporDamage = torporDamage, killed = killed }
 end

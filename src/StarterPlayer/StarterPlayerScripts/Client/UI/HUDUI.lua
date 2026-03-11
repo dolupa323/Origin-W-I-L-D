@@ -220,6 +220,8 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 	HUDUI.Refs.buildBtn = Utils.mkBtn({text=isSmall and "🏗" or "건축(C)", size=UDim2.new(0, isSmall and 60 or 80, 1, 0), bgT=1, ts=isSmall and 24 or 14, font=F.TITLE, color=C.WHITE, fn=function() UIManager.toggleBuild() end, parent=bottomEdge})
 	HUDUI.Refs.equipBtn = Utils.mkBtn({text=isSmall and "👕" or "장비(E)", size=UDim2.new(0, isSmall and 60 or 80, 1, 0), bgT=1, ts=isSmall and 24 or 14, font=F.TITLE, color=C.WHITE, fn=function() UIManager.toggleEquipment() end, parent=bottomEdge})
 	HUDUI.Refs.techBtn = Utils.mkBtn({text=isSmall and "📜" or "기술(K)", size=UDim2.new(0, isSmall and 60 or 80, 1, 0), bgT=1, ts=isSmall and 24 or 14, font=F.TITLE, color=C.WHITE, fn=function() UIManager.toggleTechTree() end, parent=bottomEdge})
+	HUDUI.Refs.collectionBtn = Utils.mkBtn({text=isSmall and "📖" or "도감(P)", size=UDim2.new(0, isSmall and 60 or 80, 1, 0), bgT=1, ts=isSmall and 24 or 14, font=F.TITLE, color=C.WHITE, fn=function() UIManager.toggleCollection() end, parent=bottomEdge})
+
 
 	HUDUI.Refs.levelLabel = Utils.mkLabel({text="Lv. 1    0.0%", size=UDim2.new(0, isSmall and 100 or 150, 1, 0), ts=12, color=C.GRAY, parent=bottomEdge})
 
@@ -338,13 +340,16 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 	InputManager.bindAction("Equipment", function() UIManager.toggleEquipment() end, false, "장비창", Enum.KeyCode.E)
 	InputManager.bindAction("Character", function() UIManager.toggleInventory() end, false, "캐릭터", Enum.KeyCode.B, Enum.KeyCode.Tab, Enum.KeyCode.I)
 	InputManager.bindAction("Building", function() UIManager.toggleBuild() end, false, "건축", Enum.KeyCode.C)
-	InputManager.bindAction("TechTree", function() UIManager.toggleTechTree() end, false, "기술", Enum.KeyCode.K)
+	-- [수정] K키 직접 진입 폐기. 기술 연구소 시설 상호작용으로 이전.
+	-- InputManager.bindAction("TechTree", function() UIManager.toggleTechTree() end, false, "기술", Enum.KeyCode.K)
+	InputManager.bindAction("Collection", function() UIManager.toggleCollection() end, false, "도감", Enum.KeyCode.P)
 	InputManager.bindAction("CloseUI", function()
 		UIManager.closeInventory()
 		UIManager.closeCrafting()
 		UIManager.closeEquipment()
 		UIManager.closeTechTree()
 		UIManager.closeBuild()
+		UIManager.closeCollection()
 	end, false, nil, Enum.KeyCode.Escape)
 
 	-- Harvest Setup

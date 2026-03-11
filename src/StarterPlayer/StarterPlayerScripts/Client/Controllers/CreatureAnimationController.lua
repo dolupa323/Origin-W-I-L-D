@@ -185,12 +185,14 @@ function CreatureAnimationController.Init()
 						local prepTrack = AnimationManager.play(humanoid, attackAnimName, 0.1)
 						if prepTrack then
 							prepTrack.Priority = Enum.AnimationPriority.Action
-							-- 애니메이션 종료 대기 (비동기 처리)
-							task.wait(creatureId == "TRICERATOPS" and 0.6 or (prepTrack.Length > 0 and prepTrack.Length or 0.5))
+							-- 애니메이션 종료 대기 (트리케라톱스 계열은 특수 시퀀스 대기)
+							local isTrike = (creatureId == "TRICERATOPS" or creatureId == "BABY_TRICERATOPS")
+							task.wait(isTrike and 0.6 or (prepTrack.Length > 0 and prepTrack.Length or 0.5))
 						end
 						
-						-- 2. 후속 돌격 (트리케라톱스 특화: WALK를 빠르게 재생하여 돌진 연출)
-						if creatureId == "TRICERATOPS" and model.Parent then
+						-- 2. 후속 돌격 (트리케라톱스 계열 특화: WALK를 빠르게 재생하여 돌진 연출)
+						local isTrike = (creatureId == "TRICERATOPS" or creatureId == "BABY_TRICERATOPS")
+						if isTrike and model.Parent then
 							local runAnim = animSet.RUN
 							if runAnim then
 								local chargeTrack = AnimationManager.play(humanoid, runAnim, 0.1, nil, 2.0) -- 2배속 돌진

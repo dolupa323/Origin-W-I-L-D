@@ -34,6 +34,22 @@ local restrictedFacilities = {} -- [facilityId] = true
 -- Tech unlock callback (Phase 8)
 local unlockCallback = nil
 
+local function _getPlayerStateWithRetry(userId: number, timeoutSeconds: number?): any
+	if not SaveService or not SaveService.getPlayerState then
+		return nil
+	end
+
+	local state = SaveService.getPlayerState(userId)
+	local deadline = os.clock() + (timeoutSeconds or 5)
+
+	while not state and os.clock() < deadline do
+		task.wait(0.05)
+		state = SaveService.getPlayerState(userId)
+	end
+
+	return state
+end
+
 --========================================
 -- Internal: Tech Tree
 --========================================
@@ -99,7 +115,7 @@ local function _initPlayerUnlocks(userId: number)
 	if playerUnlocks[userId] then return end
 	
 	-- SaveService에서 로드
-	local state = SaveService and SaveService.getPlayerState(userId)
+	local state = _getPlayerStateWithRetry(userId)
 	local savedUnlocks = state and state.unlockedTech
 	
 	playerUnlocks[userId] = savedUnlocks or {}
@@ -190,15 +206,17 @@ function TechService.unlock(userId: number, techId: string): (boolean, string?)
 
 	if tech.cost and #tech.cost > 0 then
 		for _, req in ipairs(tech.cost) do
-			local count = InventoryService.countItem(player, req.itemId)
-			if count < req.amount then
-				return false, Enums.ErrorCode.INSUFFICIENT_MATERIALS
+			if not InventoryService.hasItem(userId, req.itemId, req.amount) then
+				return false, Enums.ErrorCode.MISSING_REQUIREMENTS
 			end
 		end
 
 		-- 비용 차감
 		for _, req in ipairs(tech.cost) do
-			InventoryService.consumeCount(player, req.itemId, req.amount)
+			local removed = InventoryService.removeItem(userId, req.itemId, req.amount)
+			if removed < req.amount then
+				return false, Enums.ErrorCode.MISSING_REQUIREMENTS
+			end
 		end
 	end
 	

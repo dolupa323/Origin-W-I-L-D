@@ -63,29 +63,6 @@ NPCShopData.TOOL_SHOP = {
 	},
 }
 
---========================================
--- 팰 상점 (Pal Shop)
---========================================
-NPCShopData.PAL_SHOP = {
-	id = "PAL_SHOP",
-	name = "팰 상점",
-	description = "포획 도구와 팰 관련 용품을 판매합니다.",
-	npcName = "조련사 미아",
-	
-	buyList = {
-		{ itemId = "VINE_BOLA", price = 30, stock = 50 },     -- Sphere -> Bola 변경
-		{ itemId = "BONE_BOLA", price = 100, stock = 20 },
-		{ itemId = "BRONZE_BOLA", price = 300, stock = 10 },
-	},
-	
-
-	sellList = {
-		{ itemId = "VINE_BOLA", price = 10 },
-		{ itemId = "BONE_BOLA", price = 40 },
-		{ itemId = "BRONZE_BOLA", price = 120 },
-		{ itemId = "IRON_BOLA", price = 300 },
-	},
-}
 
 --========================================
 -- 식료품점 (Food Shop)

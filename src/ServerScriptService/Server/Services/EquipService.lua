@@ -27,11 +27,11 @@ local function indexAssets()
 	local assets = ReplicatedStorage:FindFirstChild("Assets")
 	if not assets then return end
 	
-	-- 1. 아이템 모델 인덱싱 (ItemModels, Models 폴더)
+	-- 1. 아이템 모델 인덱싱 (ItemModels, Models 폴더 및 하위 모든 모델)
 	local folders = {assets:FindFirstChild("ItemModels"), assets:FindFirstChild("Models"), assets}
 	for _, folder in ipairs(folders) do
 		if not folder then continue end
-		for _, child in ipairs(folder:GetChildren()) do
+		for _, child in ipairs(folder:GetDescendants()) do -- GetDescendants()로 변경하여 하위 폴더 대응
 			if child:IsA("Model") or child:IsA("BasePart") or child:IsA("MeshPart") or child:IsA("Tool") then
 				-- 원본 이름 저장
 				if not modelCache[child.Name] then
@@ -46,37 +46,18 @@ local function indexAssets()
 		end
 	end
 	
-	-- 2. 아머 모델 인덱싱 (ArmorModels, Models 폴더)
+	-- 2. 아머 모델 인덱싱 (ArmorModels, Models 폴더 및 하위 모든 액세서리)
 	local armorFolders = {assets:FindFirstChild("ArmorModels"), assets:FindFirstChild("Models")}
 	for _, folder in ipairs(armorFolders) do
 		if not folder then continue end
-		for _, child in ipairs(folder:GetChildren()) do
+		for _, child in ipairs(folder:GetDescendants()) do -- GetDescendants()로 변경
 			if child:IsA("Accessory") or child:IsA("Model") then
 				armorCache[child.Name] = child
 			end
 		end
 	end
 	
-	-- [특수] 볼라 모델 별칭 (Pouch)
-	local pouch = modelCache["POUCH"] or modelCache["Pouch"]
-	if not pouch then
-		-- 하위 트리에 있을 경우 대비 (딱 1번만 수행)
-		for _, folder in ipairs(folders) do
-			if not folder then continue end
-			for _, child in ipairs(folder:GetDescendants()) do
-				if child.Name:upper() == "POUCH" then
-					pouch = child
-					break
-				end
-			end
-			if pouch then break end
-		end
-	end
-	if pouch then
-		modelCache["BOLA_SPECIAL_POUCH"] = pouch
-	end
-	
-	print(string.format("[EquipService] Indexed %d models and %d armor sets", 
+	print(string.format("[EquipService] Indexed %d models and %d armor sets (including subfolders)", 
 		table.count and table.count(modelCache) or 0, 
 		table.count and table.count(armorCache) or 0))
 end
@@ -140,6 +121,7 @@ function EquipService.equipItem(player: Player, itemId: string?)
 			isEquipping[player.UserId] = nil
 			return 
 		end
+		local itemType = itemData.type or ""
 		
 		-- [보안/기획] 기술 해금 체크 (Relinquish 어뷰징 방지)
 		if TechService and not TechService.isRecipeUnlocked(player.UserId, itemId) then
@@ -149,16 +131,12 @@ function EquipService.equipItem(player: Player, itemId: string?)
 			return
 		end
 		
-		-- 3. 에셋 탐색 (캐시 O(1) 조회)
-		local template = nil
-		local isBola = itemId:upper():match("BOLA$") or (itemData.optimalTool == "BOLA")
+		-- 3. 에셋 탐색 (모델명 매핑 우선 순위 적용)
+		local modelName = itemData.modelName or itemId
+		local template = modelCache[modelName] or modelCache[modelName:lower():gsub("_", "")]
 		
-		if isBola then
-			template = modelCache["BOLA_SPECIAL_POUCH"]
-		end
-		
-		if not template then
-			-- 정방향 및 정규화된 이름으로 조회
+		-- [추가] modelName으로 실패 시 itemId로 재시도
+		if not template and modelName ~= itemId then
 			template = modelCache[itemId] or modelCache[itemId:lower():gsub("_", "")]
 		end
 
@@ -208,21 +186,23 @@ function EquipService.equipItem(player: Player, itemId: string?)
 			
 			-- 타입별 크기 최적화
 			local targetSize = 1.2 -- 기본 (RESOURCE 등)
-			local itemType = itemData.type or ""
 			
 			if itemType == "TOOL" then
 				targetSize = 2.8 -- 곡괭이/도끼 등
 			elseif itemType == "WEAPON" then
 				-- 창은 훨씬 더 거대하게 (11.0)
 				if itemData.optimalTool == "SPEAR" then
-					targetSize = 11.0
+					targetSize = 9.0 -- 10.0도 길 수 있으니 조금 더 줄임
 				else
 					targetSize = 4.0
 				end
 			elseif itemType == "EQUIPMENT" or itemType == "ARMOR" then
 				targetSize = 1.5
 			elseif itemType == "CONSUMABLE" and itemData.optimalTool then
-				targetSize = 2.0 -- 볼라 등 던지는 아이템
+				targetSize = 2.0 -- 소모품 등
+			elseif itemId == "LOG" or itemId == "WOOD" then
+				-- [UX 개선] 통나무와 나무는 자원이지만 적당히 큼직하게 (스틱 현상 방지)
+				targetSize = 3.5
 			end
 
 			local cf, size = assemblyModel:GetBoundingBox()
@@ -232,15 +212,6 @@ function EquipService.equipItem(player: Player, itemId: string?)
 				assemblyModel:ScaleTo(scale)
 				cf, size = assemblyModel:GetBoundingBox() -- 재계산
 				assemblyModel:PivotTo(assemblyModel:GetPivot() * cf:Inverse())
-				
-				-- 볼라: 왼손 위치로 조기 배치
-				local isBola = (itemData.optimalTool == "BOLA") or (itemId and itemId:upper():find("BOLA"))
-				if isBola then
-					local leftHand = char:FindFirstChild("LeftHand") or char:FindFirstChild("Left Arm")
-					if leftHand then
-						assemblyModel:PivotTo(leftHand.CFrame * CFrame.Angles(math.rad(-90), 0, 0))
-					end
-				end
 			end
 
 			handle.CFrame = CFrame.new(0, 0, 0)
@@ -264,17 +235,7 @@ function EquipService.equipItem(player: Player, itemId: string?)
 					
 					if p ~= handle then
 						local w = Instance.new("WeldConstraint")
-						
-						-- 볼라인 경우 왼손에 용접, 그 외에는 핸들(오른손)에 용접
-						local isBola = (itemData.optimalTool == "BOLA") or (itemId and itemId:upper():find("BOLA"))
-						local leftHand = char:FindFirstChild("LeftHand") or char:FindFirstChild("Left Arm")
-						
-						if isBola and leftHand then
-							w.Part0 = leftHand
-						else
-							w.Part0 = handle
-						end
-						
+						w.Part0 = handle
 						w.Part1 = p
 						w.Parent = p
 					end
@@ -290,17 +251,24 @@ function EquipService.equipItem(player: Player, itemId: string?)
 		end
 
 		-- 5. 최종 장착
+		tool.Name = itemId
+		-- [핵심 해결] 창이 땅에 떨어지는 원인이었던 모든 커스텀 물리 관절 의존성을 버리고 로블록스 기본 엔진 사용
+		tool.RequiresHandle = true 
+		tool:SetAttribute("ItemId", itemId)
 		tool:SetAttribute("ToolType", itemData.optimalTool or itemId:upper())
 		
 		-- [추가] 타입별 Grip 설정 (쥐는 각도 및 위치 조정)
 		if itemData.optimalTool == "PICKAXE" then
-			-- 곡괭이: 뾰족한 부분이 정면을 보게 하고 똑바로 쥐도록 수정
 			tool.Grip = CFrame.new(0, 0, 1.2) * CFrame.Angles(math.rad(-90), 0, 0)
-		elseif itemType == "TOOL" or itemType == "WEAPON" or (itemData.optimalTool == "BOLA") or (itemId and itemId:upper():find("BOLA")) then
-			-- 기타 도구/무기/볼라: 손잡이가 손바닥에 밀착되고 날이 정면을 향하도록 90도 회전
+		elseif itemData.optimalTool == "AXE" then
+			-- 도끼: 손잡이를 수직으로 쥐도록 각도 초기화 및 오프셋 조정
+			tool.Grip = CFrame.new(0, -0.8, 0) * CFrame.Angles(0, 0, 0)
+		elseif itemData.optimalTool == "SPEAR" then
+			-- 창: Z축(가로) 오프셋을 0으로 만들어 손에 딱 붙이고, Y축(세로)를 -1.5로 내려 아래쪽을 쥐게 함
+			tool.Grip = CFrame.new(0, -1.5, 0) * CFrame.Angles(0, 0, 0)
+		elseif itemType == "TOOL" or itemType == "WEAPON" then
 			tool.Grip = CFrame.new(0, 0, 0) * CFrame.Angles(math.rad(-90), 0, 0)
 		else
-			-- 자원: 손바닥 위에 오프셋 적용
 			tool.Grip = CFrame.new(0, -0.3, 0.2) 
 		end
 		
@@ -308,20 +276,17 @@ function EquipService.equipItem(player: Player, itemId: string?)
 		
 		-- [PHYSICS REFACTOR] 고성능 물리 처리 (루프 탈피)
 		task.spawn(function()
-			-- 도구가 캐릭터에 부모화될 때까지 대기
-			local toolAtChar = tool.Parent == char or tool:GetPropertyChangedSignal("Parent"):Wait()
-			if not toolAtChar or not tool.Parent then return end
+			-- [수정] Wait()의 반환값은 불리언이 아니므로 명시적으로 분리하여 대기
+			if tool.Parent ~= char then
+				tool:GetPropertyChangedSignal("Parent"):Wait()
+			end
+			-- 대기 후 부모가 정확히 캐릭터인지 한 번 더 확인
+			if not tool.Parent or tool.Parent ~= char then return end
 			
 			local hand = char:FindFirstChild("RightHand") or char:FindFirstChild("Right Arm")
 			if hand then
-				-- 1. Motor6D 연결 (순수 물리 배제용)
-				local joint = hand:FindFirstChild("RightGripJoint") or Instance.new("Motor6D")
-				joint.Name = "RightGripJoint"
-				joint.Part0 = hand
-				joint.Part1 = handle
-				-- Tool.Grip은 Handle 기준이므로 역행렬을 C0에 적용하여 동일 효과 구현
-				joint.C0 = tool.Grip:Inverse()
-				joint.Parent = hand
+				-- [안정성 보장] 튕김, 땅에 떨어짐 버그 유발 요소였던 Motor6D 생성코드 완전 제거.
+				-- tool.RequiresHandle = true에 의해엔진이 RightGrip(Weld)을 완벽히 생성함.
 				
 				-- 2. NoCollisionConstraint 적용 (팔과 도구 사이 충돌 방지)
 				for _, p in ipairs(tool:GetDescendants()) do

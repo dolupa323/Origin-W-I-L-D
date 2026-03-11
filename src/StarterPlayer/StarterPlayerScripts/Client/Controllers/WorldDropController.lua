@@ -114,20 +114,7 @@ local function createDropModel(dropData)
 		mainObject = template:Clone()
 		mainObject.Name = dropData.dropId
 		mainObject.Parent = dropFolder -- Parent early to avoid warnings
-		isModel = true
-		
-		-- Setup model
-		if mainObject:IsA("Model") then
-			if not mainObject.PrimaryPart then
-				local p = mainObject:FindFirstChildWhichIsA("BasePart", true)
-				if p then mainObject.PrimaryPart = p end
-			end
-			mainObject:PivotTo(CFrame.new(dropData.pos))
-		elseif mainObject:IsA("BasePart") then
-			mainObject.Position = dropData.pos
-		end
-		
-		-- Make non-collidable and anchored
+		-- [수정] 모든 파트를 미리 Anchored로 설정하여 부모 설정 시 물리 연산 방지
 		for _, p in ipairs(mainObject:GetDescendants()) do
 			if p:IsA("BasePart") then
 				p.Anchored = true
@@ -140,114 +127,82 @@ local function createDropModel(dropData)
 			mainObject.Anchored = true
 			mainObject.CanCollide = false
 		end
+		
+		-- [핵심] 피벗을 모델/파트의 최하단으로 설정
+		local cframe, size = mainObject:GetBoundingBox()
+		local bottomPivot = CFrame.new(cframe.Position - Vector3.new(0, size.Y/2, 0))
+		
+		if mainObject:IsA("Model") then
+			mainObject.WorldPivot = bottomPivot
+			mainObject:PivotTo(CFrame.new(dropData.pos))
+		else
+			mainObject.PivotOffset = CFrame.new(0, -mainObject.Size.Y/2, 0)
+			mainObject:PivotTo(CFrame.new(dropData.pos))
+		end
+		
+		-- [수정] 자연스러운 등장을 위해 팝업 애니메이션 적용
+		if mainObject:IsA("Model") then
+			mainObject:ScaleTo(0.1)
+			local scaleVal = Instance.new("NumberValue")
+			scaleVal.Value = 0.1
+			scaleVal.Changed:Connect(function(v)
+				if mainObject.Parent then
+					mainObject:ScaleTo(v)
+				end
+			end)
+			local tween = TweenService:Create(scaleVal, TweenInfo.new(0.4, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out), { Value = 1 })
+			tween.Completed:Connect(function() scaleVal:Destroy() end)
+			tween:Play()
+		elseif mainObject:IsA("BasePart") then
+			local targetSize = mainObject.Size
+			mainObject.Size = targetSize * 0.1
+			TweenService:Create(mainObject, TweenInfo.new(0.4, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out), { Size = targetSize }):Play()
+		end
 	else
 		-- Fallback to sphere
 		mainObject = Instance.new("Part")
 		mainObject.Name = dropData.dropId
 		mainObject.Parent = dropFolder -- Parent early
-		mainObject.Size = Balance.DROP_SIZE
+		local targetSize = Balance.DROP_SIZE or Vector3.new(1, 1, 1)
+		mainObject.Size = targetSize * 0.1
 		mainObject.Shape = Enum.PartType.Ball
 		mainObject.Color = getDropColor(dropData.itemId)
 		mainObject.Material = Enum.Material.SmoothPlastic
-		mainObject.Position = dropData.pos + Vector3.new(0, mainObject.Size.Y / 2, 0)
-		mainObject.Anchored = true
+		mainObject.Position = dropData.pos
+		mainObject.Anchored = true 
 		mainObject.CanCollide = false
 		mainObject.CanQuery = true
 		mainObject.CanTouch = true
+		-- Fallback scale animation
+		TweenService:Create(mainObject, TweenInfo.new(0.4, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out), { Size = targetSize }):Play()
 	end
 	
-	-- Common setup
-	local attachmentPoint = mainObject
-	if mainObject:IsA("Model") then
-		attachmentPoint = mainObject.PrimaryPart or mainObject:FindFirstChildWhichIsA("BasePart", true)
-	end
-	
-	if not attachmentPoint then
-		-- Fallback if model has no parts
-		attachmentPoint = Instance.new("Part")
-		attachmentPoint.Name = "AnchorPoint"
-		attachmentPoint.Size = Vector3.new(0.1, 0.1, 0.1)
-		attachmentPoint.Transparency = 1
-		attachmentPoint.Anchored = true
-		attachmentPoint.CanCollide = false
-		attachmentPoint.Position = dropData.pos
-		attachmentPoint.Parent = mainObject
-	end
-
-	-- 속성 설정 (InteractController 인식용)
-	mainObject:SetAttribute("DropId", dropData.dropId)
-	mainObject:SetAttribute("ItemId", dropData.itemId)
-	mainObject:SetAttribute("DisplayName", getItemDisplayName(dropData.itemId))
-	
-	-- attachmentPoint에도 호환성을 위해 유지
-	if isModel then
-		attachmentPoint:SetAttribute("DropId", dropData.dropId)
-		attachmentPoint:SetAttribute("ItemId", dropData.itemId)
-	end
-	
+	-- [수정] 상단 이름표 박스 제거 (요청 사항)
 	local highlight = Instance.new("Highlight")
-	highlight.FillColor = template and Color3.new(1,1,1) or attachmentPoint.Color
+	highlight.FillColor = template and Color3.new(1,1,1) or (mainObject:IsA("BasePart") and mainObject.Color or Color3.new(1,1,1))
 	highlight.FillTransparency = 0.7
 	highlight.OutlineColor = Color3.new(1, 1, 1)
 	highlight.OutlineTransparency = 0.5
 	highlight.Parent = mainObject
 	
-	-- 빌보드 GUI (아이템 이름 + 개수)
-	local billboard = Instance.new("BillboardGui")
-	billboard.Name = "DropLabel"
-	billboard.Size = UDim2.new(0, 100, 0, 40)
-	billboard.StudsOffset = Balance.DROP_BILLBOARD_OFFSET
-	-- [UX 개선] AlwaysOnTop을 false로 변경하여 물체 뒤에 숨겨지게 함 (UI 겹침 공해 방지)
-	billboard.AlwaysOnTop = false 
-	billboard.MaxDistance = Balance.DROP_BILLBOARD_MAX_DIST
-	billboard.Parent = attachmentPoint
+	-- 상호작용 포인트 설정 (아이템 본체)
+	local attachmentPoint = mainObject
+	if mainObject:IsA("Model") then
+		attachmentPoint = mainObject.PrimaryPart or mainObject:FindFirstChildWhichIsA("BasePart", true) or mainObject
+	end
 	
-	-- 배경 프레임
-	local frame = Instance.new("Frame")
-	frame.Name = "BG"
-	frame.Size = UDim2.new(1, 0, 1, 0)
-	frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-	frame.BackgroundTransparency = 0.4
-	frame.BorderSizePixel = 0
-	frame.Parent = billboard
-	
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 6)
-	corner.Parent = frame
-	
-	-- 아이템 이름 텍스트
-	local nameLabel = Instance.new("TextLabel")
-	nameLabel.Name = "ItemName"
-	nameLabel.Size = UDim2.new(1, 0, 0.6, 0)
-	nameLabel.Position = UDim2.new(0, 0, 0, 0)
-	nameLabel.BackgroundTransparency = 1
-	nameLabel.Text = getItemDisplayName(dropData.itemId)
-	nameLabel.TextColor3 = Color3.new(1, 1, 1)
-	nameLabel.TextScaled = true
-	nameLabel.Font = Enum.Font.GothamBold
-	nameLabel.Parent = frame
-	
-	-- 개수 텍스트
-	local countLabel = Instance.new("TextLabel")
-	countLabel.Name = "Count"
-	countLabel.Size = UDim2.new(1, 0, 0.4, 0)
-	countLabel.Position = UDim2.new(0, 0, 0.6, 0)
-	countLabel.BackgroundTransparency = 1
-	countLabel.Text = "x" .. tostring(dropData.count)
-	countLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
-	countLabel.TextScaled = true
-	countLabel.Font = Enum.Font.GothamMedium
-	countLabel.Parent = frame
+	-- [수정] BillboardGui(상단 박스) 생성 코드 완전 삭제
 	
 	-- ProximityPrompt (줍기)
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name = "PickupPrompt"
 	prompt.ActionText = "줍기"
-	prompt.ObjectText = getItemDisplayName(dropData.itemId)
+	prompt.ObjectText = getItemDisplayName(dropData.itemId) .. " (x" .. tostring(dropData.count) .. ")"
 	prompt.MaxActivationDistance = Balance.DROP_PROMPT_RANGE
 	prompt.HoldDuration = 0
 	prompt.KeyboardKeyCode = Enum.KeyCode.Z
 	prompt.RequiresLineOfSight = false
+	prompt.UIOffset = Vector2.new(0, 0) -- 아이템 정중앙에 위치
 	prompt.Parent = attachmentPoint
 	
 	-- 줍기 이벤트
@@ -259,11 +214,11 @@ local function createDropModel(dropData)
 		end
 	end)
 	
-	-- [OPTIMIZATION] Register for batch animation instead of local while loop
+	-- [수정] 배치 애니메이션 등록 시 서버 좌표(지면 고정)를 기준점으로 사용
 	animatingDrops[dropData.dropId] = {
 		model = mainObject,
 		startPos = dropData.pos,
-		t = math.random() * math.pi * 2 -- 랜덤 시작 시점 (전부 똑같이 움직이면 부자연스러움)
+		t = math.random() * math.pi * 2
 	}
 	
 	return mainObject
@@ -273,21 +228,11 @@ local function updateDropModel(dropId, newCount)
 	local model = dropModels[dropId]
 	if not model then return end
 	
-	local billboard = model:FindFirstChild("DropLabel")
-	if billboard then
-		local frame = billboard:FindFirstChild("BG")
-		if frame then
-			local countLabel = frame:FindFirstChild("Count")
-			if countLabel then
-				countLabel.Text = "x" .. tostring(newCount)
-			end
-		end
-	end
-	
-	-- ProximityPrompt 업데이트
-	local prompt = model:FindFirstChild("PickupPrompt")
+	-- [수정] BillboardGui 관련 로직 제거 및 ProximityPrompt 업데이트 통합
+	local prompt = model:FindFirstChild("PickupPrompt") or model:FindFirstChildWhichIsA("ProximityPrompt", true)
 	if prompt then
-		prompt.ObjectText = getItemDisplayName(dropsCache[dropId].itemId) .. " x" .. tostring(newCount)
+		local itemId = dropsCache[dropId] and dropsCache[dropId].itemId or "Unknown"
+		prompt.ObjectText = getItemDisplayName(itemId) .. " (x" .. tostring(newCount) .. ")"
 	end
 end
 
@@ -421,24 +366,20 @@ function WorldDropController.Init()
 			local dist = (data.startPos - pPos).Magnitude
 			if dist > 150 then continue end
 			
-			-- 2. 카메라 가시성 체크 (Frustum Culling) - 아이템이 많을 때 매우 효과적
-			-- (모든 아이템마다 하면 무거울 수 있으므로 거리 짧은 것 위주로 수행)
+			-- 2. 카메라 가시성 체크 (Frustum Culling)
 			if dist > 30 then
 				local _, onScreen = camera:WorldToViewportPoint(data.startPos)
 				if not onScreen then continue end
 			end
 			
+			-- 시간 누적 및 상하 부유 애니메이션 적용
 			data.t = data.t + dt
 			local t = data.t
-			local newY = data.startPos.Y + math.sin(t * 2) * 0.3
+			local finalY = data.startPos.Y + math.sin(t * 2) * 0.1 -- 흔들림 강도 최적화
 			
-			if model:IsA("Model") then
-				if model.PrimaryPart then
-					model:PivotTo(CFrame.new(data.startPos.X, newY, data.startPos.Z) * CFrame.Angles(0, t, 0))
-				end
-			else
-				model.CFrame = CFrame.new(data.startPos.X, newY, data.startPos.Z) * CFrame.Angles(0, t, 0)
-			end
+			-- [수정] 모든 타입을 PivotTo로 처리하여 안정적인 위치 유지 (하단 기준 지면 밀착)
+			local targetCF = CFrame.new(data.startPos.X, finalY, data.startPos.Z) * CFrame.Angles(0, t, 0)
+			model:PivotTo(targetCF)
 		end
 	end)
 	

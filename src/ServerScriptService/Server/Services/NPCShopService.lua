@@ -33,6 +33,22 @@ local lastRestockTime = os.time()
 -- 상점 데이터 캐시
 local shopDataMap = {}       -- [shopId] = shopData
 
+local function _getPlayerStateWithRetry(userId: number, timeoutSeconds: number?): any
+	if not SaveService or not SaveService.getPlayerState then
+		return nil
+	end
+
+	local state = SaveService.getPlayerState(userId)
+	local deadline = os.clock() + (timeoutSeconds or 5)
+
+	while not state and os.clock() < deadline do
+		task.wait(0.05)
+		state = SaveService.getPlayerState(userId)
+	end
+
+	return state
+end
+
 --========================================
 -- Internal: Shop Data
 --========================================
@@ -79,7 +95,7 @@ local function _initPlayerGold(userId: number)
 	if playerGold[userId] ~= nil then return end
 	
 	-- SaveService에서 로드
-	local state = SaveService and SaveService.getPlayerState(userId)
+	local state = _getPlayerStateWithRetry(userId)
 	local savedGold = state and state.gold
 	
 	playerGold[userId] = savedGold or Balance.STARTING_GOLD
@@ -391,7 +407,7 @@ local function _onShopGetInfoRequest(player: Player, payload: any)
 	if not shopId then
 		return {
 			success = false,
-			errorCode = Enums.ErrorCode.INVALID_REQUEST,
+			errorCode = Enums.ErrorCode.BAD_REQUEST,
 		}
 	end
 	
@@ -419,7 +435,7 @@ local function _onShopBuyRequest(player: Player, payload: any)
 	if not shopId or not itemId then
 		return {
 			success = false,
-			errorCode = Enums.ErrorCode.INVALID_REQUEST,
+			errorCode = Enums.ErrorCode.BAD_REQUEST,
 		}
 	end
 	
@@ -450,7 +466,7 @@ local function _onShopSellRequest(player: Player, payload: any)
 	if not shopId or not slot then
 		return {
 			success = false,
-			errorCode = Enums.ErrorCode.INVALID_REQUEST,
+			errorCode = Enums.ErrorCode.BAD_REQUEST,
 		}
 	end
 	

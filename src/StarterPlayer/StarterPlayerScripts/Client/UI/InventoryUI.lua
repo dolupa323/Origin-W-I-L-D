@@ -7,6 +7,9 @@ local C = Theme.Colors
 local F = Theme.Fonts
 local T = Theme.Transp
 
+local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
+local Balance = require(Shared.Config.Balance)
+
 local InventoryUI = {}
 
 InventoryUI.Refs = {
@@ -113,7 +116,7 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	pad.PaddingTop = UDim.new(0, 30); pad.PaddingLeft = UDim.new(0, 15) -- 패딩 넓혀서 라벨 공간 확보
 	pad.Parent = scroll
 
-	for i = 1, 60 do
+	for i = 1, Balance.INV_SLOTS do
 		local slot = Utils.mkSlot({name="Slot"..i, bgT=0.3, parent=scroll})
 		slot.frame.LayoutOrder = i
 		
@@ -417,7 +420,7 @@ function InventoryUI.UpdateSlotSelectionHighlight(selectedIndex, items, DataHelp
 		LEGENDARY = Color3.fromRGB(255, 180, 0),
 	}
 	
-	for i = 1, 60 do
+	for i = 1, Balance.INV_SLOTS do
 		local s = InventoryUI.Refs.Slots[i]
 		if not s then continue end
 		local st = s.frame:FindFirstChildOfClass("UIStroke")
@@ -446,7 +449,7 @@ function InventoryUI.RefreshSlots(items, getItemIcon, __C, DataHelper)
 		LEGENDARY = Color3.fromRGB(255, 180, 0),
 	}
 
-	for i = 1, 60 do
+	for i = 1, Balance.INV_SLOTS do
 		local s = slots[i]
 		if not s then continue end
 		
@@ -507,8 +510,14 @@ function InventoryUI.UpdateDetail(data, getItemIcon, Enums, DataHelper, itemCoun
 		d.Frame.Visible = true -- 아이템/레시피가 있으면 표시
 		local itemId = data.itemId or data.id
 		local itemData = DataHelper.GetData("ItemData", itemId)
-		d.Name.Text = (itemData and itemData.name) or itemId
-		d.Icon.Image = getItemIcon(itemId)
+		
+		-- [수정] 레시피인 경우 결과물 아이템의 정보를 참조하여 이름/설명을 표시
+		if not itemData and data.outputs and data.outputs[1] then
+			itemData = DataHelper.GetData("ItemData", data.outputs[1].itemId)
+		end
+		
+		d.Name.Text = data.name or (itemData and itemData.name) or itemId
+		d.Icon.Image = getItemIcon(itemData and itemData.id or itemId)
 		d.Icon.Visible = true
 		
 		local weightValue = (itemData and itemData.weight or 0.1) * (data.count or 1)

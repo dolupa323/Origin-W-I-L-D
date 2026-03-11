@@ -22,18 +22,25 @@ local CreatureAnimationIds = {
 		ATTACK = "Raptor_Attack",
 	},
 
-	-- 트리케라톱스 (영문/한글 모델명 대응)
+	-- 트리케라톱스 (성체)
 	TRICERATOPS = {
 		IDLE = "Triceratops_Idle",
 		WALK = "Triceratops_Walk",
 		RUN = "Triceratops_Walk", 
 		ATTACK = "Triceratops_Attack",
 	},
-	["트리케라톱스"] = {
+	-- 아기 트리케라톱스 (성체와 동일한 애니메이션 사용 확인됨)
+	BABY_TRICERATOPS = {
 		IDLE = "Triceratops_Idle",
 		WALK = "Triceratops_Walk",
 		RUN = "Triceratops_Walk", 
 		ATTACK = "Triceratops_Attack",
+	},
+	COMPY = {
+		IDLE = "Raptor_Idle",
+		WALK = "Raptor_Walk",
+		RUN = "Raptor_Run",
+		ATTACK = "Raptor_Attack",
 	},
 	
 	-- 티라노 등 다른 공룡은 준비되면 아래 주석을 풀고 등록하세요.
