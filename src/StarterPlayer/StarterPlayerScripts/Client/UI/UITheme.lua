@@ -51,9 +51,10 @@ local UITheme = {
 	},
 	
 	Fonts = {
-		TITLE  = Enum.Font.GothamBlack,
+		-- Roblox built-in font preset tuned for a rougher survival-style tone.
+		TITLE  = Enum.Font.Cartoon,
 		NORMAL = Enum.Font.Gotham,
-		NUM    = Enum.Font.GothamMedium,
+		NUM    = Enum.Font.Highway,
 		CLASSIC = Enum.Font.Gotham,
 	},
 

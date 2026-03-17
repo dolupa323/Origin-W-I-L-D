@@ -42,6 +42,7 @@ local Enums = require(Shared.Enums.Enums)
 --   currentRecipeId: string?, -- 현재 처리 중인 레시피
 -- }
 local facilityStates = {}
+local sleepCooldownByUser = {} -- [userId] = nextAllowedUnix
 
 --========================================
 -- Internal Helpers
@@ -834,6 +835,119 @@ function FacilityService.getAssignedPal(structureId: string): (string?, number?)
 	return nil, nil
 end
 
+function FacilityService.sleep(player: Player, structureId: string): (boolean, string?, any?)
+	if not player or not structureId or structureId == "" then
+		return false, Enums.ErrorCode.BAD_REQUEST
+	end
+
+	if not BuildService or not DataService then
+		return false, Enums.ErrorCode.INTERNAL_ERROR
+	end
+
+	local struct = BuildService.get and BuildService.get(structureId)
+	if not struct then
+		return false, Enums.ErrorCode.NOT_FOUND
+	end
+
+	local nowUnix = os.time()
+	local nextAllowed = sleepCooldownByUser[player.UserId] or 0
+	if nowUnix < nextAllowed then
+		return false, "SLEEP_COOLDOWN"
+	end
+
+	if struct.ownerId ~= player.UserId then
+		return false, Enums.ErrorCode.NO_PERMISSION
+	end
+
+	local facilityData = DataService.getFacility(struct.facilityId)
+	if not facilityData or facilityData.functionType ~= "RESPAWN" then
+		return false, Enums.ErrorCode.BAD_REQUEST
+	end
+
+	local character = player.Character
+	if character then
+		local humanoid = character:FindFirstChild("Humanoid")
+		if humanoid and humanoid.Health > 0 then
+			humanoid.Health = humanoid.MaxHealth
+		end
+	end
+
+	local okStamina, StaminaService = pcall(function()
+		return require(game:GetService("ServerScriptService").Server.Services.StaminaService)
+	end)
+	if okStamina and StaminaService and StaminaService.restoreFull then
+		StaminaService.restoreFull(player.UserId)
+	end
+
+	local okHunger, HungerService = pcall(function()
+		return require(game:GetService("ServerScriptService").Server.Services.HungerService)
+	end)
+	if okHunger and HungerService and HungerService.restoreFull then
+		HungerService.restoreFull(player.UserId)
+	end
+
+	local okDebuff, DebuffService = pcall(function()
+		return require(game:GetService("ServerScriptService").Server.Services.DebuffService)
+	end)
+	if okDebuff and DebuffService and DebuffService.removeDebuff then
+		DebuffService.removeDebuff(player.UserId, "CHILLY")
+		DebuffService.removeDebuff(player.UserId, "FREEZING")
+	end
+
+	local okLife, PlayerLifeService = pcall(function()
+		return require(game:GetService("ServerScriptService").Server.Services.PlayerLifeService)
+	end)
+	if okLife and PlayerLifeService and PlayerLifeService.setPreferredRespawn then
+		PlayerLifeService.setPreferredRespawn(player.UserId, structureId)
+	end
+
+	local okSave, SaveService = pcall(function()
+		return require(game:GetService("ServerScriptService").Server.Services.SaveService)
+	end)
+	if okSave and SaveService and SaveService.updatePlayerState then
+		local pos = struct.position
+		if type(pos) == "table" then
+			pos = Vector3.new(pos.X or pos.x or 0, pos.Y or pos.y or 0, pos.Z or pos.z or 0)
+		end
+		SaveService.updatePlayerState(player.UserId, function(state)
+			state.lastPosition = {
+				x = pos.X,
+				y = pos.Y,
+				z = pos.Z,
+			}
+			return state
+		end)
+	end
+
+	local okTime, TimeService = pcall(function()
+		return require(game:GetService("ServerScriptService").Server.Services.TimeService)
+	end)
+	if okTime and TimeService and TimeService.getTime and TimeService.warp then
+		-- 기상 직후는 완전히 밝은 상태가 되도록 "정오" 시점으로 이동.
+		local dayLength = math.max(1, Balance.DAY_LENGTH or 2400)
+		local target = math.floor((Balance.DAY_DURATION or 1800) * 0.5)
+		local cur = TimeService.getTime()
+		local dayTime = (cur and cur.dayTime) or 0
+		local delta = target - dayTime
+		if delta < 0 then
+			delta += dayLength
+		end
+		TimeService.warp(delta)
+		if TimeService.sync then
+			TimeService.sync()
+		end
+	end
+
+	sleepCooldownByUser[player.UserId] = nowUnix + math.max(1, Balance.SLEEP_COOLDOWN or 20)
+
+	return true, nil, {
+		respawnSet = true,
+		restored = true,
+		phase = "DAY",
+		nextSleepAt = sleepCooldownByUser[player.UserId],
+	}
+end
+
 --========================================
 -- Network Handlers
 --========================================
@@ -936,6 +1050,20 @@ local function handleUnassignPal(player: Player, payload: any)
 	return { success = true }
 end
 
+local function handleSleep(player: Player, payload: any)
+	local structureId = payload and payload.structureId
+	if not structureId then
+		return { success = false, errorCode = Enums.ErrorCode.BAD_REQUEST }
+	end
+
+	local success, errorCode, data = FacilityService.sleep(player, structureId)
+	if not success then
+		return { success = false, errorCode = errorCode }
+	end
+
+	return { success = true, data = data }
+end
+
 --========================================
 -- Initialization
 --========================================
@@ -995,6 +1123,7 @@ function FacilityService.GetHandlers()
 		-- Phase 5-5: 팰 작업 배치
 		["Facility.AssignPal.Request"] = handleAssignPal,
 		["Facility.UnassignPal.Request"] = handleUnassignPal,
+		["Facility.Sleep.Request"] = handleSleep,
 	}
 end
 

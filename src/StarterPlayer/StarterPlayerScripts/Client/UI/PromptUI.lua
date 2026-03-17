@@ -14,6 +14,7 @@ local F = Theme.Fonts
 local T = Theme.Transp
 
 local PromptUI = {}
+local initialized = false
 
 local function createPromptUI(prompt, inputType, gui)
 	local frame = Utils.mkFrame({
@@ -122,6 +123,9 @@ local function createPromptUI(prompt, inputType, gui)
 end
 
 function PromptUI.Init()
+	if initialized then return end
+	initialized = true
+
 	ProximityPromptService.PromptShown:Connect(function(prompt, inputType)
 		if prompt.Style ~= Enum.ProximityPromptStyle.Custom then return end
 		

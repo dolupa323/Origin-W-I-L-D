@@ -25,6 +25,23 @@ local totalXPTable = {} -- [level] = totalXPRequired (Pre-calculated lookup tabl
 
 -- Level up callback (Phase 8)
 local levelUpCallback = nil
+local INIT_STATE_WAIT_TIMEOUT = 12
+local INIT_STATE_WAIT_INTERVAL = 0.1
+
+local function _waitForPlayerState(userId: number)
+	if not SaveService or not SaveService.getPlayerState then
+		return nil
+	end
+
+	local state = SaveService.getPlayerState(userId)
+	local deadline = os.clock() + INIT_STATE_WAIT_TIMEOUT
+	while not state and os.clock() < deadline do
+		task.wait(INIT_STATE_WAIT_INTERVAL)
+		state = SaveService.getPlayerState(userId)
+	end
+
+	return state
+end
 
 --========================================
 -- Internal: XP/Level Calculations
@@ -78,7 +95,7 @@ local function _initPlayerStats(userId: number)
 	if playerStats[userId] then return end
 	
 	-- SaveService에서 로드
-	local state = SaveService and SaveService.getPlayerState(userId)
+	local state = _waitForPlayerState(userId)
 	local savedStats = state and state.stats
 	
 	playerStats[userId] = {

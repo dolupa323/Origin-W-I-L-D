@@ -35,9 +35,12 @@ local isSprinting = false
 local isDodging = false
 local lastDodgeTime = 0
 
--- 키 상태
-local shiftHeld = false
-local movementDirection = Vector3.zero
+-- 자동 달리기 상태 (직진 유지 시 가속)
+local autoMoveHoldTime = 0
+local autoMoveDirection = nil
+local AUTO_SPRINT_HOLD_TIME = Balance.AUTO_SPRINT_HOLD_TIME or 1.6
+local AUTO_SPRINT_DIRECTION_DOT = Balance.AUTO_SPRINT_DIRECTION_DOT or 0.94
+local AUTO_SPRINT_MIN_MOVE = Balance.AUTO_SPRINT_MIN_MOVE or 0.25
 
 -- 이벤트
 local staminaChangedCallbacks = {}
@@ -140,34 +143,82 @@ end
 -- Sprint Logic
 --========================================
 
-local function updateSprint()
-	local shouldSprint = shiftHeld and not isDodging and currentStamina >= Balance.SPRINT_MIN_STAMINA
-	
-	local character = player.Character
-	if not character then
-		shouldSprint = false
-	end
-
-	if character then
-		local humanoid = character:FindFirstChild("Humanoid")
-		if humanoid then
-			-- 이동 중인지 체크
-			local isMoving = humanoid.MoveDirection.Magnitude > 0
-			shouldSprint = shouldSprint and isMoving
-		else
-			shouldSprint = false
-		end
-	end
-	
+local function setSprintState(shouldSprint: boolean)
 	if shouldSprint and not isSprinting then
-		-- 스프린트 시작
 		NetClient.Request("Movement.StartSprint")
 		isSprinting = true
 	elseif not shouldSprint and isSprinting then
-		-- 스프린트 종료
 		NetClient.Request("Movement.StopSprint")
 		isSprinting = false
 	end
+end
+
+local function resetAutoSprintTracking()
+	autoMoveHoldTime = 0
+	autoMoveDirection = nil
+end
+
+local function updateAutoSprint(dt: number)
+	local shouldSprint = false
+
+	if isDodging or currentStamina < Balance.SPRINT_MIN_STAMINA then
+		resetAutoSprintTracking()
+		setSprintState(false)
+		return
+	end
+
+	local character = player.Character
+	local humanoid = character and character:FindFirstChild("Humanoid")
+	if not humanoid then
+		resetAutoSprintTracking()
+		setSprintState(false)
+		return
+	end
+
+	local state = humanoid:GetState()
+	if state == Enum.HumanoidStateType.Jumping
+		or state == Enum.HumanoidStateType.Freefall
+		or state == Enum.HumanoidStateType.FallingDown
+		or state == Enum.HumanoidStateType.Ragdoll
+		or state == Enum.HumanoidStateType.Climbing
+		or state == Enum.HumanoidStateType.Swimming
+		or state == Enum.HumanoidStateType.Seated then
+		resetAutoSprintTracking()
+		setSprintState(false)
+		return
+	end
+
+	if InputManager.isUIOpen() then
+		resetAutoSprintTracking()
+		setSprintState(false)
+		return
+	end
+
+	local moveDir = humanoid.MoveDirection
+	if moveDir.Magnitude < AUTO_SPRINT_MIN_MOVE then
+		resetAutoSprintTracking()
+		setSprintState(false)
+		return
+	end
+
+	local currentDir = moveDir.Unit
+	if autoMoveDirection then
+		local dot = currentDir:Dot(autoMoveDirection)
+		if dot < AUTO_SPRINT_DIRECTION_DOT then
+			resetAutoSprintTracking()
+			autoMoveDirection = currentDir
+			setSprintState(false)
+			return
+		end
+		autoMoveHoldTime += dt
+		autoMoveDirection = ((autoMoveDirection * 0.7) + (currentDir * 0.3)).Unit
+	else
+		autoMoveDirection = currentDir
+		autoMoveHoldTime = 0
+	end
+
+	shouldSprint = autoMoveHoldTime >= AUTO_SPRINT_HOLD_TIME
+	setSprintState(shouldSprint)
 end
 
 --========================================
@@ -209,6 +260,8 @@ local function performDodge()
 	
 	-- 서버에 구르기 요청
 	isDodging = true -- 즉시 상태 변경 (스프린트 중단용)
+	resetAutoSprintTracking()
+	setSprintState(false)
 	
 	task.spawn(function()
 		local success, result = NetClient.Request("Movement.Dodge", { direction = direction })
@@ -239,23 +292,9 @@ local function onInputBegan(input: InputObject, gameProcessed: boolean)
 	-- UI 열림 상태면 무시
 	if InputManager.isUIOpen() then return end
 	
-	-- Shift: 스프린트 시작
-	if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.RightShift then
-		shiftHeld = true
-		updateSprint()
-	end
-	
 	-- LeftControl: 구르기
 	if input.KeyCode == Enum.KeyCode.LeftControl then
 		performDodge()
-	end
-end
-
-local function onInputEnded(input: InputObject, gameProcessed: boolean)
-	-- Shift: 스프린트 종료
-	if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.RightShift then
-		shiftHeld = false
-		updateSprint()
 	end
 end
 
@@ -291,7 +330,6 @@ function MovementController.Init()
 	
 	-- 입력 연결
 	UserInputService.InputBegan:Connect(onInputBegan)
-	UserInputService.InputEnded:Connect(onInputEnded)
 	
 	-- 서버 이벤트 리스너
 	NetClient.On("Stamina.Update", onStaminaUpdate)
@@ -300,11 +338,9 @@ function MovementController.Init()
 	-- 키 바인딩 안내 추가
 	InputManager.bindKey(Enum.KeyCode.LeftControl, "Dodge", performDodge)
 	
-	-- 프레임 업데이트 (스프린트 상태 체크)
-	RunService.Heartbeat:Connect(function()
-		if shiftHeld then
-			updateSprint()
-		end
+	-- 프레임 업데이트 (직진 유지 기반 자동 가속)
+	RunService.Heartbeat:Connect(function(dt)
+		updateAutoSprint(dt)
 	end)
 	
 	-- 초기 스태미나 요청
@@ -342,10 +378,10 @@ function MovementController.performDodge()
 	performDodge()
 end
 
---- [Mobile 전용] 스프린트 상태 업데이트 (터치 Down/Up 연동)
-function MovementController.updateSprintState(held)
-	shiftHeld = held
-	updateSprint()
+--- [Legacy API] 수동 달리기 입력은 비활성화. 자동 가속 시스템만 사용.
+function MovementController.updateSprintState(_held)
+	resetAutoSprintTracking()
+	setSprintState(false)
 end
 
 --- 스태미나 변경 이벤트 구독

@@ -39,8 +39,9 @@ function NetClient.Request(command: string, payload: any?): (boolean, any)
 	local thread = coroutine.running()
 	local completed = false
 	local timeoutSeconds = 5
+	local timeoutTask = nil
 	
-	task.delay(timeoutSeconds, function()
+	timeoutTask = task.delay(timeoutSeconds, function()
 		if not completed then
 			completed = true
 			task.spawn(thread, false, "TIMEOUT")
@@ -60,6 +61,10 @@ function NetClient.Request(command: string, payload: any?): (boolean, any)
 		
 		if not completed then
 			completed = true
+			if timeoutTask then
+				task.cancel(timeoutTask)
+				timeoutTask = nil
+			end
 			task.spawn(thread, success, responseValue)
 		end
 	end)

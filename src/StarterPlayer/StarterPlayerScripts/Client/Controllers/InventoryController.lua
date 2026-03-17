@@ -279,7 +279,11 @@ function InventoryController.Init()
 				break
 			else
 				currentTry = currentTry + 1
-				warn(string.format("[InventoryController] Waiting for inventory sync... (Attempt %d/%d)", currentTry, maxRetries))
+				if currentTry <= 3 then
+					print(string.format("[InventoryController] Waiting for inventory sync... (Attempt %d/%d)", currentTry, maxRetries))
+				elseif currentTry % 3 == 0 then
+					warn(string.format("[InventoryController] Inventory sync still pending... (Attempt %d/%d)", currentTry, maxRetries))
+				end
 				task.wait(2) -- 2초마다 동기화 상태 재요청
 			end
 		end

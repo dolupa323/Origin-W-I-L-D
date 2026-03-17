@@ -34,6 +34,7 @@ local BuildController = require(Controllers.BuildController)
 local StorageController = require(Controllers.StorageController)
 local FacilityController = require(Controllers.FacilityController)
 local TechController = require(Controllers.TechController)
+local TimeController = require(Controllers.TimeController)
 local DragDropController = require(Controllers.DragDropController)
 local InteractController = require(Controllers.InteractController)
 
@@ -138,16 +139,27 @@ function UIManager.setTutorialVisible(visible) HUDUI.SetTutorialVisible(visible)
 function UIManager.updateTutorialStatus(status) HUDUI.UpdateTutorialStatus(status) end
 
 function UIManager.requestTutorialStepComplete()
-	task.spawn(function()
-		local ok, data = NetClient.Request("Tutorial.Step.Complete.Request", {})
-		if not ok then
-			UIManager.notify("아직 완료 조건이 충족되지 않았습니다.", C.WHITE)
-			return
+	local ok, data = NetClient.Request("Tutorial.Step.Complete.Request", {})
+	if not ok then
+		local statusOk, statusData = NetClient.Request("Tutorial.GetStatus.Request", {})
+		if statusOk and type(statusData) == "table" then
+			UIManager.updateTutorialStatus(statusData)
+			if statusData.stepReady == true then
+				ok, data = NetClient.Request("Tutorial.Step.Complete.Request", {})
+			end
 		end
-		if type(data) == "table" then
-			UIManager.updateTutorialStatus(data)
-		end
-	end)
+	end
+
+	if not ok then
+		UIManager.notify("완료 조건을 확인할 수 없습니다. 무전기를 다시 확인해 주세요.", C.WHITE)
+		return false
+	end
+
+	if type(data) == "table" then
+		UIManager.updateTutorialStatus(data)
+	end
+
+	return true
 end
 
 function UIManager.getPendingStatCount(statId)
@@ -285,6 +297,8 @@ function UIManager.updateStatPoints(available)
 end
 
 function UIManager.updateGold(amt)
+	InventoryUI.UpdateCurrency(amt)
+	ShopUI.UpdateGold(amt)
 	if shopFrame then
 		local g = shopFrame:FindFirstChild("TB")
 		if g then g = g:FindFirstChild("Gold"); if g then g.Text = "💰 "..tostring(amt) end end
@@ -326,22 +340,73 @@ end)
 local function getItemIcon(itemId: string): string
 	if not itemId then return "" end
 	
-	-- 0. 아이템 데이터 조회 (alias 확인용)
+	-- 0. 아이템/시설 데이터 조회 (alias 확인용)
 	local itemDataRef = DataHelper and DataHelper.GetData("ItemData", itemId)
-	local searchId = (itemDataRef and itemDataRef.iconName) or itemId
+	local facilityDataRef = DataHelper and DataHelper.GetData("FacilityData", itemId)
+	local searchCandidates = {}
+	local function pushCandidate(value)
+		if type(value) ~= "string" or value == "" then
+			return
+		end
+		for _, existing in ipairs(searchCandidates) do
+			if existing == value then
+				return
+			end
+		end
+		table.insert(searchCandidates, value)
+	end
+
+	pushCandidate(itemDataRef and itemDataRef.iconName)
+	pushCandidate(itemId)
+
+	if facilityDataRef then
+		pushCandidate(facilityDataRef.iconName)
+		pushCandidate(facilityDataRef.modelName)
+		pushCandidate(facilityDataRef.id)
+		if type(facilityDataRef.iconAliases) == "table" then
+			for _, alias in ipairs(facilityDataRef.iconAliases) do
+				pushCandidate(alias)
+			end
+		end
+	end
+
+	if itemId == "BASIC_WORKBENCH" then
+		pushCandidate("PRIMITIVE_WORKBENCH")
+		pushCandidate("PrimitiveWorkbench")
+	end
+	if itemId == "LEAN_TO" then
+		pushCandidate("LeanTo")
+		pushCandidate("Lean_To")
+	end
 	
-	-- CRAFT_ 나 SMELT_ 접두사가 있으면 제거
-	local coreId = searchId:gsub("^CRAFT_", ""):gsub("^SMELT_", "")
+	-- CRAFT_ 나 SMELT_ 접두사가 있으면 제거된 형태도 후보로 추가
+	local expandedCandidates = {}
+	for _, name in ipairs(searchCandidates) do
+		table.insert(expandedCandidates, name)
+		local core = name:gsub("^CRAFT_", ""):gsub("^SMELT_", "")
+		if core ~= name then
+			table.insert(expandedCandidates, core)
+		end
+	end
 	
 	-- 1. 로드된 아이콘 폴더에서 검색
 	if ITEM_ICONS_FOLDER then
-		local iconObj = ITEM_ICONS_FOLDER:FindFirstChild(coreId) or ITEM_ICONS_FOLDER:FindFirstChild(searchId)
+		local iconObj = nil
+		for _, candidate in ipairs(expandedCandidates) do
+			iconObj = ITEM_ICONS_FOLDER:FindFirstChild(candidate)
+			if iconObj then
+				break
+			end
+		end
 		if not iconObj then
 			-- Case & Underscore insensitive search
-			local target = coreId:lower():gsub("_", "")
+			local targetMap = {}
+			for _, candidate in ipairs(expandedCandidates) do
+				targetMap[candidate:lower():gsub("_", "")] = true
+			end
 			for _, child in ipairs(ITEM_ICONS_FOLDER:GetChildren()) do
 				local cname = child.Name:lower():gsub("_", "")
-				if cname == target then
+				if targetMap[cname] then
 					iconObj = child
 					break
 				end
@@ -362,6 +427,9 @@ local function getItemIcon(itemId: string): string
 	-- 2. ItemData에서 직접 아이콘 ID 확인 (데이터 기반 우선)
 	if itemDataRef and itemDataRef.icon then
 		return itemDataRef.icon
+	end
+	if facilityDataRef and facilityDataRef.icon then
+		return facilityDataRef.icon
 	end
 
 	-- 3. If it's not found in folders or data, we return an empty string or placeholder.
@@ -427,6 +495,12 @@ function UIManager._onOpenInventory(startTab)
 
 	InventoryUI.SetVisible(true)
 	InventoryUI.SetTab(startTab or "BAG")
+	InventoryUI.UpdateCurrency(ShopController.getGold())
+	ShopController.requestGold(function(ok, gold)
+		if ok then
+			InventoryUI.UpdateCurrency(gold)
+		end
+	end)
 	UIManager.refreshInventory()
 	if startTab == "CRAFT" then
 		UIManager.refreshPersonalCrafting(true)
@@ -1594,6 +1668,21 @@ local function setupEventListeners()
 
 	-- HUD Update Loop
 	RunService.RenderStepped:Connect(function()
+		local didPruneDebuff = false
+		local now = os.time()
+		for debuffId, debuff in pairs(activeDebuffs) do
+			if type(debuff) == "table" and (debuff.duration or -1) > 0 then
+				local started = debuff.startTime or now
+				if (now - started) >= (debuff.duration or 0) then
+					activeDebuffs[debuffId] = nil
+					didPruneDebuff = true
+				end
+			end
+		end
+		if didPruneDebuff then
+			UIManager.refreshStatusEffects()
+		end
+
 		-- Update Coordinates & Compass
 		local char = player.Character
 		if char and char.PrimaryPart then
@@ -1608,6 +1697,8 @@ local function setupEventListeners()
 			local angle = math.atan2(look.X, look.Z)
 			HUDUI.UpdateCompass(angle)
 		end
+
+		HUDUI.UpdateDayNightClock(TimeController.getDayTime(), Balance.DAY_LENGTH)
 	end)
 
 	-- 활성 슬롯 동기화 (서버 -> 클라)

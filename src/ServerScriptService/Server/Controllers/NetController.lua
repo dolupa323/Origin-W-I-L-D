@@ -191,8 +191,13 @@ function NetController.FireClientsInRange(position: Vector3, range: number, even
 	
 	for _, player in ipairs(Players:GetPlayers()) do
 		local char = player.Character
-		if char and char:FindFirstChild("HumanoidRootPart") then
-			local dist = (char.HumanoidRootPart.Position - position).Magnitude
+		if char then
+			local hrp = char:FindFirstChild("HumanoidRootPart")
+			if not hrp then
+				continue
+			end
+
+			local dist = (hrp.Position - position).Magnitude
 			if dist <= range then
 				NetController.FireClient(player, eventName, data)
 			end

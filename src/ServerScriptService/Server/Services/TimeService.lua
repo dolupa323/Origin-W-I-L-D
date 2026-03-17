@@ -191,7 +191,10 @@ local function handleWarp(player: Player, payload: any)
 		return { success = false, errorCode = "NO_PERMISSION" }
 	end
 	
-	local seconds = payload.seconds or 0
+	local seconds = (type(payload) == "table" and payload.seconds) or 0
+	if type(seconds) ~= "number" then
+		seconds = 0
+	end
 	TimeService.warp(seconds)
 	return TimeService.getTime()
 end
@@ -203,7 +206,7 @@ local function handleWarpToPhase(player: Player, payload: any)
 		return { success = false, errorCode = "NO_PERMISSION" }
 	end
 
-	local targetPhase = payload.phase
+	local targetPhase = type(payload) == "table" and payload.phase or nil
 	if targetPhase then
 		TimeService.warpToPhase(targetPhase)
 	end

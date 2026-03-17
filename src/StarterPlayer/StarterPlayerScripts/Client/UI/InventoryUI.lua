@@ -81,7 +81,7 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	local rightHeader = Utils.mkFrame({size=UDim2.new(0.3, 0, 1, 0), pos=UDim2.new(1, -140, 0, 0), anchor=Vector2.new(1, 0), bgT=1, parent=header})
 	local hList = Instance.new("UIListLayout"); hList.FillDirection=Enum.FillDirection.Horizontal; hList.HorizontalAlignment=Enum.HorizontalAlignment.Right; hList.VerticalAlignment=Enum.VerticalAlignment.Center; hList.Padding=UDim.new(0, 15); hList.Parent=rightHeader
 	
-	InventoryUI.Refs.CurrencyText = Utils.mkLabel({text="TIS: 0", ts=18, color=C.GOLD, font=F.NUM, ax=Enum.TextXAlignment.Right, parent=rightHeader})
+	InventoryUI.Refs.CurrencyText = Utils.mkLabel({text="골드: 0", ts=18, color=C.GOLD, font=F.NUM, ax=Enum.TextXAlignment.Right, parent=rightHeader})
 	
 	-- Close Button (Fixed Text rendering)
 	Utils.mkBtn({text="X", size=UDim2.new(0, 36, 0, 36), pos=UDim2.new(1, -10, 0.5, 0), anchor=Vector2.new(1, 0.5), bg=C.BTN, bgT=0.5, ts=20, color=C.WHITE, r=4, fn=function() UIManager.closeInventory() end, parent=header})
@@ -126,24 +126,45 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 		
 		-- 핫바 배지 추가 (HOTBAR 전용 디자인)
 		if i <= 8 then
+			local vividHotbarYellow = Color3.fromRGB(255, 232, 35)
 			local badge = Utils.mkFrame({
 				name = "HotbarBadge",
-				size = UDim2.new(0, 16, 0, 16),
-				pos = UDim2.new(0, 2, 0, 2),
-				bg = C.GOLD,
+				size = UDim2.new(0, 18, 0, 18),
+				pos = UDim2.new(0, 3, 0, 3),
+				bg = vividHotbarYellow,
+				bgT = 0,
 				r = 3,
-				z = slot.frame.ZIndex + 3,
+				z = slot.frame.ZIndex + 9,
 				parent = slot.frame
 			})
+			local badgeStroke = Instance.new("UIStroke")
+			badgeStroke.Thickness = 2
+			badgeStroke.Color = Color3.fromRGB(20, 20, 20)
+			badgeStroke.Parent = badge
 			Utils.mkLabel({
 				text = tostring(i),
-				ts = 10,
+				ts = 13,
 				bold = true,
 				color = Color3.new(0,0,0),
+				z = slot.frame.ZIndex + 10,
 				parent = badge
 			})
+			local hotbarTag = Utils.mkLabel({
+				text = "HOT",
+				size = UDim2.new(0, 24, 0, 10),
+				pos = UDim2.new(1, -2, 0, 2),
+				anchor = Vector2.new(1, 0),
+				ts = 8,
+				bold = true,
+				color = vividHotbarYellow,
+				ax = Enum.TextXAlignment.Right,
+				z = slot.frame.ZIndex + 10,
+				parent = slot.frame
+			})
+			hotbarTag.TextStrokeTransparency = 0.35
+			hotbarTag.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 			local stk = slot.frame:FindFirstChildOfClass("UIStroke")
-			if stk then stk.Color = C.GOLD; stk.Thickness = 1.2 end -- 핫바 슬롯은 상시 강조
+			if stk then stk.Color = vividHotbarYellow; stk.Thickness = 1.8 end -- 핫바 슬롯은 상시 강조
 		end
 		
 		-- Hover Effect (PC Highlight)
@@ -506,6 +527,12 @@ end
 function InventoryUI.UpdateWeight(cur, max, __C)
 	if InventoryUI.Refs.WeightText then
 		InventoryUI.Refs.WeightText.Text = string.format("%d / %d", math.floor(cur), math.floor(max))
+	end
+end
+
+function InventoryUI.UpdateCurrency(amount)
+	if InventoryUI.Refs.CurrencyText then
+		InventoryUI.Refs.CurrencyText.Text = string.format("골드: %d", math.floor(tonumber(amount) or 0))
 	end
 end
 

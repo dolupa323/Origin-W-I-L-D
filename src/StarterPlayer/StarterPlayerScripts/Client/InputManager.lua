@@ -268,7 +268,13 @@ function InputManager.raycastFromMouse(filterInstances: {Instance}?, maxDistance
 	
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = filterInstances or { player.Character }
+	if filterInstances then
+		params.FilterDescendantsInstances = filterInstances
+	elseif player.Character then
+		params.FilterDescendantsInstances = { player.Character }
+	else
+		params.FilterDescendantsInstances = {}
+	end
 	
 	local result = workspace:Raycast(ray.Origin, ray.Direction * distance, params)
 	
@@ -293,7 +299,11 @@ function InputManager.getTouchWorldPosition(x: number, y: number): Vector3?
 	local ray = camera:ViewportPointToRay(x, y)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { player.Character }
+	if player.Character then
+		params.FilterDescendantsInstances = { player.Character }
+	else
+		params.FilterDescendantsInstances = {}
+	end
 	
 	local result = workspace:Raycast(ray.Origin, ray.Direction * 1000, params)
 	return result and result.Position or (ray.Origin + ray.Direction * 10)

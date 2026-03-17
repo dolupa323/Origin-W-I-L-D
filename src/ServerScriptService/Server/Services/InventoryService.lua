@@ -6,6 +6,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
+local RunService = game:GetService("RunService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Balance = require(Shared.Config.Balance)
@@ -35,6 +36,23 @@ local PlayerStatService = nil
 local EquipService = nil
 -- 튜토리얼/퀘스트용 아이템 획득 콜백
 local questItemCallback = nil
+
+local DEBUG_ITEM_GRANT_ADMIN_IDS = {
+	[10311679477] = true,
+}
+
+local function _canUseDebugGrant(player: Player): boolean
+	if not RunService:IsStudio() then
+		return false
+	end
+	if DEBUG_ITEM_GRANT_ADMIN_IDS[player.UserId] then
+		return true
+	end
+	if player.UserId == game.CreatorId then
+		return true
+	end
+	return false
+end
 
 local function _getDefaultEquipment()
 	return {
@@ -453,6 +471,7 @@ function InventoryService.getOrCreateInventory(userId: number): any
 	-- SaveService에서 로드 시도
 	local savedInv = nil
 	local savedEquip = nil
+	local loadedState = nil
 	
 	-- [Race Condition FIX] 클라이언트의 Get Request가 ServerInit 주입(Init)보다 먼저 도달한 경우 동적 할당
 	if not SaveService then
@@ -466,19 +485,10 @@ function InventoryService.getOrCreateInventory(userId: number): any
 
 	if SaveService then
 		local state = SaveService.getPlayerState(userId)
-		local lastLoadErr = nil
 		if not state then
-			-- SaveService의 초기 로드가 일시 실패했을 수 있으므로 폴링 중 재시도
+			-- SaveService가 이미 PlayerAdded 루프에서 로드를 수행하므로, 여기서는 중복 요청 없이 상태 반영만 대기한다.
 			local deadline = os.clock() + 45
-			local nextRetryAt = 0
 			while not state and os.clock() < deadline do
-				if os.clock() >= nextRetryAt then
-					local ok, err = SaveService.loadPlayer(userId)
-					if not ok then
-						lastLoadErr = err
-					end
-					nextRetryAt = os.clock() + 2
-				end
 				task.wait(0.15)
 				state = SaveService.getPlayerState(userId)
 				if not game.Players:GetPlayerByUserId(userId) then break end
@@ -486,6 +496,7 @@ function InventoryService.getOrCreateInventory(userId: number): any
 		end
 
 		if state then
+			loadedState = state
 			if state.inventory then savedInv = state.inventory end
 			if state.equipment then savedEquip = state.equipment end
 		else
@@ -493,11 +504,7 @@ function InventoryService.getOrCreateInventory(userId: number): any
 			warn(string.format("[InventoryService] Timed out waiting for player state %d! Kicking to prevent wipe.", userId))
 			local plr = game.Players:GetPlayerByUserId(userId)
 			if plr then
-				if lastLoadErr == "SESSION_LOCKED" then
-					plr:Kick("이전 접속 세션이 아직 정리되지 않았습니다. 잠시 후 재접속해 주세요.")
-				else
-					plr:Kick("데이터 로드 시간이 초과되었습니다. 재접속해 주세요.")
-				end
+				plr:Kick("데이터 로드 시간이 초과되었습니다. 재접속해 주세요.")
 			end
 			return nil -- 중단
 		end
@@ -538,6 +545,27 @@ function InventoryService.getOrCreateInventory(userId: number): any
 				end
 			end
 		end
+	end
+
+	-- [Defensive Fix] 튜토리얼 초반(1단계)인데 BRANCH가 비정상 최대스택으로 로드되면 1개로 보정
+	-- 정상 진행 중 대량 보유 유저를 건드리지 않기 위해 "초반 + 미완료" 상태에서만 적용
+	local sanitizedBranch = false
+	if loadedState and type(loadedState.tutorialQuest) == "table" then
+		local tq = loadedState.tutorialQuest
+		local isEarlyTutorial = (tq.completed ~= true) and ((tonumber(tq.stepIndex) or 1) <= 1)
+		if isEarlyTutorial then
+			for slot, node in pairs(normalizedSlots) do
+				if type(node) == "table" and node.itemId == "BRANCH" and (tonumber(node.count) or 0) >= Balance.MAX_STACK then
+					normalizedSlots[slot].count = 1
+					sanitizedBranch = true
+					print(string.format("[InventoryService] Sanitized BRANCH stack for user %d at slot %s", userId, tostring(slot)))
+				end
+			end
+		end
+	end
+
+	if sanitizedBranch and loadedState then
+		loadedState.inventory = normalizedSlots
 	end
 
 	-- 새 인벤토리 객체 생성
@@ -1530,8 +1558,25 @@ end
 
 --- 디버그: 아이템 지급
 local function handleGiveItem(player: Player, payload: any)
-	local itemId = payload.itemId or "STONE"
-	local count = payload.count or 30
+	if not _canUseDebugGrant(player) then
+		return {
+			success = false,
+			errorCode = Enums.ErrorCode.NO_PERMISSION,
+		}
+	end
+
+	local body = type(payload) == "table" and payload or {}
+	local itemId = type(body.itemId) == "string" and body.itemId or "STONE"
+	local count = tonumber(body.count) or 30
+	count = math.floor(count)
+	count = math.clamp(count, 1, Balance.MAX_STACK)
+
+	if DataService and not DataService.getItem(itemId) then
+		return {
+			success = false,
+			errorCode = Enums.ErrorCode.NOT_FOUND,
+		}
+	end
 	
 	local userId = player.UserId
 	local added, remaining = InventoryService.addItem(userId, itemId, count)
@@ -1576,10 +1621,6 @@ local function onPlayerAdded(player: Player)
 		end)
 	end)
 	
-	-- 디버그: 기본 아이템 지급 (Studio에서만)
-	if game:GetService("RunService"):IsStudio() then
-		InventoryService.addItem(userId, "SMALL_STONE", 30)
-	end
 end
 
 -- onPlayerRemoving moved to SaveService to prevent Race Condition
@@ -1615,7 +1656,7 @@ function InventoryService.Init(netController, dataService, saveService, playerSt
 end
 
 function InventoryService.GetHandlers()
-	return {
+	local handlers = {
 		["Inventory.Move.Request"] = handleMove,
 		["Inventory.Split.Request"] = handleSplit,
 		["Inventory.Drop.Request"] = handleDrop,
@@ -1634,8 +1675,13 @@ function InventoryService.GetHandlers()
 			InventoryService.sort(player.UserId)
 			return { success = true }
 		end,
-		["Inventory.GiveItem"] = handleGiveItem,
 	}
+
+	if RunService:IsStudio() then
+		handlers["Inventory.GiveItem"] = handleGiveItem
+	end
+
+	return handlers
 end
 
 function InventoryService.SetQuestItemCallback(callback)

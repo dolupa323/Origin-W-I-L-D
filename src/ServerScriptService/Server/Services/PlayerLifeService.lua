@@ -21,29 +21,104 @@ local DEFAULT_RESPAWN_POS = Vector3.new(0, 50, 0) -- 기본 리스폰 위치
 local RESPAWN_DELAY = 5 -- 리스폰까지 대기 시간(초)
 
 -- Player State
-local playerDeathState = {} -- [userId] = { isDead, deathTime, respawnPoint }
+local playerDeathState = {} -- [userId] = { isDead, deathTime, respawnPoint, respawnPart }
+local playerRespawnPreference = {} -- [userId] = { structureId = string }
 
 --========================================
 -- Internal Helpers
 --========================================
 
+local function toVector3(pos): Vector3?
+	if typeof(pos) == "Vector3" then
+		return pos
+	end
+	if type(pos) == "table" then
+		return Vector3.new(pos.X or pos.x or 0, pos.Y or pos.y or 0, pos.Z or pos.z or 0)
+	end
+	return nil
+end
+
+local function loadRespawnPreferenceFromSave(userId: number)
+	local ok, SaveService = pcall(function()
+		return require(game:GetService("ServerScriptService").Server.Services.SaveService)
+	end)
+	if not ok or not SaveService or not SaveService.getPlayerState then
+		return
+	end
+
+	for _ = 1, 10 do
+		local state = SaveService.getPlayerState(userId)
+		if state then
+			if state.respawnStructureId then
+				playerRespawnPreference[userId] = { structureId = state.respawnStructureId }
+			end
+			return
+		end
+		task.wait(0.5)
+	end
+end
+
 --- 침대/침낭 리스폰 위치 찾기
 local function findBedRespawnPoint(userId: number): Vector3?
-	-- BuildService에서 해당 플레이어가 소유한 RESPAWN 타입 구조물을 검색
-	if not BuildService then return nil end
-	
-	-- BuildService.getPlayerStructures 가 있다면 사용
-	-- 없으면 nil 반환 (기본 리스폰)
-	-- 추후 BuildService에 getPlayerStructuresByType(userId, "RESPAWN") 추가 필요
-	
-	return nil -- Phase 4-2: 침대 건설 시스템 추후 구현
+	if not BuildService or not DataService then
+		return nil
+	end
+
+	local function isRespawnFacility(facilityId: string?): boolean
+		if not facilityId then
+			return false
+		end
+		local facilityData = DataService.getFacility(facilityId)
+		return facilityData and facilityData.functionType == "RESPAWN" or false
+	end
+
+	local preferred = playerRespawnPreference[userId]
+	if preferred and preferred.structureId and BuildService.get then
+		local struct = BuildService.get(preferred.structureId)
+		if struct and struct.ownerId == userId and isRespawnFacility(struct.facilityId) then
+			return toVector3(struct.position)
+		end
+	end
+
+	-- 구조물 매칭 실패 시, 마지막 수면 좌표(lastPosition)를 우선 리스폰 기준점으로 사용.
+	do
+		local ok, SaveService = pcall(function()
+			return require(game:GetService("ServerScriptService").Server.Services.SaveService)
+		end)
+		if ok and SaveService and SaveService.getPlayerState then
+			local state = SaveService.getPlayerState(userId)
+			if state and state.lastPosition then
+				local pos = toVector3(state.lastPosition)
+				if pos then
+					return pos
+				end
+			end
+		end
+	end
+
+	if BuildService.getStructuresByOwner then
+		local owned = BuildService.getStructuresByOwner(userId)
+		local latest = nil
+		for _, struct in ipairs(owned) do
+			if isRespawnFacility(struct.facilityId) then
+				if (not latest) or ((struct.placedAt or 0) > (latest.placedAt or 0)) then
+					latest = struct
+				end
+			end
+		end
+		if latest then
+			return toVector3(latest.position)
+		end
+	end
+
+	return nil
 end
 
 --- 인벤토리 아이템 랜덤 손실 처리
 local function applyItemLoss(userId: number)
 	local inv = InventoryService.getOrCreateInventory(userId)
 	if not inv then return end
-	
+
 	-- [UX 개선] 1~8번 슬롯(단축키)은 보호하고 9번 이후(가방)만 손실 대상으로 분류
 	local lossCandidateSlots = {}
 	for slot, slotData in pairs(inv.slots) do
@@ -55,20 +130,19 @@ local function applyItemLoss(userId: number)
 			})
 		end
 	end
-	
+
 	if #lossCandidateSlots == 0 then return end
-	
+
 	-- 손실 아이템 수 계산 (가방 아이템의 최대 30%)
 	local lossCount = math.max(1, math.floor(#lossCandidateSlots * ITEM_LOSS_PERCENT))
 	lossCount = math.min(lossCount, #lossCandidateSlots)
-	
+
 	-- 랜덤 셔플
 	for i = #lossCandidateSlots, 2, -1 do
 		local j = math.random(1, i)
 		lossCandidateSlots[i], lossCandidateSlots[j] = lossCandidateSlots[j], lossCandidateSlots[i]
 	end
-	
-	-- [FIX] removeItem 대신 removeItemFromSlot을 사용하여 정확한 슬롯 제거
+
 	for i = 1, lossCount do
 		local info = lossCandidateSlots[i]
 		if info then
@@ -88,9 +162,10 @@ function PlayerLifeService.Init(_NetController, _DataService, _InventoryService,
 	DataService = _DataService
 	InventoryService = _InventoryService
 	BuildService = _BuildService
-	
-	-- Humanoid.Died 이벤트 연결
+
 	Players.PlayerAdded:Connect(function(player)
+		task.spawn(loadRespawnPreferenceFromSave, player.UserId)
+
 		player.CharacterAdded:Connect(function(character)
 			local humanoid = character:WaitForChild("Humanoid")
 			humanoid.Died:Connect(function()
@@ -98,49 +173,54 @@ function PlayerLifeService.Init(_NetController, _DataService, _InventoryService,
 			end)
 		end)
 	end)
-	
-	-- 로그아웃 시 정리
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		task.spawn(loadRespawnPreferenceFromSave, player.UserId)
+		if player.Character then
+			local humanoid = player.Character:FindFirstChild("Humanoid")
+			if humanoid then
+				humanoid.Died:Connect(function()
+					PlayerLifeService._onPlayerDied(player)
+				end)
+			end
+		end
+	end
+
 	Players.PlayerRemoving:Connect(function(player)
 		playerDeathState[player.UserId] = nil
+		playerRespawnPreference[player.UserId] = nil
 	end)
-	
+
 	print("[PlayerLifeService] Initialized")
 end
 
 --- 플레이어 사망 처리
 function PlayerLifeService._onPlayerDied(player: Player)
 	local userId = player.UserId
-	
-	-- 중복 방지
+
 	if playerDeathState[userId] and playerDeathState[userId].isDead then
 		return
 	end
-	
+
 	print(string.format("[PlayerLifeService] Player %s (%d) died!", player.Name, userId))
-	
-	-- 1. 아이템 손실 적용
+
 	applyItemLoss(userId)
-	
-	-- 2. 사망 상태 기록
-	-- 리스폰 포인트 (침대 파트 또는 기본 위치)
+
 	local respawnTarget = findBedRespawnPoint(userId)
-	
 	playerDeathState[userId] = {
 		isDead = true,
 		deathTime = os.time(),
-		respawnPoint = respawnTarget or DEFAULT_RESPAWN_POS, -- Vector3 fallback
-		respawnPart = (typeof(respawnTarget) == "Instance") and respawnTarget or nil
+		respawnPoint = respawnTarget or DEFAULT_RESPAWN_POS,
+		respawnPart = (typeof(respawnTarget) == "Instance") and respawnTarget or nil,
 	}
-	
-	-- 3. 클라이언트에 사망 알림 (UI 표시용)
+
 	if NetController then
 		NetController.FireClient(player, "Player.Died", {
 			respawnDelay = RESPAWN_DELAY,
 			respawnPoint = (typeof(respawnTarget) == "Instance") and respawnTarget.Position or (respawnTarget or DEFAULT_RESPAWN_POS),
 		})
 	end
-	
-	-- 4. 일정 시간 후 리스폰
+
 	task.delay(RESPAWN_DELAY, function()
 		if player.Parent then
 			PlayerLifeService._respawnPlayer(player)
@@ -152,63 +232,68 @@ end
 function PlayerLifeService._respawnPlayer(player: Player)
 	local userId = player.UserId
 	local state = playerDeathState[userId]
-	
 	if not state then return end
-	
-	-- [FIX] RespawnLocation 설정을 통해 엔진 레벨의 안전한 스폰 보장
+
 	if state.respawnPart and state.respawnPart:IsA("SpawnLocation") then
 		player.RespawnLocation = state.respawnPart
 	else
-		-- 침대가 없거나 SpawnLocation이 아닌 경우 기본 스폰 포인트 초기화
 		player.RespawnLocation = nil
 	end
-	
-	-- 캐릭터 다시 로드
+
 	player:LoadCharacter()
-	
-	-- 만약 RespawnLocation으로 해결 안되는 좌표 기반 스폰인 경우 (Vector3)
+
 	if not player.RespawnLocation then
 		local respawnPoint = state.respawnPoint
 		task.spawn(function()
 			local character = player.Character or player.CharacterAdded:Wait()
-			-- HumanoidRootPart가 완전히 로드되고 물리 연산이 준비될 때까지 대기
 			local hrp = character:WaitForChild("HumanoidRootPart", 5)
-			
 			if hrp then
-				-- 한 프레임 대기하여 엔진이 캐릭터 배치를 완료하도록 함 (무한 추락 방지)
-				game:GetService("RunService").Stepped:Wait() 
+				game:GetService("RunService").Stepped:Wait()
 				character:PivotTo(CFrame.new(respawnPoint + Vector3.new(0, 3, 0)))
 			end
 		end)
 	end
-	
-	-- 사망 상태 초기화
+
 	playerDeathState[userId] = nil
-	
-	-- 클라이언트에 리스폰 알림
+
 	if NetController then
 		NetController.FireClient(player, "Player.Respawned", {
 			position = (state.respawnPart and state.respawnPart.Position) or state.respawnPoint,
 		})
 	end
-	
+
 	print(string.format("[PlayerLifeService] Player %s respawned", player.Name))
 end
 
---- 사망 여부 확인
 function PlayerLifeService.isDead(userId: number): boolean
 	local state = playerDeathState[userId]
 	return state ~= nil and state.isDead == true
 end
 
---========================================
--- Network Handlers
---========================================
+function PlayerLifeService.setPreferredRespawn(userId: number, structureId: string)
+	if not userId or not structureId or structureId == "" then
+		return false
+	end
+
+	playerRespawnPreference[userId] = {
+		structureId = structureId,
+	}
+
+	local ok, SaveService = pcall(function()
+		return require(game:GetService("ServerScriptService").Server.Services.SaveService)
+	end)
+	if ok and SaveService and SaveService.updatePlayerState then
+		SaveService.updatePlayerState(userId, function(state)
+			state.respawnStructureId = structureId
+			return state
+		end)
+	end
+
+	return true
+end
 
 function PlayerLifeService.GetHandlers()
-	return {
-		-- 추후: 수동 리스폰 버튼, 침대 선택 등
-	}
+	return {}
 end
 
 return PlayerLifeService

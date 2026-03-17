@@ -7,9 +7,9 @@ local Balance = {}
 --========================================
 -- 시간 시스템
 --========================================
-Balance.DAY_LENGTH = 2400          -- 하루 총 길이 (초 단위 게임 시간)
-Balance.DAY_DURATION = 1800        -- 낮 지속 시간 (초)
-Balance.NIGHT_DURATION = 600       -- 밤 지속 시간 (초)
+Balance.DAY_LENGTH = 960           -- 하루 총 길이 (단축)
+Balance.DAY_DURATION = 640         -- 낮 지속 시간 (단축)
+Balance.NIGHT_DURATION = 320       -- 밤 지속 시간 (단축)
 
 --========================================
 -- 인벤토리
@@ -70,6 +70,11 @@ Balance.BUILD_STRUCTURE_CAP = 500    -- 서버 전체 구조물 최대 수
 Balance.BUILD_RANGE = 20             -- 플레이어 건축 가능 거리 (스터드)
 Balance.BUILD_MIN_GROUND_DIST = 0.5  -- 지면 최소 거리 (스터드)
 Balance.BUILD_COLLISION_RADIUS = 2   -- 기본 충돌 체크 반경 (스터드)
+Balance.BUILD_PLACEMENT_PROFILE = "STRICT_FIELD" -- DEFAULT | STRICT_FIELD
+Balance.BUILD_MAX_GROUND_SLOPE_DEG = 42      -- 일반 공간의 허용 경사
+Balance.BUILD_STRICT_MAX_GROUND_SLOPE_DEG = 12 -- 엄격 모드 허용 경사
+Balance.BUILD_MAX_GROUND_GAP = 3.5           -- 일반 공간 지면 오차 허용
+Balance.BUILD_STRICT_MAX_GROUND_GAP = 1.2    -- 엄격 모드 지면 오차 허용
 
 --========================================
 -- 제작 (Craft)
@@ -134,9 +139,12 @@ Balance.STAMINA_REGEN = 25             -- 초당 스태미나 회복량 (상향:
 Balance.STAMINA_REGEN_DELAY = 0.8      -- 회복 시작 딜레이 (단축: 1.5 -> 0.8)
 
 -- 스프린트 (빠르게 달리기)
-Balance.SPRINT_SPEED_MULT = 2.0        -- 스프린트 속도 배율
-Balance.SPRINT_STAMINA_COST = 12       -- 초당 스태미나 소모 (완화: 20 -> 12)
+Balance.SPRINT_SPEED_MULT = 1.25       -- 스프린트 속도 배율 (소폭 상향)
+Balance.SPRINT_STAMINA_COST = 18       -- 초당 스태미나 소모 (강화: 12 -> 18)
 Balance.SPRINT_MIN_STAMINA = 5         -- 스프린트 시작 최소 스태미나 (10 -> 5)
+Balance.AUTO_SPRINT_HOLD_TIME = 1.6    -- 자동 달리기 전환까지 직진 유지 시간(초)
+Balance.AUTO_SPRINT_DIRECTION_DOT = 0.94 -- 직진 판정 민감도(1에 가까울수록 엄격)
+Balance.AUTO_SPRINT_MIN_MOVE = 0.25    -- 자동 달리기 판정을 시작할 최소 이동 입력 크기
 
 -- 구르기 (회피)
 Balance.DODGE_STAMINA_COST = 25        -- 구르기 1회 스태미나 소모
@@ -168,6 +176,12 @@ Balance.HUNGER_SPRINT_COST = 0.15      -- 달리기 시 초당 배고픔 추가 
 Balance.HUNGER_DODGE_COST = 0.5        -- 구르기 1회당 배고픔 소모량 (2.0 -> 0.5 완화)
 Balance.HUNGER_HARVEST_COST = 0.2      -- 채집 1회당 배고픔 소모량 (1.0 -> 0.2 완화)
 Balance.HUNGER_COMBAT_COST = 0.2       -- 공격 1회당 배고픔 소모량 (1.0 -> 0.2 완화)
+
+-- 수면(간이천막) 연출/제한
+Balance.SLEEP_COOLDOWN = 20            -- 연속 수면 방지 쿨다운(초)
+Balance.SLEEP_FADE_OUT_TIME = 0.8      -- 수면 페이드아웃 시간(초)
+Balance.SLEEP_BLACK_HOLD_TIME = 0.5    -- 암전 유지 시간(초)
+Balance.SLEEP_FADE_IN_TIME = 1.0       -- 기상 페이드인 시간(초)
 
 
 -- 채집 홀드 시스템 (E키 꿉 누르기)

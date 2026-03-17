@@ -119,6 +119,13 @@ if success then
 			InteractController.onFacilityInteractPress()
 		end
 	end)
+
+	-- T = 건물 해체
+	InputManager.bindKey(Enum.KeyCode.T, "InteractFacilityRemoveT", function()
+		if InteractController.onFacilityRemovePress then
+			InteractController.onFacilityRemovePress()
+		end
+	end)
 	
 	InputManager.bindKey(Enum.KeyCode.Escape, "CloseUI", function()
 		UIManager.closeInventory()

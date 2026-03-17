@@ -140,6 +140,9 @@ local KO_TO_EN = {
 	["[Z] 상호작용"] = "[Z] Interact",
 	["[Z] 상호"] = "[Z] Interact",
 	["[R] 사용"] = "[R] Use",
+	["[T] 해체"] = "[T] Dismantle",
+	["이안"] = "Ian",
+	["선배 무전"] = "Senior Radio",
 	["생명력 (Health)"] = "Health",
 	["기력 (Stamina)"] = "Stamina",
 	["허기 (Hunger)"] = "Hunger",
@@ -166,6 +169,53 @@ local KO_TO_EN = {
 	["공격력"] = "Attack",
 	["방어력"] = "Defense",
 	["완료"] = "Complete",
+	["진행중"] = "In Progress",
+	["튜토리얼 퀘스트"] = "Tutorial Quest",
+	["튜토리얼 완료"] = "Tutorial Complete",
+	["보상이 지급되었습니다"] = "Rewards have been granted",
+	["획득:"] = "Obtained:",
+	["완료 보상:"] = "Completion Reward:",
+	["목표:"] = "Objective:",
+	["다음 튜토리얼 목표 진행 중"] = "Proceeding to the next tutorial objective",
+	["박스를 클릭해 완료"] = "Click the panel to complete",
+	["R 또는 클릭으로 다음"] = "Press R or click to continue",
+	["[R] 무전 수신"] = "[R] Radio Incoming",
+	["비상 무전기"] = "Emergency Radio",
+
+	-- Tutorial step text/command/tip
+	["잔돌 1개, 나뭇가지 1개부터 챙기기"] = "Gather 1 Small Stone and 1 Branch first",
+	["주변에서 SMALL_STONE 1개 + BRANCH 1개 줍기"] = "Pick up 1 Small Stone + 1 Branch nearby",
+	["쓸만한 게 보이면 일단 주워라. 너무 멀리 가지 말고 주변부터 훑어."] = "Pick up anything useful first. Do not go too far; search nearby.",
+	["조잡한 돌도끼 제작"] = "Craft a Crude Stone Axe",
+	["인벤토리 제작 탭에서 CRAFT_CRUDE_STONE_AXE 제작"] = "Craft CRAFT_CRUDE_STONE_AXE in the Inventory Craft tab",
+	["가방을 열어서 도구를 제작해. 부족한 재료는 주변에서 마저 챙기고."] = "Open your bag and craft the tool. Gather any missing materials nearby.",
+	["나무 자원 확보"] = "Secure wood resources",
+	["WOOD 또는 LOG 1개 이상 확보"] = "Obtain at least 1 WOOD or LOG",
+	["너무 굵은 나무에 욕심내지 말고, 만만한 걸로 하나만 먼저 챙겨."] = "Do not go for large trees yet; get an easy one first.",
+	["식량 확보를 위한 사냥"] = "Hunt for food",
+	["DODO 1마리 처치"] = "Kill 1 DODO",
+	["한두 번 치고 거리를 벌려. 무식하게 맞서 싸우지 말고 치고 빠지라고."] = "Hit once or twice and back off. Do not trade blows; strike and retreat.",
+	["밤 대비 온기 거점 만들기"] = "Build a warm base for night",
+	["CAMPFIRE 1개 설치"] = "Place 1 CAMPFIRE",
+	["평평하고 시야가 트인 곳에 설치해. 나중에 도망칠 때 길 막히지 않게 조심하고."] = "Place it on flat open ground so your escape path stays clear.",
+	["고기 1개 조리"] = "Cook 1 meat",
+	["CRAFT_COOKED_MEAT 제작"] = "Craft CRAFT_COOKED_MEAT",
+	["불이 꺼지지 않게 장작 잘 확인하고. 든든하게 먹어둬."] = "Keep the fire going with fuel. Eat well before moving on.",
+	["거점 중심점 확보"] = "Secure your base anchor point",
+	["CAMP_TOTEM 1개 설치"] = "Place 1 CAMP_TOTEM",
+	["앞으로 돌아다니기 편하도록 중간 지점에 세우는 게 좋을 거다."] = "Place it near a central route for easier movement later.",
+	["수면/복귀 지점 확보"] = "Secure sleep/respawn point",
+	["LEAN_TO 1개 설치"] = "Place 1 LEAN_TO",
+	["모닥불 온기가 닿도록 너무 멀지 않게 세우고, 길은 막지 마라."] = "Place it close enough to the campfire warmth and do not block paths.",
+
+	-- Radio/tutorial dialogue lines
+	["좋아, 그 정도면 됐다."] = "Good. That is enough.",
+	["좋아, 재료는 모았군."] = "Good, you gathered the materials.",
+	["좋아, 장작이든 통나무든 하나만 먼저 가져와."] = "Good. Bring either firewood or a log first.",
+	["좋아, 잡았군. 바로 불 피울 준비 해."] = "Good, you got it. Get ready to light a fire.",
+	["좋아, 불 붙었다. 이제 고기 굽자."] = "Good, the fire is lit. Now cook meat.",
+	["좋아, 거점 잡혔다. 마지막으로 잠자리 만든다."] = "Good, your base is set. Build your shelter last.",
+	["끝났다. 이제부터가 진짜 생존의 시작이다."] = "Done. Now the real survival begins.",
 	["제작"] = "Crafting",
 	["선택한 대상을 제작합니다."] = "Craft the selected target.",
 	["<font color=\"#E63232\">✗ 기술 트리에서 해금 필요</font>"] = "<font color=\"#E63232\">✗ Unlock required in Tech Tree</font>",
@@ -201,6 +251,9 @@ local EN_TO_KO_OVERRIDES = {
 	["Weight"] = "무게",
 	["Amount"] = "수량",
 	["[R] Use"] = "[R] 사용",
+	["[T] Dismantle"] = "[T] 해체",
+	["Ian"] = "이안",
+	["Senior Radio"] = "선배 무전",
 	["Blueprint Details"] = "설계도 상세",
 	["No research bonus info.\n(Coming soon)"] = "연구 보너스 정보가 없습니다.\n(추후 업데이트 예정)",
 	["[Equipment bonus disabled]\nFeature in preparation."] = "[장착 보너스 비활성]\n준비 중인 기능입니다.",
@@ -264,6 +317,10 @@ local function localizePatternsToEnglish(text: string): string
 	text = string.gsub(text, "^제작이 취소되었습니다%.?$", "Crafting was cancelled.")
 	text = string.gsub(text, "^제작 중 %((%d+)s%)$", "Crafting (%1s)")
 	text = string.gsub(text, "^제작 중 %((%d+)초%)$", "Crafting (%1s)")
+	text = string.gsub(text, "^튜토리얼 퀘스트 %((%d+)%/(%d+)%)$", "Tutorial Quest (%1/%2)")
+	text = string.gsub(text, "^진행도:%s*(%d+)%s*/%s*(%d+)$", "Progress: %1 / %2")
+	text = string.gsub(text, "^단계:%s*(%d+)%s*/%s*(%d+)$", "Step: %1 / %2")
+	text = string.gsub(text, "^목표:%s*(.+)$", "Objective: %1")
 	return text
 end
 
@@ -317,6 +374,10 @@ local function localizePatternsToKorean(text: string): string
 	text = string.gsub(text, "^(.+)%sCraft complete!$", "%1 제작 완료!")
 	text = string.gsub(text, "^Crafting was cancelled%.?$", "제작이 취소되었습니다.")
 	text = string.gsub(text, "^Crafting %((%d+)s%)$", "제작 중 (%1s)")
+	text = string.gsub(text, "^Tutorial Quest %((%d+)%/(%d+)%)$", "튜토리얼 퀘스트 (%1/%2)")
+	text = string.gsub(text, "^Progress:%s*(%d+)%s*/%s*(%d+)$", "진행도: %1 / %2")
+	text = string.gsub(text, "^Step:%s*(%d+)%s*/%s*(%d+)$", "단계: %1 / %2")
+	text = string.gsub(text, "^Objective:%s*(.+)$", "목표: %1")
 	text = string.gsub(text, "^A useful item for survival and crafting%.?$", "생존과 제작에 유용한 아이템입니다.")
 	text = string.gsub(text, "^A structure used for survival and base progression%.?$", "생존과 거점 발전에 사용되는 시설입니다.")
 	text = string.gsub(text, "^A creature found on the island%.?$", "섬에서 발견되는 생물입니다.")

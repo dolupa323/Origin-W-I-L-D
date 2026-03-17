@@ -15,9 +15,9 @@ local ISLAND_CONFIGS = {
 		Creatures = {
 			-- 각 종류가 체감상 균등하게 나오도록 가중치 조정
 			-- (콤피는 무리 스폰이므로 가중치를 높여야 발견 빈도가 유사해짐)
-			{ id = "DODO", weight = 50 },
+			{ id = "DODO", weight = 90 },
 			{ id = "BABY_TRICERATOPS", weight = 50 },
-			{ id = "COMPY", weight = 120 }
+			{ id = "COMPY", weight = 80 }
 		},
 		Harvests = {
 			-- 초원섬 전용 자원 노드 구성

@@ -7,6 +7,8 @@ local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Balance = require(Shared.Config.Balance)
 
 local NetClient = require(script.Parent.Parent.NetClient)
 local InputManager = require(script.Parent.Parent.InputManager)
@@ -30,7 +32,36 @@ local isPlacing = false
 local currentFacilityId = nil
 local currentGhost = nil
 local currentRotation = 0 -- Degree
+local currentPlacementYawOffset = 0 -- Facility-specific forward-axis correction (Degree)
+local currentPlacementTiltOffset = Vector3.new(0, 0, 0) -- Facility-specific X/Z tilt correction (Degree)
+local currentPlacementGroundPosition = nil
+local currentGhostGroundOffset = 0
+local currentGhostBoundsSize = Vector3.new(4, 4, 4)
+local currentIsPlaceable = false
 local heartbeatConn = nil
+
+local MAX_PLACE_DISTANCE = 35
+local DEFAULT_MAX_GROUND_SLOPE_DEG = Balance.BUILD_MAX_GROUND_SLOPE_DEG or 42
+local STRICT_MAX_GROUND_SLOPE_DEG = Balance.BUILD_STRICT_MAX_GROUND_SLOPE_DEG or 12
+
+local function getPlacementProfile(): string
+	local attrProfile = workspace:GetAttribute("BuildPlacementProfile")
+	if type(attrProfile) == "string" and attrProfile ~= "" then
+		return string.upper(attrProfile)
+	end
+	return string.upper(Balance.BUILD_PLACEMENT_PROFILE or "DEFAULT")
+end
+
+local function isStrictFieldProfile(): boolean
+	return getPlacementProfile() == "STRICT_FIELD"
+end
+
+local function getMaxGroundSlopeDeg(): number
+	if isStrictFieldProfile() then
+		return STRICT_MAX_GROUND_SLOPE_DEG
+	end
+	return DEFAULT_MAX_GROUND_SLOPE_DEG
+end
 
 -- World Durability Bar (look-at structure)
 local lookConn = nil
@@ -51,7 +82,50 @@ local function createGhost(facilityId)
 
 	-- ReplicatedStorage/Assets/FacilityModels 에서 모델 복사 시도
 	local models = ReplicatedStorage:FindFirstChild("Assets") and ReplicatedStorage.Assets:FindFirstChild("FacilityModels")
-	local sourceModel = models and models:FindFirstChild(facilityData.modelName)
+	local sourceModel = nil
+	if models then
+		local candidates = {}
+		local function pushCandidate(name)
+			if type(name) ~= "string" or name == "" then
+				return
+			end
+			for _, existing in ipairs(candidates) do
+				if existing == name then
+					return
+				end
+			end
+			table.insert(candidates, name)
+		end
+
+		pushCandidate(facilityData.modelName)
+		pushCandidate(facilityId)
+		if type(facilityData.modelAliases) == "table" then
+			for _, alias in ipairs(facilityData.modelAliases) do
+				pushCandidate(alias)
+			end
+		end
+
+		for _, name in ipairs(candidates) do
+			sourceModel = models:FindFirstChild(name)
+			if sourceModel then
+				break
+			end
+		end
+
+		if not sourceModel then
+			local normalized = {}
+			for _, name in ipairs(candidates) do
+				normalized[name:lower():gsub("_", "")] = true
+			end
+			for _, child in ipairs(models:GetChildren()) do
+				local key = child.Name:lower():gsub("_", "")
+				if normalized[key] then
+					sourceModel = child
+					break
+				end
+			end
+		end
+	end
 	
 	local ghost
 	if sourceModel then
@@ -74,6 +148,7 @@ local function createGhost(facilityId)
 		if p:IsA("BasePart") then
 			p.Transparency = 0.5
 			p.Color = Color3.fromRGB(100, 255, 100)
+			p.Anchored = true
 			p.CanCollide = false
 			p.CanQuery = false
 			p.CanTouch = false
@@ -85,6 +160,161 @@ local function createGhost(facilityId)
 	ghost.Name = "BUILD_GHOST"
 	ghost.Parent = workspace
 	return ghost
+end
+
+local function computeGhostGroundOffset(ghost: Model): number
+	if not ghost or not ghost.PrimaryPart then
+		return 0
+	end
+
+	local minY = math.huge
+	for _, part in ipairs(ghost:GetDescendants()) do
+		if part:IsA("BasePart") then
+			local pMinY = part.Position.Y - (part.Size.Y * 0.5)
+			if pMinY < minY then
+				minY = pMinY
+			end
+		end
+	end
+
+	if minY == math.huge then
+		local _, fallbackBounds = ghost:GetBoundingBox()
+		return math.max(0, fallbackBounds.Y * 0.5)
+	end
+
+	local pivotY = ghost:GetPivot().Position.Y
+	return math.max(0, pivotY - minY)
+end
+
+local function computeGhostBoundsSize(ghost: Model): Vector3
+	if not ghost then
+		return Vector3.new(4, 4, 4)
+	end
+	local _, bounds = ghost:GetBoundingBox()
+	return Vector3.new(
+		math.max(bounds.X, 1),
+		math.max(bounds.Y, 1),
+		math.max(bounds.Z, 1)
+	)
+end
+
+local function resolvePlacementTiltOffset(facilityId: string, facilityData: any, ghost: Model): Vector3
+	if type(facilityData) == "table" then
+		local configured = facilityData.placementTiltOffset or facilityData.placementRotationOffset
+		if typeof(configured) == "Vector3" then
+			return Vector3.new(configured.X, 0, configured.Z)
+		elseif type(configured) == "table" then
+			local x = tonumber(configured.X or configured.x) or 0
+			local z = tonumber(configured.Z or configured.z) or 0
+			return Vector3.new(x, 0, z)
+		end
+	end
+
+	if facilityId == "LEAN_TO" and ghost then
+		local rx, _, rz = ghost:GetPivot():ToOrientation()
+		return Vector3.new(math.deg(rx), 0, math.deg(rz))
+	end
+
+	return Vector3.new(0, 0, 0)
+end
+
+local function isEmptyFieldHit(result: RaycastResult): boolean
+	if not result or not result.Instance then
+		return false
+	end
+
+	local hit = result.Instance
+	if hit == workspace.Terrain and result.Material == Enum.Material.Water then
+		return false
+	end
+
+	local disallowedMaterials = {
+		[Enum.Material.Water] = true,
+	}
+
+	if disallowedMaterials[result.Material] then
+		return false
+	end
+
+	local strict = isStrictFieldProfile()
+	if strict then
+		if hit ~= workspace.Terrain then
+			return false
+		end
+
+		local strictAllowedTerrainMaterial = {
+			[Enum.Material.Grass] = true,
+			[Enum.Material.Ground] = true,
+			[Enum.Material.LeafyGrass] = true,
+			[Enum.Material.Mud] = true,
+		}
+		if not strictAllowedTerrainMaterial[result.Material] then
+			return false
+		end
+	end
+
+	if result.Material == Enum.Material.Water then
+		return false
+	end
+
+	local facilitiesFolder = workspace:FindFirstChild("Facilities")
+	if facilitiesFolder and hit:IsDescendantOf(facilitiesFolder) then
+		return false
+	end
+	local nodesFolder = workspace:FindFirstChild("ResourceNodes")
+	if nodesFolder and hit:IsDescendantOf(nodesFolder) then
+		return false
+	end
+	local npcsFolder = workspace:FindFirstChild("NPCs")
+	if npcsFolder and hit:IsDescendantOf(npcsFolder) then
+		return false
+	end
+	local creaturesFolder = workspace:FindFirstChild("Creatures")
+	if creaturesFolder and hit:IsDescendantOf(creaturesFolder) then
+		return false
+	end
+	local charactersFolder = workspace:FindFirstChild("Characters")
+	if charactersFolder and hit:IsDescendantOf(charactersFolder) then
+		return false
+	end
+
+	local model = hit:FindFirstAncestorWhichIsA("Model")
+	if model and (model:GetAttribute("NodeId") or model:GetAttribute("StructureId") or model:GetAttribute("NPCId")) then
+		return false
+	end
+
+	return true
+end
+
+local function isBlockedByWorld(finalCF: CFrame, surfaceInstance: Instance?): boolean
+	if not currentGhost then
+		return true
+	end
+
+	local overlap = OverlapParams.new()
+	overlap.FilterType = Enum.RaycastFilterType.Exclude
+	local excludeList = { currentGhost }
+	if player.Character then
+		table.insert(excludeList, player.Character)
+	end
+	overlap.FilterDescendantsInstances = excludeList
+
+	local querySize = currentGhostBoundsSize + Vector3.new(0.35, 0.2, 0.35)
+	local parts = workspace:GetPartBoundsInBox(finalCF, querySize, overlap)
+	for _, part in ipairs(parts) do
+		if surfaceInstance and part == surfaceInstance then
+			continue
+		end
+		if part:IsDescendantOf(currentGhost) then
+			continue
+		end
+		if part.Transparency >= 1 and not part.CanCollide then
+			continue
+		end
+		return true
+	end
+
+	return false
 end
 
 local function getStructureModel(structureId: string)
@@ -289,18 +519,30 @@ function BuildController.startPlacement(facilityId: string)
 	
 	isPlacing = true
 	currentRotation = 0
+	currentPlacementYawOffset = tonumber(facilityData.placementYawOffset) or 0
+	currentPlacementTiltOffset = resolvePlacementTiltOffset(facilityId, facilityData, currentGhost)
+	currentPlacementGroundPosition = nil
+	currentGhostGroundOffset = computeGhostGroundOffset(currentGhost)
+	currentGhostBoundsSize = computeGhostBoundsSize(currentGhost)
+	currentIsPlaceable = false
 	
 	-- 매 프레임 위치 업데이트
 	heartbeatConn = RunService.Heartbeat:Connect(function()
 		if not currentGhost then return end
+		local camera = workspace.CurrentCamera
+		if not camera then return end
 		
 		-- 마우스가 가리키는 지면 찾기
 		local rayParams = RaycastParams.new()
-		rayParams.FilterDescendantsInstances = {currentGhost, player.Character}
+		local filterList = { currentGhost }
+		if player.Character then
+			table.insert(filterList, player.Character)
+		end
+		rayParams.FilterDescendantsInstances = filterList
 		rayParams.FilterType = Enum.RaycastFilterType.Exclude
 		
 		local mousePos = UserInputService:GetMouseLocation()
-		local ray = workspace.CurrentCamera:ViewportPointToRay(mousePos.X, mousePos.Y)
+		local ray = camera:ViewportPointToRay(mousePos.X, mousePos.Y)
 		local result = workspace:Raycast(ray.Origin, ray.Direction * 150, rayParams) -- 사거리 소폭 상향
 		
 		local isPlaceable = false
@@ -310,102 +552,47 @@ function BuildController.startPlacement(facilityId: string)
 			local hitPos = result.Position
 			local hitNormal = result.Normal
 			local hitPart = result.Instance
-			
-			-- 기본 위치 설정 (건축물이 아닌 지면에 설치 시)
-			local baseRotation = CFrame.Angles(0, math.rad(currentRotation), 0)
-			finalCF = CFrame.lookAt(hitPos, hitPos + baseRotation.LookVector, hitNormal)
-			
-			-- [Snapping 핵심 로직]
-			-- 1. 근처 시설물 검색
-			local facilitiesFolder = workspace:FindFirstChild("Facilities")
-			local snapFound = false
-			
-			if facilitiesFolder then
-				-- 마우스 위치 주변 구조물 검색
-				local overlap = OverlapParams.new()
-				overlap.FilterType = Enum.RaycastFilterType.Include
-				overlap.FilterDescendantsInstances = {facilitiesFolder}
-				
-				local nearby = workspace:GetPartBoundsInRadius(hitPos, 6, overlap)
-				
-				for _, part in ipairs(nearby) do
-					local structId = part:GetAttribute("StructureId") or (part.Parent and part.Parent:GetAttribute("StructureId"))
-					local fId = part:GetAttribute("FacilityId") or (part.Parent and part.Parent:GetAttribute("FacilityId"))
-					
-					if not fId then continue end
-					
-					-- 10x10x1 그리드 기준 스냅 (표준 사이즈 가정)
-					local targetCF = part.CFrame
-					local targetSize = part.Size
-					
-					-- (A) 토대 -> 토대 스냅 (옆으로 붙이기)
-					if currentFacilityId:find("FOUNDATION") and fId:find("FOUNDATION") then
-						local localPos = targetCF:PointToObjectSpace(hitPos)
-						local snappedLocalPos = Vector3.new(0, 0, 0)
-						
-						-- X축 또는 Z축 중 마우스가 더 치우친 쪽으로 스냅
-						if math.abs(localPos.X) > math.abs(localPos.Z) then
-							snappedLocalPos = Vector3.new(math.sign(localPos.X) * 10, 0, 0)
-						else
-							snappedLocalPos = Vector3.new(0, 0, math.sign(localPos.Z) * 10)
-						end
-						
-						finalCF = targetCF * CFrame.new(snappedLocalPos)
-						snapFound = true
-						break
-						
-					-- (B) 벽 -> 토대 스냅 (가장자리에 세우기)
-					elseif currentFacilityId:find("WALL") and fId:find("FOUNDATION") then
-						local localPos = targetCF:PointToObjectSpace(hitPos)
-						local snappedLocalPos = Vector3.new(0, 5, 0) -- 토대 위 5 스터드 (벽 높이 절반)
-						local wallRot = CFrame.Angles(0, 0, 0)
-						
-						if math.abs(localPos.X) > math.abs(localPos.Z) then
-							snappedLocalPos = Vector3.new(math.sign(localPos.X) * 5, 5, 0)
-							wallRot = CFrame.Angles(0, math.rad(90), 0)
-						else
-							snappedLocalPos = Vector3.new(0, 5, math.sign(localPos.Z) * 5)
-							wallRot = CFrame.Angles(0, 0, 0)
-						end
-						
-						finalCF = targetCF * CFrame.new(snappedLocalPos) * wallRot
-						snapFound = true
-						break
-						
-					-- (C) 지붕 -> 벽 스냅 (벽 위에 얹기)
-					elseif currentFacilityId:find("ROOF") and fId:find("WALL") then
-						local localPos = targetCF:PointToObjectSpace(hitPos)
-						-- 벽의 회전 방향을 알아내야 함
-						-- 벽은 높이가 10이므로 위쪽 스냅 (로컬 Y=5)
-						local snappedLocalPos = Vector3.new(0, 5, 5) -- 벽 중심에서 앞쪽으로 5
-						
-						finalCF = targetCF * CFrame.new(0, 5, 0) -- 일단 벽 위 정중앙
-						-- 마우스 방향에 따라 옆으로 확장 가능하지만 여기서는 수직 스냅만 우선
-						snapFound = true
-						break
-					end
-				end
-			end
+			currentPlacementGroundPosition = hitPos
+
+			-- 기본 위치 설정 (빈 들판만 허용, 경사면 정렬 금지)
+			local yaw = currentRotation + currentPlacementYawOffset
+			local pitch = currentPlacementTiltOffset.X
+			local roll = currentPlacementTiltOffset.Z
+			finalCF = CFrame.new(hitPos + Vector3.new(0, currentGhostGroundOffset, 0))
+				* CFrame.Angles(math.rad(pitch), math.rad(yaw), math.rad(roll))
 			
 			if currentGhost.PrimaryPart then
 				currentGhost:SetPrimaryPartCFrame(finalCF)
 			end
 			
 			-- 건설 가능 조건 체크
-			local dist = (player.Character.PrimaryPart.Position - hitPos).Magnitude
-			isPlaceable = (dist <= 35) -- 35 스터드 이내로 상향
-			
-			if not snapFound then
-				-- 스냅이 아닐 때는 경사도 체크
-				local dot = hitNormal:Dot(Vector3.new(0, 1, 0))
-				local slope = math.deg(math.acos(math.clamp(dot, -1, 1)))
-				if slope > 45 then isPlaceable = false end
+			local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				local dist = (hrp.Position - hitPos).Magnitude
+				isPlaceable = (dist <= MAX_PLACE_DISTANCE)
 			else
-				isPlaceable = true -- 스냅 지점은 경사 무시
+				isPlaceable = false
+			end
+
+			local dot = hitNormal:Dot(Vector3.new(0, 1, 0))
+			local slope = math.deg(math.acos(math.clamp(dot, -1, 1)))
+			if slope > getMaxGroundSlopeDeg() then
+				isPlaceable = false
+			end
+
+			if not isEmptyFieldHit(result) then
+				isPlaceable = false
+			end
+
+			if isPlaceable and finalCF and isBlockedByWorld(finalCF, hitPart) then
+				isPlaceable = false
 			end
 		else
 			isPlaceable = false
+			currentPlacementGroundPosition = nil
 		end
+
+		currentIsPlaceable = isPlaceable
 
 		
 		-- Ghost 색상 업데이트
@@ -418,7 +605,7 @@ function BuildController.startPlacement(facilityId: string)
 		end
 	end)
 	
-	-- 키 입력 바인딩 (R: 회전, X: 취소)
+	-- 키 입력 바인딩 (R: 회전, X/ESC/우클릭: 취소)
 	InputManager.bindKey(Enum.KeyCode.R, "BuildRotate", function()
 		currentRotation = (currentRotation + 45) % 360
 	end)
@@ -426,24 +613,27 @@ function BuildController.startPlacement(facilityId: string)
 	InputManager.bindKey(Enum.KeyCode.X, "BuildCancel", function()
 		BuildController.cancelPlacement()
 	end)
+
+	InputManager.bindKey(Enum.KeyCode.Escape, "BuildCancelEsc", function()
+		BuildController.cancelPlacement()
+	end)
+
+	InputManager.onRightClick("BuildCancel", function()
+		BuildController.cancelPlacement()
+	end)
 	
 	-- 좌클릭: 배치 확정
 	InputManager.onLeftClick("BuildPlace", function()
 		if isPlacing and currentGhost then
-			-- Ghost 색상이 빨간색이면(불가) 무시
-			local isRed = false
-			local pPart = currentGhost.PrimaryPart
-			if pPart and pPart.Color.R > pPart.Color.G then isRed = true end
-			
-			if isRed then
+			if not currentIsPlaceable then
 				local UIManager = require(script.Parent.Parent.UIManager)
 				UIManager.notify("이 위치에는 건설할 수 없습니다.", Color3.fromRGB(255, 100, 100))
 				return
 			end
 			
-			local pos = currentGhost.PrimaryPart.Position
+			local pos = currentPlacementGroundPosition or currentGhost.PrimaryPart.Position
 			-- rotation은 currentRotation 기반 또는 Ghost의 실제 rotation 전달
-			local rot = Vector3.new(0, currentRotation, 0)
+			local rot = Vector3.new(0, (currentRotation + currentPlacementYawOffset) % 360, 0)
 			BuildController.requestPlace(currentFacilityId, pos, rot)
 		end
 	end)
@@ -460,7 +650,9 @@ function BuildController.cancelPlacement()
 	
 	InputManager.unbindKey(Enum.KeyCode.R)
 	InputManager.unbindKey(Enum.KeyCode.X)
+	InputManager.unbindKey(Enum.KeyCode.Escape)
 	InputManager.unbindLeftClick("BuildPlace")
+	InputManager.unbindRightClick("BuildCancel")
 
 	-- Build 모드가 R 바인딩을 덮어쓰므로 종료 시 시설 상호작용 R 바인딩을 복구
 	InputManager.bindKey(Enum.KeyCode.R, "InteractFacilityR", function()
@@ -472,6 +664,11 @@ function BuildController.cancelPlacement()
 	
 	isPlacing = false
 	currentFacilityId = nil
+	currentPlacementYawOffset = 0
+	currentPlacementTiltOffset = Vector3.new(0, 0, 0)
+	currentPlacementGroundPosition = nil
+	currentGhostGroundOffset = 0
+	currentIsPlaceable = false
 	
     local UIManager = require(script.Parent.Parent.UIManager)
     UIManager.showBuildPrompt(false)

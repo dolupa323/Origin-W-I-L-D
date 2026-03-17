@@ -4,6 +4,10 @@
 > **현재 진행 상태**: Phase 1-4 GDD 정렬 완료 (전투 밸런스, 테크트리 개편)  
 > **게임 개요**: 로블록스 기반 공룡+생존 서바이벌 게임 (서버 권위 모델)
 
+## Developer Workflow Quick Link
+
+- 전역 작업 원칙 및 `_agent/skills` 참조 기준: [docs/DEVELOPER_WORKFLOW.md](docs/DEVELOPER_WORKFLOW.md)
+
 ---
 
 ## 1. 프로젝트 기본 정보

@@ -24,6 +24,7 @@ local creatureCount = 0
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local PathfindingService = game:GetService("PathfindingService")
+local TweenService = game:GetService("TweenService")
 
 -- AI Constants
 local SPAWN_INTERVAL = 30 -- 30초마다 스폰 시도
@@ -33,6 +34,9 @@ local MAX_SPAWN_DIST = 80
 local WANDER_RADIUS = 18
 local DESPAWN_DIST = Balance.CREATURE_DESPAWN_DIST or 300 -- 150 -> 300 (LOD가 있으므로 시야 상향)
 local CREATURE_ATTACK_COOLDOWN = 2 -- 크리처 공격 쿨다운 (초)
+local DEATH_FADE_TIME = 1.1
+local DEATH_SINK_DISTANCE = 2.5
+local LABEL_VISIBLE_DURATION = 6
 
 -- LOD (Level of Detail) 상수
 local LOD_NEAR_DIST = 60    -- 이내: 0.3s (매 턴)
@@ -460,6 +464,7 @@ function CreatureService.spawn(creatureId, position)
 	bg.StudsOffset = Vector3.new(0, (size.Y/2) + offsetY, 0)
 	bg.AlwaysOnTop = true -- 몹 몸체에 묻히지 않도록 수정
 	bg.MaxDistance = 60
+	bg.Enabled = false -- 기본 비표시: 피격 시 잠깐 노출
 	bg.Parent = rootPart
 	
 	-- 배경 (이름 + 바)
@@ -566,6 +571,8 @@ function CreatureService.spawn(creatureId, position)
 		maxTorpor = data.maxTorpor or 100,
 		currentTorpor = 0,
 		state = "IDLE",
+		labelGui = bg,
+		labelVisibleUntil = 0,
 		targetPosition = nil,
 		lastStateChange = tick(),
 		lastUpdate = tick(),
@@ -617,6 +624,53 @@ function CreatureService.removeCreature(instanceId: string)
 	end
 end
 
+local function playNaturalDeathSequence(creature)
+	if not creature or not creature.model or not creature.model.Parent then
+		return
+	end
+
+	local model = creature.model
+	local rootPart = creature.rootPart
+
+	if creature.humanoid then
+		creature.humanoid.WalkSpeed = 0
+		creature.humanoid.JumpPower = 0
+		creature.humanoid.AutoRotate = false
+		creature.humanoid.PlatformStand = true
+	end
+
+	if rootPart and rootPart.Parent then
+		rootPart.Anchored = true
+	end
+
+	for _, inst in ipairs(model:GetDescendants()) do
+		if inst:IsA("BasePart") then
+			inst.CanCollide = false
+			inst.CanTouch = false
+			inst.CanQuery = false
+			TweenService:Create(inst, TweenInfo.new(DEATH_FADE_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Transparency = 1,
+			}):Play()
+		elseif inst:IsA("Decal") or inst:IsA("Texture") then
+			TweenService:Create(inst, TweenInfo.new(DEATH_FADE_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Transparency = 1,
+			}):Play()
+		end
+	end
+
+	if rootPart and rootPart.Parent then
+		TweenService:Create(rootPart, TweenInfo.new(DEATH_FADE_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+			CFrame = rootPart.CFrame * CFrame.new(0, -DEATH_SINK_DISTANCE, 0),
+		}):Play()
+	end
+
+	task.delay(DEATH_FADE_TIME + 0.2, function()
+		if model and model.Parent then
+			model:Destroy()
+		end
+	end)
+end
+
 --- 공격 처리 (데미지 및 기절 수치 적용)
 function CreatureService.processAttack(instanceId: string, hpDamage: number, torporDamage: number, attacker: Player): (boolean, Vector3?)
 	local creature = activeCreatures[instanceId]
@@ -627,6 +681,10 @@ function CreatureService.processAttack(instanceId: string, hpDamage: number, tor
 	-- 1. 데미지 및 기절 수치 적용
 	creature.currentHealth = math.max(0, creature.currentHealth - hpDamage)
 	creature.currentTorpor = math.min(creature.maxTorpor, creature.currentTorpor + torporDamage)
+	creature.labelVisibleUntil = tick() + LABEL_VISIBLE_DURATION
+	if creature.labelGui then
+		creature.labelGui.Enabled = true
+	end
 	
 	creature.humanoid.Health = creature.currentHealth
 	
@@ -707,15 +765,7 @@ function CreatureService.processAttack(instanceId: string, hpDamage: number, tor
 			PlayerStatService.addCollectionDna(attacker.UserId, creature.creatureId, 1)
 		end
 		
-		-- 리소스 제거 연출
-		if creature.model then
-			for _, part in ipairs(creature.model:GetDescendants()) do
-				if part:IsA("BasePart") then
-					part.Transparency = 1
-					part.CanCollide = false
-				end
-			end
-		end
+		-- 즉시 제거 대신 자연스러운 사망 연출(페이드 + 하강) 적용
 		if creature.model and creature.model:FindFirstChild("HumanoidRootPart") then
 			local labels = creature.model.HumanoidRootPart:FindFirstChild("CreatureLabel")
 			if labels then labels:Destroy() end
@@ -723,10 +773,7 @@ function CreatureService.processAttack(instanceId: string, hpDamage: number, tor
 		
 		activeCreatures[instanceId] = nil 
 		creatureCount = creatureCount - 1
-		
-		task.delay(0.5, function()
-			if creature.model then creature.model:Destroy() end
-		end)
+		playNaturalDeathSequence(creature)
 		
 		return true, deathPos
 	end
@@ -1107,6 +1154,11 @@ function CreatureService._updateAILoop()
 		
 		local hrp = creature.rootPart
 		if not hrp then continue end
+
+		if creature.labelGui then
+			local untilTs = creature.labelVisibleUntil or 0
+			creature.labelGui.Enabled = untilTs > now and creature.currentHealth > 0
+		end
 		
 		-- 위에서 미리 계산된 근접 데이터 활용
 		local minDist = creature.minDist or 9999

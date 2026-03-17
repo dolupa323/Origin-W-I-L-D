@@ -4,6 +4,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local AnimationIds = require(Shared.Config.AnimationIds)
@@ -15,6 +16,7 @@ local InputManager = require(Client.InputManager)
 local DataHelper = require(ReplicatedStorage.Shared.Util.DataHelper)
 local UILocalizer = require(Client.Localization.UILocalizer)
 local BuildController = require(Client.Controllers.BuildController)
+local RadioStoryController = require(Client.Controllers.RadioStoryController)
 local WindowManager = require(Client.Utils.WindowManager)
 local UIManager = nil -- Circular dependency check (will require inside if needed)
 
@@ -33,9 +35,106 @@ local currentTargetType = nil  -- "resource", "npc", "facility", "drop"
 -- 상호작용 거리 (Balance에서 가져옴, 여유분 추가)
 local INTERACT_DISTANCE = (Balance.HARVEST_RANGE or 10) + (Balance.INTERACT_OFFSET or 4)
 local FACILITY_INTERACT_BONUS = 6
+local sleepTransitionBusy = false
+local RADIO_MODEL_NAME = "Motorola DP4800"
+local RADIO_INTERACT_DISTANCE = 14
+local REMOVE_CONFIRM_WINDOW = 2.5
+local pendingRemoveStructureId = nil
+local pendingRemoveExpireAt = 0
 
 -- UIManager 참조 (Init 후 설정)
 local UIManager = nil
+
+local function getStructureIdFromTarget(target: Instance): string?
+	if not target then
+		return nil
+	end
+	local structureId = target:GetAttribute("StructureId") or target:GetAttribute("id") or target.Name
+	if not structureId or structureId == "" then
+		return nil
+	end
+	return tostring(structureId)
+end
+
+local function clearPendingRemove()
+	pendingRemoveStructureId = nil
+	pendingRemoveExpireAt = 0
+end
+
+local function playSleepTransitionAndRequest(structureId: string)
+	if sleepTransitionBusy then
+		return
+	end
+	sleepTransitionBusy = true
+
+	local playerGui = player:FindFirstChild("PlayerGui")
+	if not playerGui then
+		sleepTransitionBusy = false
+		return
+	end
+
+	local fadeGui = playerGui:FindFirstChild("SleepFadeGui")
+	if not fadeGui then
+		fadeGui = Instance.new("ScreenGui")
+		fadeGui.Name = "SleepFadeGui"
+		fadeGui.ResetOnSpawn = false
+		fadeGui.IgnoreGuiInset = true
+		fadeGui.DisplayOrder = 9999
+		fadeGui.Parent = playerGui
+	end
+
+	local black = fadeGui:FindFirstChild("Black")
+	if not black then
+		black = Instance.new("Frame")
+		black.Name = "Black"
+		black.Size = UDim2.fromScale(1, 1)
+		black.Position = UDim2.fromScale(0, 0)
+		black.BackgroundColor3 = Color3.new(0, 0, 0)
+		black.BorderSizePixel = 0
+		black.Parent = fadeGui
+	end
+
+	black.Visible = true
+	black.BackgroundTransparency = 1
+
+	local fadeOut = TweenService:Create(
+		black,
+		TweenInfo.new(Balance.SLEEP_FADE_OUT_TIME or 0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{ BackgroundTransparency = 0 }
+	)
+	fadeOut:Play()
+	fadeOut.Completed:Wait()
+
+	task.wait(0.05)
+	local ok, data = NetClient.Request("Facility.Sleep.Request", { structureId = structureId })
+
+	task.wait(Balance.SLEEP_BLACK_HOLD_TIME or 0.5)
+
+	local fadeIn = TweenService:Create(
+		black,
+		TweenInfo.new(Balance.SLEEP_FADE_IN_TIME or 1.0, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+		{ BackgroundTransparency = 1 }
+	)
+	fadeIn:Play()
+	fadeIn.Completed:Wait()
+	black.Visible = false
+
+	if ok then
+		if UIManager then
+			UIManager.notify("간이천막에서 휴식했습니다. 상쾌한 아침입니다.")
+		end
+	else
+		if UIManager then
+			if data == "SLEEP_COOLDOWN" then
+				UIManager.notify("방금 잠에서 깼습니다. 잠시 후 다시 휴식할 수 있습니다.", Color3.fromRGB(255, 180, 120))
+			else
+				UIManager.notify("휴식을 취할 수 없습니다.", Color3.fromRGB(255, 120, 120))
+			end
+		end
+	end
+
+	sleepTransitionBusy = false
+end
 
 --========================================
 -- Interactable Detection
@@ -172,6 +271,19 @@ local function findNearbyInteractable(): (Instance?, string?)
 			closestType = currentType
 		end
 	end
+
+	-- 스토리 무전기 탐색 (워크스페이스 어디에 있든 상호작용 가능)
+	if not RadioStoryController.isCompleted() then
+		local radioModel = workspace:FindFirstChild(RADIO_MODEL_NAME, true)
+		if radioModel then
+			local radioDist = getDistToModel(radioModel, playerPos)
+			if radioDist <= math.max(INTERACT_DISTANCE, RADIO_INTERACT_DISTANCE) and radioDist < closestDist then
+				closestDist = radioDist
+				closestTarget = radioModel
+				closestType = "radio"
+			end
+		end
+	end
 	
 	return closestTarget, closestType
 end
@@ -231,9 +343,48 @@ local function interactFacility(target: Instance)
 		local StorageController = require(Client.Controllers.StorageController)
 		StorageController.openStorage(structureId)
 	elseif facilityData.functionType == "RESPAWN" then
-		-- 리스폰 위치 설정
-		print("[InteractController] Respawn point set")
-		UIManager.notify("부활 지점이 설정되었습니다.")
+		playSleepTransitionAndRequest(structureId)
+	end
+end
+
+local function removeFacility(target: Instance)
+	local structureId = getStructureIdFromTarget(target)
+	if not structureId then
+		clearPendingRemove()
+		return
+	end
+
+	local ownerId = tonumber(target:GetAttribute("OwnerId"))
+	if ownerId and ownerId ~= player.UserId then
+		clearPendingRemove()
+		if UIManager then
+			UIManager.notify("내 시설만 해체할 수 있습니다.", Color3.fromRGB(255, 120, 120))
+		end
+		return
+	end
+
+	local now = tick()
+	local isConfirmed = (pendingRemoveStructureId == structureId) and (now <= pendingRemoveExpireAt)
+	if not isConfirmed then
+		pendingRemoveStructureId = structureId
+		pendingRemoveExpireAt = now + REMOVE_CONFIRM_WINDOW
+		if UIManager then
+			UIManager.notify("해체 확인: 2.5초 내 [T]를 다시 누르세요.", Color3.fromRGB(255, 210, 120))
+		end
+		return
+	end
+
+	clearPendingRemove()
+
+	local ok, data = BuildController.requestRemove(structureId)
+	if ok then
+		if UIManager then
+			UIManager.notify("시설을 해체했습니다.", Color3.fromRGB(140, 230, 140))
+		end
+	else
+		if UIManager then
+			UIManager.notify("해체 실패: " .. tostring(data), Color3.fromRGB(255, 120, 120))
+		end
 	end
 end
 
@@ -269,8 +420,30 @@ function InteractController.onFacilityInteractPress()
 		return
 	end
 
+	if RadioStoryController.shouldConsumeInteractKey and RadioStoryController.shouldConsumeInteractKey() then
+		RadioStoryController.interact()
+		return
+	end
+
+	if currentTarget and currentTargetType == "radio" then
+		RadioStoryController.interact()
+		return
+	end
+
 	if currentTarget and currentTargetType == "facility" then
 		interactFacility(currentTarget)
+	end
+end
+
+function InteractController.onFacilityRemovePress()
+	if InputManager.isUIOpen() then
+		return
+	end
+
+	if currentTarget and currentTargetType == "facility" then
+		removeFacility(currentTarget)
+	else
+		clearPendingRemove()
 	end
 end
 
@@ -288,11 +461,15 @@ local function onUpdate()
 
 	local target, targetType = findNearbyInteractable()
 	
-	if target ~= currentTarget or targetType == "facility" then
+	if target ~= currentTarget or targetType == "facility" or targetType == "radio" then
+		if target ~= currentTarget or targetType ~= currentTargetType then
+			clearPendingRemove()
+		end
 		currentTarget = target
 		currentTargetType = targetType
 		
 		if UIManager then
+			RadioStoryController.ensureRinging()
 			if target then
 				local promptText = ""
 				local targetName = nil
@@ -314,15 +491,26 @@ local function onUpdate()
 				end
 
 				targetName = targetName or target:GetAttribute("DisplayName")
+
+				if targetType == "radio" then
+					targetName = UILocalizer.Localize("비상 무전기")
+				end
 				
 				if targetType == "resource" then
 					promptText = "" -- HP바로 대체
 				elseif targetType == "npc" then
-					promptText = "[Z] 대화"
+					promptText = UILocalizer.Localize("[Z] 대화")
 				elseif targetType == "facility" then
-					promptText = "[R] 사용"
+					local ownerId = tonumber(target:GetAttribute("OwnerId"))
+					if ownerId and ownerId == player.UserId then
+						promptText = UILocalizer.Localize("[R] 사용") .. "  " .. UILocalizer.Localize("[T] 해체")
+					else
+						promptText = UILocalizer.Localize("[R] 사용")
+					end
+				elseif targetType == "radio" then
+					promptText = UILocalizer.Localize("[R] 무전 수신")
 				else
-					promptText = "[Z] 상호작용"
+					promptText = UILocalizer.Localize("[Z] 상호작용")
 				end
 				
 				if promptText ~= "" then
@@ -351,6 +539,8 @@ function InteractController.Init()
 	task.spawn(function()
 		UIManager = require(Client.UIManager)
 	end)
+
+	RadioStoryController.Init()
 	
 	-- 주기적으로 대상 감지 업데이트 (0.1초 - 10Hz)
 	task.spawn(function()

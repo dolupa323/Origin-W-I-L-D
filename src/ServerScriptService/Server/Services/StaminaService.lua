@@ -372,6 +372,17 @@ function StaminaService.consumeStamina(userId: number, amount: number): boolean
 	return true
 end
 
+function StaminaService.restoreFull(userId: number)
+	local data = getStaminaData(userId)
+	data.current = data.max
+	data.lastUseTime = 0
+
+	local player = Players:GetPlayerByUserId(userId)
+	if player then
+		syncStaminaToClient(player)
+	end
+end
+
 function StaminaService.isInvulnerable(userId: number): boolean
 	local data = playerStamina[userId]
 	return data and data.isInvulnerable or false

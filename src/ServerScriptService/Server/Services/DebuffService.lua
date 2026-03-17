@@ -15,6 +15,7 @@ local TimeService
 local DataService
 local StaminaService
 local FacilityService
+local InventoryService
 
 -- [userId] = { [debuffId] = { startTime, duration, tickDamage, ... } }
 local activeDebuffs = {}
@@ -27,7 +28,7 @@ local DEBUFF_DEFS = {
 		id = "BLOOD_SMELL",
 		name = "피냄새",
 		description = "사냥 후 피냄새가 나서 포식자가 유인됩니다",
-		duration = 120, -- 2분
+		duration = 35, -- 짧은 유지시간으로 조정
 		tickInterval = 0, -- 틱 데미지 없음
 		tickDamage = 0,
 		-- 특수 효과: CreatureService AI에서 감지 범위 증가
@@ -83,12 +84,13 @@ end
 -- Public API
 --========================================
 
-function DebuffService.Init(_NetController, _TimeService, _DataService, _StaminaService, _FacilityService)
+function DebuffService.Init(_NetController, _TimeService, _DataService, _StaminaService, _FacilityService, _InventoryService)
 	NetController = _NetController
 	TimeService = _TimeService
 	DataService = _DataService
 	StaminaService = _StaminaService
 	FacilityService = _FacilityService
+	InventoryService = _InventoryService
 	
 	-- 디버프 틱 루프 (2초마다)
 	task.spawn(function()
@@ -101,7 +103,7 @@ function DebuffService.Init(_NetController, _TimeService, _DataService, _Stamina
 	-- 밤/낮 전환 시 추위 디버프 (Phase 4-5)
 	task.spawn(function()
 		while true do
-			task.wait(10) -- 10초마다 환경 체크
+			task.wait(2) -- 2초마다 환경 체크 (물/밤 상태를 빠르게 반영)
 			DebuffService._environmentCheck()
 		end
 	end)
@@ -192,6 +194,17 @@ function DebuffService._tickLoop()
 			activeDebuffs[userId] = nil
 			continue
 		end
+
+		local char = player.Character
+		local hum = char and char:FindFirstChild("Humanoid")
+		if hum and hum.Health <= 0 then
+			-- 사망 상태에서는 디버프를 모두 정리해 UI 잔상(아이콘 고착)을 방지한다.
+			for debuffId in pairs(debuffs) do
+				DebuffService.removeDebuff(userId, debuffId)
+			end
+			activeDebuffs[userId] = nil
+			continue
+		end
 		
 		-- 만료된 디버프를 수집 (pairs 순회 중 직접 삭제하면 정의되지 않은 동작)
 		local toRemove = {}
@@ -257,8 +270,9 @@ function DebuffService._environmentCheck()
 		local isSwimming = false
 		local hum = char:FindFirstChild("Humanoid")
 		if hum then
-			-- FloorMaterial이 Air이면서 Swimming 상태이거나, Terrain 물 안에 있는지 체크
-			if hum.FloorMaterial == Enum.Material.Air and hum:GetState() == Enum.HumanoidStateType.Swimming then
+			-- 수영 판정은 상태/바닥재질 모두 허용해 누락을 방지한다.
+			local state = hum:GetState()
+			if state == Enum.HumanoidStateType.Swimming or hum.FloorMaterial == Enum.Material.Water then
 				isSwimming = true
 			end
 		end
@@ -288,9 +302,20 @@ function DebuffService._environmentCheck()
 			end
 		end
 
+		-- 2.5 손에 든 횃불 체크 (밤 추위 완화)
+		local holdingTorch = false
+		if InventoryService and InventoryService.getActiveSlot and InventoryService.getSlot then
+			local activeSlot = InventoryService.getActiveSlot(userId)
+			if activeSlot then
+				local activeItem = InventoryService.getSlot(userId, activeSlot)
+				local activeItemId = activeItem and string.upper(tostring(activeItem.itemId or "")) or ""
+				holdingTorch = (activeItemId == "TORCH")
+			end
+		end
+
 		-- 3. 최종 상태 결정
-		local shouldBeChilly = isSwimming or (isNight and not nearFire)
-		local shouldBeWarm = nearFire and not isSwimming -- 물속에선 불 근처라도 따뜻할 수 없음 (기획 우선순위)
+		local shouldBeChilly = isSwimming or (isNight and not nearFire and not holdingTorch)
+		local shouldBeWarm = (nearFire or holdingTorch) and not isSwimming -- 물속에선 따뜻함 유지 불가
 
 		-- 적용/해제 처리
 		if shouldBeChilly then
@@ -310,7 +335,7 @@ function DebuffService._environmentCheck()
 		end
 		
 		-- 극한 추위(FREEZING)는 일단 밤+불없음 일 때만 (Phase 확장 대비)
-		if not isNight or nearFire then
+		if not isNight or nearFire or holdingTorch then
 			DebuffService.removeDebuff(userId, "FREEZING")
 		end
 	end

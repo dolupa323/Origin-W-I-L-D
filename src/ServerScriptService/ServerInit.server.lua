@@ -208,7 +208,7 @@ BuildService.SetFacilityService(FacilityService)
 
 -- DebuffService 초기화 (Phase 4-4) - CreatureService보다 먼저 초기화
 local DebuffService = require(Services.DebuffService)
-DebuffService.Init(NetController, TimeService, DataService, StaminaService, FacilityService)
+DebuffService.Init(NetController, TimeService, DataService, StaminaService, FacilityService, InventoryService)
 
 -- DebuffService 핸들러 등록
 for command, handler in pairs(DebuffService.GetHandlers()) do

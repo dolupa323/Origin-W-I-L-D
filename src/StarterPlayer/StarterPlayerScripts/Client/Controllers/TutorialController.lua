@@ -3,15 +3,27 @@
 
 local NetClient = require(script.Parent.Parent.NetClient)
 local UIManager = require(script.Parent.Parent.UIManager)
+local RadioStoryController = require(script.Parent.RadioStoryController)
+local UILocalizer = require(script.Parent.Parent.Localization.UILocalizer)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local TutorialController = {}
 
 local initialized = false
 local lastStatusSignature = nil
+local lastStatus = nil
 local STATUS_RETRY_MAX = 12
 local STATUS_RETRY_INTERVAL = 0.5
 local WARMUP_POLL_COUNT = 4
 local WARMUP_POLL_INTERVAL = 3
+local ItemData = require(ReplicatedStorage:WaitForChild("Data"):WaitForChild("ItemData"))
+local itemNameById = {}
+
+for _, item in ipairs(ItemData) do
+	if type(item) == "table" and item.id then
+		itemNameById[tostring(item.id)] = tostring(item.name or item.id)
+	end
+end
 
 local function buildProgressSignature(progress)
 	if type(progress) ~= "table" then
@@ -58,7 +70,10 @@ local function rewardSummary(reward)
 	if type(reward.items) == "table" then
 		for _, item in ipairs(reward.items) do
 			if type(item) == "table" and item.itemId and item.count then
-				table.insert(chunks, string.format("%s x%d", tostring(item.itemId), tonumber(item.count) or 1))
+				local itemId = tostring(item.itemId)
+				local fallbackName = itemNameById[itemId] or itemId
+				local itemName = UILocalizer.LocalizeDataText("ItemData", itemId, "name", fallbackName)
+				table.insert(chunks, string.format("%s x%d", itemName, tonumber(item.count) or 1))
 			end
 		end
 	end
@@ -66,6 +81,10 @@ local function rewardSummary(reward)
 		return nil
 	end
 	return table.concat(chunks, ", ")
+end
+
+local function buildDisplayStatus(status)
+	return status
 end
 
 local function showStatus(status, force, allowCompletionToast)
@@ -78,10 +97,15 @@ local function showStatus(status, force, allowCompletionToast)
 		return
 	end
 	lastStatusSignature = signature
+	lastStatus = status
 
-	UIManager.updateTutorialStatus(status)
+	RadioStoryController.syncTutorialStatus(status)
+
+	local displayStatus = buildDisplayStatus(status)
+	UIManager.updateTutorialStatus(displayStatus)
 
 	if status.completed then
+		UIManager.setTutorialVisible(false)
 		if allowCompletionToast then
 			local summary = rewardSummary(status.reward)
 			if summary then
@@ -90,9 +114,6 @@ local function showStatus(status, force, allowCompletionToast)
 				UIManager.notify("튜토리얼 완료! 이제 자유롭게 생존해보세요.")
 			end
 		end
-		task.delay(3, function()
-			UIManager.setTutorialVisible(false)
-		end)
 		return
 	end
 
@@ -101,7 +122,7 @@ local function showStatus(status, force, allowCompletionToast)
 		return
 	end
 
-	UIManager.setTutorialVisible(true)
+	UIManager.setTutorialVisible(RadioStoryController.shouldShowQuestUI(status))
 end
 
 function TutorialController.Init()
@@ -109,6 +130,14 @@ function TutorialController.Init()
 		warn("[TutorialController] Already initialized")
 		return
 	end
+
+	RadioStoryController.setClaimHandler(nil)
+
+	RadioStoryController.setQuestGateChangedHandler(function()
+		if type(lastStatus) == "table" then
+			UIManager.setTutorialVisible(RadioStoryController.shouldShowQuestUI(lastStatus))
+		end
+	end)
 
 	NetClient.On("Tutorial.Step.Updated", function(data)
 		showStatus(data, false, false)

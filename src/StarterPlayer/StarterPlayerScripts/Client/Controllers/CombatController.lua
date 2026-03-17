@@ -73,7 +73,7 @@ local function playAttackAnimation(isHit: boolean)
 	elseif toolType == "PICKAXE" then
 		animNames = { "AttackTool_Mine" }
 	elseif toolType == "SPEAR" then
-		animNames = { AnimationIds.ATTACK_SPEAR.THRUST, AnimationIds.ATTACK_SPEAR.SWING }
+		animNames = { AnimationIds.ATTACK_SPEAR.THRUST }
 	elseif toolType == "BOLA" then
 		animNames = { AnimationIds.BOLA.THROW }
 	elseif toolType == "CLUB" or toolType == "TORCH" then
@@ -139,6 +139,7 @@ end
 local function findTarget()
 	local creaturesFolder = workspace:FindFirstChild("ActiveCreatures") or workspace:FindFirstChild("Creatures")
 	local nodesFolder = workspace:FindFirstChild("ResourceNodes")
+	local facilitiesFolder = workspace:FindFirstChild("Facilities")
 
 	local function checkModel(part)
 		if not part then return nil, nil end
@@ -157,6 +158,18 @@ local function findTarget()
 				if instanceId then
 					return current, instanceId, "creature"
 				end
+
+				-- 구조물 체크
+				local structureId = current:GetAttribute("StructureId")
+				if structureId then
+					return current, structureId, "structure"
+				end
+			end
+
+			local structureIdFromPart = current:GetAttribute("StructureId")
+			if structureIdFromPart then
+				local model = current:FindFirstAncestorWhichIsA("Model")
+				return model or current, structureIdFromPart, "structure"
 			end
 			current = current.Parent
 		end
@@ -182,6 +195,7 @@ local function findTarget()
 	local filterInstances = {}
 	if creaturesFolder then table.insert(filterInstances, creaturesFolder) end
 	if nodesFolder then table.insert(filterInstances, nodesFolder) end
+	if facilitiesFolder then table.insert(filterInstances, facilitiesFolder) end
 	overlap.FilterDescendantsInstances = filterInstances
 	
 	-- 판정 반경은 리치보다 넉넉하게 (각도/정밀 사거리 판정 전 단계)
@@ -375,7 +389,7 @@ function CombatController.attack()
 			-- [FX] 타격 피드백 (카메라 쉐이크 & 대상 흔들림)
 			playHitShake(0.5) -- 더욱 강한 쉐이크 (기존 0.3)
 			local char = player.Character
-			if targetModel and char and char.PrimaryPart then
+			if targetType ~= "structure" and targetModel and char and char.PrimaryPart then
 				local targetPos = targetModel:GetPivot().Position
 				local charPos = char.PrimaryPart.Position
 				local origCFrame = targetModel:GetPivot()

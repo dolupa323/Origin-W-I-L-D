@@ -25,6 +25,7 @@ local TechService
 
 -- Constants
 local DEFAULT_ATTACK_RANGE = Balance.REACH_BAREHAND or 12 -- 맨손 사거리 (Balance 반영)
+local DEFAULT_BAREHAND_DAMAGE = 5
 local MIN_ATTACK_COOLDOWN = 0.35 -- 서버 측 최소 공격 쿨다운 보안 검증 (클라이언트 0.4~0.5초 대비 타이트하게)
 local PVP_ENABLED = false       -- PvP 비활성화
 
@@ -92,7 +93,7 @@ function CombatService.processPlayerAttack(player: Player, targetId: string)
 		toolSlot = InventoryService.getActiveSlot(userId) or 1
 	end
 	
-	local baseDamage = 5 -- 맨손 기본 데미지
+	local baseDamage = DEFAULT_BAREHAND_DAMAGE -- 맨손 기본 데미지
 	local range = DEFAULT_ATTACK_RANGE
 	local dynamicCooldown = MIN_ATTACK_COOLDOWN -- 기본 0.35초
 	local itemData = nil
@@ -140,12 +141,7 @@ function CombatService.processPlayerAttack(player: Player, targetId: string)
 	local hrp = char:FindFirstChild("HumanoidRootPart")
 	if not hrp then return false, Enums.ErrorCode.INTERNAL_ERROR end
 	
-	-- 2. 플레이어 공격력 스탯 보너스 적용
-	local calculated = PlayerStatService.GetCalculatedStats(player.UserId)
-	local attackMult = calculated.attackMult or 1.0
-	local totalDamage = baseDamage * attackMult
-	
-	-- 3. 대상(크리처 또는 건축물) 확인 및 거리 검증
+	-- 2. 대상(크리처 또는 건축물) 확인 및 거리 검증
 	local targetObject = nil
 	local targetType = "NONE"
 	
@@ -185,6 +181,21 @@ function CombatService.processPlayerAttack(player: Player, targetId: string)
 		return false, Enums.ErrorCode.OUT_OF_RANGE
 	end
 	
+	-- 3. 플레이어 공격력 스탯 보너스 적용
+	local calculated = PlayerStatService.GetCalculatedStats(player.UserId)
+	local attackMult = calculated.attackMult or 1.0
+
+	-- 도끼/곡괭이는 동물/공룡 상대로 맨손 데미지로 고정.
+	if targetType == "CREATURE" and itemData and itemData.type == "TOOL" then
+		local toolRole = tostring(itemData.optimalTool or ""):upper()
+		if toolRole == "AXE" or toolRole == "PICKAXE" then
+			baseDamage = DEFAULT_BAREHAND_DAMAGE
+			isBlunt = true
+		end
+	end
+
+	local totalDamage = baseDamage * attackMult
+
 	-- 4. 데미지 및 기절 수치 적용
 	local hpDamage = totalDamage
 	local torporDamage = 0

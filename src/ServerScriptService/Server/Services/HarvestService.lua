@@ -24,6 +24,11 @@ local MIN_SPAWN_DIST = 20
 local MAX_SPAWN_DIST = 60
 local DESPAWN_DIST = Balance.NODE_DESPAWN_DIST or 300
 local SEA_LEVEL = Balance.SEA_LEVEL or 10
+local STARTER_NODE_TARGET_PER_TYPE = 2
+local STARTER_NODE_CHECK_RADIUS = 45
+local STARTER_NODE_MIN_DIST = 8
+local STARTER_NODE_MAX_DIST = 24
+local STARTER_NODE_TYPES = { "GROUND_BRANCH", "GROUND_STONE", "GROUND_FIBER" }
 
 -- 섬별 스폰 밸런싱 데이터
 local SpawnConfig = require(ReplicatedStorage.Shared.Config.SpawnConfig)
@@ -84,6 +89,7 @@ local questCallback = nil
 -- 스폰된 노드 수 추적 (자동스폰된 노드만)
 local spawnedNodeCount = 0
 local spawnedNodesByType = {} -- { [nodeId] = count }
+local starterNodesSeededUsers = {} -- [userId] = true
 --========================================
 -- Internal Functions
 --========================================
@@ -163,6 +169,16 @@ end
 local function setupModelForNode(model: Model, position: Vector3, nodeData: any, isAutoSpawn: boolean): Model
 	-- Toolbox 모델 정리
 	cleanModelForHarvest(model)
+
+	-- 잔돌/나뭇가지는 식별성을 위해 시각 크기를 아주 소폭 상향
+	if nodeData and (nodeData.id == "GROUND_BRANCH" or nodeData.id == "GROUND_STONE") then
+		local scaleMul = 1.15
+		for _, part in ipairs(model:GetDescendants()) do
+			if part:IsA("BasePart") and part.Transparency < 1 then
+				part.Size = part.Size * scaleMul
+			end
+		end
+	end
 	
 	-- PrimaryPart 찾기/설정
 	local primaryPart = model.PrimaryPart
@@ -444,12 +460,6 @@ local function validateTool(player: Player, nodeData: any, toolSlot: number?): (
 			return false, Enums.ErrorCode.WRONG_TOOL
 		end
 		
-		-- [기획 대응] 무기는 '타격'은 가능하게 하여 내구도를 깎되, 데미지는 0이 되도록 여기서 true 반환
-		-- (calculateEfficiency에서 무기+도구필수노드 조합 시 0을 반환할 것임)
-		if equippedToolType == "WEAPON" then
-			return true, nil
-		end
-		
 		-- 최적 도구(optimalTool)가 지정된 경우, 호환되는 도구여야만 함
 		if nodeData.optimalTool and nodeData.optimalTool ~= "" then
 			if not isCompatible(equippedToolType, nodeData.optimalTool) then
@@ -553,6 +563,101 @@ local function isMaterialInList(material, materialList)
 		end
 	end
 	return false
+end
+
+local function findSpawnPositionNearPlayer(playerRootPart: Part, minDist: number, maxDist: number): Vector3?
+	if not playerRootPart then return nil end
+
+	for _ = 1, 16 do
+		local angle = math.rad(math.random(1, 360))
+		local distance = math.random(minDist, maxDist)
+
+		local offset = Vector3.new(math.sin(angle) * distance, 0, math.cos(angle) * distance)
+		local origin = playerRootPart.Position + offset + Vector3.new(0, 150, 0)
+
+		local params = RaycastParams.new()
+		local filterList = { workspace.Terrain }
+		local map = workspace:FindFirstChild("Map")
+		if map then table.insert(filterList, map) end
+
+		params.FilterDescendantsInstances = filterList
+		params.FilterType = Enum.RaycastFilterType.Include
+
+		local result = workspace:Raycast(origin, Vector3.new(0, -600, 0), params)
+		if result then
+			local isWater = result.Material == Enum.Material.Water
+				or result.Material == Enum.Material.CrackedLava
+			local belowSeaLevel = result.Position.Y < SEA_LEVEL
+
+			if not isWater and not belowSeaLevel then
+				local candidatePos = result.Position + Vector3.new(0, 0.5, 0)
+				local tooClose = false
+				local nodeFolder = workspace:FindFirstChild("ResourceNodes")
+				if nodeFolder then
+					for _, descendant in ipairs(nodeFolder:GetDescendants()) do
+						if descendant:IsA("Model") then
+							local p = descendant.PrimaryPart or descendant:FindFirstChildWhichIsA("BasePart")
+							if p and (p.Position - candidatePos).Magnitude < 8 then
+								tooClose = true
+								break
+							end
+						end
+					end
+				end
+
+				if not tooClose then
+					return candidatePos
+				end
+			end
+		end
+	end
+
+	return nil
+end
+
+function HarvestService._ensureStarterGroundNodes(player: Player)
+	if not player then return end
+	local character = player.Character
+	local hrp = character and character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+
+	local nodeFolder = workspace:FindFirstChild("ResourceNodes")
+	if not nodeFolder then
+		nodeFolder = Instance.new("Folder")
+		nodeFolder.Name = "ResourceNodes"
+		nodeFolder.Parent = workspace
+	end
+
+	local nearbyCounts = {}
+	for _, nodeId in ipairs(STARTER_NODE_TYPES) do
+		nearbyCounts[nodeId] = 0
+	end
+
+	for _, descendant in ipairs(nodeFolder:GetDescendants()) do
+		if descendant:IsA("Model") then
+			local nodeId = descendant:GetAttribute("NodeId")
+			if nodeId and nearbyCounts[nodeId] ~= nil then
+				local p = descendant.PrimaryPart or descendant:FindFirstChildWhichIsA("BasePart")
+				if p then
+					local p1 = Vector2.new(p.Position.X, p.Position.Z)
+					local p2 = Vector2.new(hrp.Position.X, hrp.Position.Z)
+					if (p1 - p2).Magnitude <= STARTER_NODE_CHECK_RADIUS then
+						nearbyCounts[nodeId] += 1
+					end
+				end
+			end
+		end
+	end
+
+	for _, nodeId in ipairs(STARTER_NODE_TYPES) do
+		local deficit = STARTER_NODE_TARGET_PER_TYPE - (nearbyCounts[nodeId] or 0)
+		for _ = 1, math.max(0, deficit) do
+			local spawnPos = findSpawnPositionNearPlayer(hrp, STARTER_NODE_MIN_DIST, STARTER_NODE_MAX_DIST)
+			if spawnPos then
+				HarvestService._spawnAutoNode(nodeId, spawnPos)
+			end
+		end
+	end
 end
 
 --- 지형에 따른 자원 노드 ID 선택 (균형 잡힌 스폰)
@@ -664,6 +769,10 @@ function HarvestService._spawnAutoNode(nodeId: string, position: Vector3): strin
 	
 	if not model then
 		return nil
+	end
+
+	if activeNodes[nodeUID] then
+		activeNodes[nodeUID].nodeModel = model
 	end
 	
 	model:SetAttribute("AutoSpawned", true) -- 자동 스폰 표시 (디스폰 대상)
@@ -922,7 +1031,8 @@ function HarvestService.hit(player: Player, nodeUID: string, toolSlot: number?, 
 	end
 	
 	-- 8. 실제 데미지 적용
-	local finalDamage = power
+	-- 효율 0(예: 무기로 도구필수 노드 타격)일 때는 실제 데미지를 0으로 고정.
+	local finalDamage = (efficiency <= 0) and 0 or power
 	local success, err, drops = HarvestService.damageNode(nodeUID, finalDamage, efficiency, userId)
 	
 	-- 9. (Player-specific) 도구 내구도 감소
@@ -1023,6 +1133,7 @@ function HarvestService.damageNode(nodeUID: string, damage: number, efficiency: 
 				position = nodeState.position,
 				respawnAt = os.time() + (nodeData.respawnTime or 300),
 				isAutoSpawned = nodeState.isAutoSpawned,
+				nodeModel = nodeState.nodeModel,
 			}
 			activeNodes[nodeUID] = nil
 			task.delay(nodeData.respawnTime or 300, function()
@@ -1061,6 +1172,7 @@ function HarvestService._destroyNodeModel(nodeUID: string)
 	end
 	
 	if nodeModel then
+		nodeState.nodeModel = nodeModel
 		nodeModel:SetAttribute("Depleted", true)
 		
 		-- 삭제 대신 투명화/콜리전 비활성화 (리스폰시 복구 위해)
@@ -1208,18 +1320,53 @@ end
 function HarvestService._setupPrePlacedNodes()
 	local nodeFolder = ensureResourceNodesFolder()
 	local count = 0
+	local unmappedCount = 0
+	local unmappedSamples = {}
+
+	local function normalizeNodeName(name)
+		return tostring(name or ""):lower():gsub("[%s_%-]", "")
+	end
+
+	local function resolveNodeId(nodeModel)
+		if not nodeModel then
+			return nil, nil
+		end
+
+		local candidates = { nodeModel.Name }
+		if nodeModel.Parent and nodeModel.Parent:IsA("Folder") then
+			table.insert(candidates, nodeModel.Parent.Name)
+		end
+
+		for _, candidate in ipairs(candidates) do
+			local nodeData = DataService.getResourceNode(candidate)
+			if nodeData then
+				return candidate, nodeData
+			end
+		end
+
+		local normalizedCandidates = {}
+		for _, candidate in ipairs(candidates) do
+			normalizedCandidates[normalizeNodeName(candidate)] = true
+		end
+
+		local resourceTable = DataService.get("ResourceNodeData") or {}
+		for nodeId, nodeData in pairs(resourceTable) do
+			local nodeIdNorm = normalizeNodeName(nodeId)
+			local modelNameNorm = normalizeNodeName(nodeData.modelName)
+			for candidateNorm in pairs(normalizedCandidates) do
+				if candidateNorm == nodeIdNorm or candidateNorm == modelNameNorm then
+					return nodeId, nodeData
+				end
+			end
+		end
+
+		return nil, nil
+	end
 	
 	-- [수정] GetChildren 대신 GetDescendants를 사용하여 하위 폴더(TREE_THIN 등) 안의 모델도 모두 등록
 	for _, nodeModel in ipairs(nodeFolder:GetDescendants()) do
 		if nodeModel:IsA("Model") then
-			local nodeId = nodeModel.Name -- 모델 이름 기준
-			local nodeData = DataService.getResourceNode(nodeId)
-			
-			-- 모델 이름이 데이터에 없으면 부모 폴더 이름으로도 시도 (폴더링 대응)
-			if not nodeData and nodeModel.Parent and nodeModel.Parent:IsA("Folder") then
-				nodeId = nodeModel.Parent.Name
-				nodeData = DataService.getResourceNode(nodeId)
-			end
+			local nodeId, nodeData = resolveNodeId(nodeModel)
 			
 			if nodeData then
 				local primaryPart = nodeModel.PrimaryPart or nodeModel:FindFirstChildWhichIsA("BasePart", true)
@@ -1242,8 +1389,25 @@ function HarvestService._setupPrePlacedNodes()
 					
 					count = count + 1
 				end
+			else
+				local isExplicitResourceNode = nodeModel:GetAttribute("ResourceNode") == true
+					or nodeModel:GetAttribute("NodeId") ~= nil
+				if isExplicitResourceNode then
+					unmappedCount += 1
+					if #unmappedSamples < 5 then
+						table.insert(unmappedSamples, nodeModel.Name)
+					end
+				end
 			end
 		end
+	end
+
+	if unmappedCount > 0 then
+		warn(string.format(
+			"[HarvestService] %d pre-placed models were not mapped to ResourceNodeData (sample: %s)",
+			unmappedCount,
+			table.concat(unmappedSamples, ", ")
+		))
 	end
 	print("[HarvestService] Pre-placed nodes setup complete. Total:", count)
 end
@@ -1293,6 +1457,34 @@ function HarvestService.Init(
 	end)
 	
 	initialized = true
+
+	local function seedForPlayer(player: Player)
+		if not player then return end
+		if starterNodesSeededUsers[player.UserId] then return end
+		starterNodesSeededUsers[player.UserId] = true
+
+		task.spawn(function()
+			local character = player.Character or player.CharacterAdded:Wait()
+			local hrp = character and character:WaitForChild("HumanoidRootPart", 10)
+			if hrp then
+				task.wait(0.3)
+				HarvestService._ensureStarterGroundNodes(player)
+			end
+		end)
+	end
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		seedForPlayer(player)
+	end
+
+	Players.PlayerAdded:Connect(function(player)
+		seedForPlayer(player)
+	end)
+
+	Players.PlayerRemoving:Connect(function(player)
+		starterNodesSeededUsers[player.UserId] = nil
+	end)
+
 	print("[HarvestService] Initialized — PRE-PLACED + AUTO-SPAWN MIXED system")
 end
 

@@ -166,4 +166,14 @@ function HungerService.eatFood(userId: number, foodValue: number): boolean
 	return true
 end
 
+function HungerService.restoreFull(userId: number)
+	local data = getHungerData(userId)
+	data.current = data.max
+
+	local player = Players:GetPlayerByUserId(userId)
+	if player then
+		syncHungerToClient(player)
+	end
+end
+
 return HungerService

@@ -70,6 +70,7 @@ Protocol.Commands = {
 	["Facility.CollectOutput.Request"] = true, -- 산출물 수거 (Output 슬롯)
 	["Facility.AssignPal.Request"] = true,     -- 팰 작업 배치 (Phase 5-5)
 	["Facility.UnassignPal.Request"] = true,   -- 팰 작업 해제 (Phase 5-5)
+	["Facility.Sleep.Request"] = true,         -- 간이천막 수면 (회복/리스폰 지점 설정)
 	["Facility.List.Request"] = true,         -- 건설 가능한 시설 목록 조회
 	
 	-- Recipe 명령어

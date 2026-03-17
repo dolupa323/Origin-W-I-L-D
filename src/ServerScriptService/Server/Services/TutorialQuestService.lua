@@ -34,7 +34,12 @@ local COMPLETION_REWARD = {
 local STEPS = {
 	{
 		key = "COLLECT_BASICS",
-		text = "잔돌 1개와 나뭇가지 1개를 주워보세요.",
+		text = "잔돌 1개, 나뭇가지 1개부터 챙기기",
+		command = "주변에서 SMALL_STONE 1개 + BRANCH 1개 줍기",
+		tip = "쓸만한 게 보이면 일단 주워라. 너무 멀리 가지 말고 주변부터 훑어.",
+		voiceIntro = "맨손으로는 하루도 못 버틴다. 바닥을 뒤져서 잔돌이랑 나뭇가지부터 챙겨.",
+		voiceHint = "아직 부족하다. 잔해 근처를 조금만 더 뒤져봐.",
+		voiceReady = "좋아, 그 정도면 됐다. 일단 도구부터 하나 만들자.",
 		kind = "MULTI_ITEM",
 		needs = {
 			SMALL_STONE = 1,
@@ -43,44 +48,79 @@ local STEPS = {
 	},
 	{
 		key = "CRAFT_AXE",
-		text = "조잡한 돌도끼를 제작해보세요.",
+		text = "조잡한 돌도끼 제작",
+		command = "인벤토리 제작 탭에서 CRAFT_CRUDE_STONE_AXE 제작",
+		tip = "가방을 열어서 도구를 제작해. 부족한 재료는 주변에서 마저 챙기고.",
+		voiceIntro = "좋아, 재료는 모았군. 그걸로 대충이라도 돌도끼를 만들어라. 여기선 무기 없으면 바로 끝장이다.",
+		voiceHint = "서두르지 말고 돌도끼부터 확실하게 만들어 둬.",
+		voiceReady = "잘했다. 이제 장작을 좀 구하러 가자.",
 		kind = "RECIPE",
 		target = "CRAFT_CRUDE_STONE_AXE",
 	},
 	{
 		key = "GET_WOOD",
-		text = "나뭇가지(WOOD) 혹은 통나무(LOG)를 모아보세요.",
+		text = "나무 자원 확보",
+		command = "WOOD 또는 LOG 1개 이상 확보",
+		tip = "너무 굵은 나무에 욕심내지 말고, 만만한 걸로 하나만 먼저 챙겨.",
+		voiceIntro = "도끼는 들었나? 그럼 주변 나무부터 베어라. 오늘 밤을 버티려면 장작이 우선이다.",
+		voiceHint = "장작이든 통나무든 하나만 먼저 가져와. 빨리.",
+		voiceReady = "좋아, 나무 됐다. 이제 먹을 거 잡으러 간다.",
 		kind = "ITEM_ANY",
 		targets = { "WOOD", "LOG" },
 		count = 1,
 	},
 	{
 		key = "KILL_DODO",
-		text = "도도를 사냥해보세요.",
+		text = "식량 확보를 위한 사냥",
+		command = "DODO 1마리 처치",
+		tip = "한두 번 치고 거리를 벌려. 무식하게 맞서 싸우지 말고 치고 빠지라고.",
+		voiceIntro = "슬슬 배가 고플 거다. 근처에 보이는 '도도'를 한 마리 잡아. 그게 네 첫 끼니다.",
+		voiceHint = "도도 한 마리만 잡으면 돼. 무리하지 마.",
+		voiceReady = "좋아, 잡았군. 바로 불 피울 준비 해.",
 		kind = "KILL",
 		target = "DODO",
 	},
 	{
 		key = "BUILD_CAMPFIRE",
-		text = "모닥불을 설치해보세요.",
+		text = "밤 대비 온기 거점 만들기",
+		command = "CAMPFIRE 1개 설치",
+		tip = "평평하고 시야가 트인 곳에 설치해. 나중에 도망칠 때 길 막히지 않게 조심하고.",
+		voiceIntro = "설마 생고기를 그냥 뜯어먹을 생각은 아니겠지? 모은 나무로 모닥불부터 피워라. 추위랑 짐승을 막으려면 불이 필수야.",
+		voiceHint = "모닥불 하나만 설치하면 된다. 위치를 잘 잡아.",
+		voiceReady = "좋아, 불 붙었다. 이제 고기 굽자.",
 		kind = "BUILD",
 		target = "CAMPFIRE",
 	},
 	{
 		key = "COOK_MEAT",
-		text = "고기를 구워보세요.",
+		text = "고기 1개 조리",
+		command = "CRAFT_COOKED_MEAT 제작",
+		tip = "불이 꺼지지 않게 장작 잘 확인하고. 든든하게 먹어둬.",
+		voiceIntro = "불은 잘 타오르고 있나? 고기를 올려서 구워라. 체력이 떨어지면 도망도 못 친다.",
+		voiceHint = "익힌 고기 하나만 만들면 된다. 금방 끝난다.",
+		voiceReady = "오케이, 배는 채웠군. 이제 거점을 표시할 차례다.",
 		kind = "RECIPE",
 		target = "CRAFT_COOKED_MEAT",
 	},
 	{
 		key = "PLACE_TOTEM",
-		text = "캠프 토템을 설치해보세요.",
+		text = "거점 중심점 확보",
+		command = "CAMP_TOTEM 1개 설치",
+		tip = "앞으로 돌아다니기 편하도록 중간 지점에 세우는 게 좋을 거다.",
+		voiceIntro = "이런 숲에서 길을 잃으면 그걸로 끝이다. 토템을 세워서 네 거점을 표시해 둬.",
+		voiceHint = "토템 하나만 박으면 돼. 위치를 신중하게 골라.",
+		voiceReady = "좋아, 거점 잡혔다. 마지막으로 잠자리 만든다.",
 		kind = "BUILD",
 		target = "CAMP_TOTEM",
 	},
 	{
 		key = "BUILD_LEAN_TO",
-		text = "린투를 설치하고 잠잘 준비를 하세요.",
+		text = "수면/복귀 지점 확보",
+		command = "LEAN_TO 1개 설치",
+		tip = "모닥불 온기가 닿도록 너무 멀지 않게 세우고, 길은 막지 마라.",
+		voiceIntro = "거의 다 왔다. 밤추위가 오기 전에 임시 대피소(린투)를 세워. 거기서 잠을 자고 위치를 기억해 둬야, 쓰러져도 다시 일어날 수 있다.",
+		voiceHint = "대피소 하나만 세우면 끝이다. 조금만 더 버텨.",
+		voiceReady = "끝났다. 이제부터가 진짜 생존의 시작이다.",
 		kind = "BUILD",
 		target = "LEAN_TO",
 	},
@@ -221,12 +261,18 @@ local function serializeStatus(userId)
 		stepTarget = step and step.target or nil,
 		stepTargets = step and step.targets or nil,
 		stepCount = step and step.count or nil,
+		stepCommand = step and step.command or nil,
+		stepTip = step and step.tip or nil,
+		stepVoiceIntro = step and step.voiceIntro or nil,
+		stepVoiceHint = step and step.voiceHint or nil,
+		stepVoiceReady = step and step.voiceReady or nil,
 		needs = step and step.needs or nil,
 		stepReady = progress.stepReady == true,
 		assigned = progress.assigned == true,
 		rewardPreview = {
 			xp = COMPLETION_REWARD.xp,
 			gold = COMPLETION_REWARD.gold,
+			currency = COMPLETION_REWARD.gold,
 			items = rewardPreviewItems,
 		},
 		currentStepText = step and step.text or nil,
@@ -371,11 +417,6 @@ local function updateByEvent(userId, eventKind, target, count)
 		return
 	end
 
-	-- Ignore events before the tutorial is officially assigned to the player.
-	if progress.assigned ~= true then
-		return
-	end
-
 	local step = getCurrentStep(progress)
 	if not step then
 		return
@@ -482,6 +523,8 @@ local function handleAdminReset(player, _payload)
 	end
 
 	state.tutorialQuest = makeFreshProgress()
+	state.tutorialQuest.assigned = true
+	state.tutorialQuest.assignedAt = os.time()
 	fireStatus(player.UserId, "Tutorial.Step.Updated")
 
 	return {

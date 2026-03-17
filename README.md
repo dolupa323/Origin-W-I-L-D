@@ -1,31 +1,40 @@
-# WILD 
+# WILD
+
 Roblox 서바이벌 크래프팅 게임 프로젝트
 
 이 프로젝트는 **Rojo + VS Code + GitHub + Team Create** 구조로 개발됩니다.
 
 ---
 
-#  개발 방식 
+## 개발 워크플로우 참고
+
+- 작업 원칙 참고 문서: [docs/DEVELOPER_WORKFLOW.md](docs/DEVELOPER_WORKFLOW.md)
+- 프로젝트 내부 `_agent/skills` 사용 가능 여부와 전략 선택/점검 규칙은 위 문서를 기준으로 합니다.
+
+# 개발 방식
 
 ## 역할 분리
 
-###  코드 → GitHub + VS Code + Rojo
+### 코드 → GitHub + VS Code + Rojo
+
 - 서버 로직
 - 클라이언트 스크립트
 - 모듈 / 리모트
 - 모든 Lua 코드
 
-###  맵 / UI / 에셋 → Roblox Studio (Team Create)
+### 맵 / UI / 에셋 → Roblox Studio (Team Create)
+
 - Terrain
 - Models
 - Lighting
 - StarterGui (UI)
 - 맵 배치
 
- **코드는 Git 관리 / 맵은 Studio 관리**
- 서로 절대 섞지 않음
+  **코드는 Git 관리 / 맵은 Studio 관리**
+  서로 절대 섞지 않음
 
-# WILD 
+# WILD
+
 Roblox 서바이벌 크래프팅 게임 프로젝트
 
 이 프로젝트는 **Rojo + VS Code + GitHub + Team Create** 구조로 개발됩니다.
@@ -34,25 +43,27 @@ Roblox 서바이벌 크래프팅 게임 프로젝트
 
 ## 역할 분리
 
-###  코드 → GitHub + VS Code + Rojo
+### 코드 → GitHub + VS Code + Rojo
+
 - 서버 로직
 - 클라이언트 스크립트
 - 모듈 / 리모트
 - 모든 Lua 코드
 
-###  맵 / UI / 에셋 → Roblox Studio (Team Create)
+### 맵 / UI / 에셋 → Roblox Studio (Team Create)
+
 - Terrain
 - Models
 - Lighting
 - StarterGui (UI)
 - 맵 배치
 
- **코드는 Git 관리 / 맵은 Studio 관리**
- 서로 절대 섞지 않음
+  **코드는 Git 관리 / 맵은 Studio 관리**
+  서로 절대 섞지 않음
 
 ---
 
-#  프로젝트 구조
+# 프로젝트 구조
 
 WILD/
 src/
@@ -63,14 +74,11 @@ shared/ 공용 모듈/리모트
 default.project.json
 README.md
 
-
 ---
 
-#  Rojo 동기화 구조 (자동 생성)
+# Rojo 동기화 구조 (자동 생성)
 
 Studio 안에서 이렇게 생김:
-
-
 
 ServerScriptService
 └ Code
@@ -84,14 +92,15 @@ ReplicatedStorage
 └ Code
 └ Shared
 
-
- Code 폴더 안은 **절대 Studio에서 수정 금지**
+Code 폴더 안은 **절대 Studio에서 수정 금지**
 → VS Code가 원본
 
 ---
-#  실행 방법
+
+# 실행 방법
 
 ## 1️ Rojo 서버 실행
+
 프로젝트 루트에서:
 
 ```powershell
@@ -390,3 +399,4 @@ M5 — 콘텐츠 확장
 Script는 VSCode에서만, Studio는 에셋만.
 서버가 모든 것을 결정한다.
 시스템부터 만들고, 콘텐츠는 나중에 붙인다.
+```
