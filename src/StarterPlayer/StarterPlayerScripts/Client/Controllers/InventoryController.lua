@@ -16,8 +16,6 @@ local initialized = false
 local inventoryCache = {}
 local equipmentCache = {
 	HEAD = nil,
-	TOP = nil,
-	BOTTOM = nil,
 	SUIT = nil,
 	HAND = nil,
 }
@@ -48,7 +46,11 @@ function InventoryController.getWeightInfo()
 end
 
 function InventoryController.getEquipment()
-	return equipmentCache
+	return {
+		HEAD = equipmentCache.HEAD,
+		SUIT = equipmentCache.SUIT,
+		HAND = inventoryCache[1], -- 도구/무기 표시는 핫바 1번 기준
+	}
 end
 
 function InventoryController.requestEquip(fromSlot: number, toSlotName: string)

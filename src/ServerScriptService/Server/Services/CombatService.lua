@@ -319,11 +319,16 @@ function CombatService.damagePlayer(userId: number, rawDamage: number, sourcePos
 		local equip = InventoryService.getEquipment(userId)
 		
 		if equip.SUIT then
-			InventoryService.decreaseEquipmentDurability(userId, "SUIT", armorDamage)
+			local headDamage = equip.HEAD and math.max(1, math.ceil(armorDamage * 0.2)) or 0
+			local suitDamage = math.max(1, armorDamage - headDamage)
+			InventoryService.decreaseEquipmentDurability(userId, "SUIT", suitDamage)
+			if equip.HEAD and headDamage > 0 then
+				InventoryService.decreaseEquipmentDurability(userId, "HEAD", headDamage)
+			end
 		else
-			if equip.TOP then InventoryService.decreaseEquipmentDurability(userId, "TOP", math.ceil(armorDamage * 0.4)) end
-			if equip.BOTTOM then InventoryService.decreaseEquipmentDurability(userId, "BOTTOM", math.ceil(armorDamage * 0.4)) end
-			if equip.HEAD then InventoryService.decreaseEquipmentDurability(userId, "HEAD", math.ceil(armorDamage * 0.2)) end
+			if equip.HEAD then
+				InventoryService.decreaseEquipmentDurability(userId, "HEAD", armorDamage)
+			end
 		end
 	end
 	

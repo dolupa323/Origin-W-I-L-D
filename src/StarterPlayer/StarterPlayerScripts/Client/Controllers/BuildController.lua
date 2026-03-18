@@ -9,6 +9,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Balance = require(Shared.Config.Balance)
+local SpawnConfig = require(Shared.Config.SpawnConfig)
 
 local NetClient = require(script.Parent.Parent.NetClient)
 local InputManager = require(script.Parent.Parent.InputManager)
@@ -38,7 +39,10 @@ local currentPlacementGroundPosition = nil
 local currentGhostGroundOffset = 0
 local currentGhostBoundsSize = Vector3.new(4, 4, 4)
 local currentIsPlaceable = false
+local currentPlacementBlockCode = nil
 local heartbeatConn = nil
+local totemInfoCache = {} -- [structureId] = { data, fetchedAt }
+local TOTEM_INFO_CACHE_TTL = 4
 
 local MAX_PLACE_DISTANCE = 35
 local DEFAULT_MAX_GROUND_SLOPE_DEG = Balance.BUILD_MAX_GROUND_SLOPE_DEG or 42
@@ -61,6 +65,127 @@ local function getMaxGroundSlopeDeg(): number
 		return STRICT_MAX_GROUND_SLOPE_DEG
 	end
 	return DEFAULT_MAX_GROUND_SLOPE_DEG
+end
+
+local function getStarterZoneCenter(): Vector3?
+	local spawnPart = workspace:FindFirstChild("SpawnLocation", true)
+	if spawnPart then
+		if spawnPart:IsA("BasePart") then
+			return spawnPart.Position
+		elseif spawnPart:IsA("Model") then
+			local ok, pivot = pcall(function()
+				return spawnPart:GetPivot()
+			end)
+			if ok and pivot then
+				return pivot.Position
+			end
+			if spawnPart.PrimaryPart then
+				return spawnPart.PrimaryPart.Position
+			end
+		end
+	end
+	if SpawnConfig and typeof(SpawnConfig.DEFAULT_START_SPAWN) == "Vector3" then
+		return SpawnConfig.DEFAULT_START_SPAWN
+	end
+	return nil
+end
+
+local function isInStarterProtectedZone(position: Vector3): boolean
+	local center = getStarterZoneCenter()
+	if not center then
+		return false
+	end
+	local radius = Balance.STARTER_PROTECTION_RADIUS or 45
+	local dx = position.X - center.X
+	local dz = position.Z - center.Z
+	return (dx * dx + dz * dz) <= (radius * radius)
+end
+
+local function requestTotemInfoAsync(structureId: string)
+	if not structureId or structureId == "" then
+		return
+	end
+	local entry = totemInfoCache[structureId]
+	if entry and entry.pending then
+		return
+	end
+	totemInfoCache[structureId] = {
+		pending = true,
+		fetchedAt = tick(),
+	}
+	task.spawn(function()
+		local ok, data = NetClient.Request("Totem.GetInfo.Request", { structureId = structureId })
+		if ok and type(data) == "table" then
+			totemInfoCache[structureId] = { data = data, fetchedAt = tick() }
+		else
+			totemInfoCache[structureId] = { data = nil, fetchedAt = tick() }
+		end
+	end)
+end
+
+local function getTotemInfoCached(structureId: string)
+	local entry = totemInfoCache[structureId]
+	if not entry then
+		return nil
+	end
+	if entry.pending then
+		return nil
+	end
+	if (tick() - (entry.fetchedAt or 0)) > TOTEM_INFO_CACHE_TTL then
+		return nil
+	end
+	return entry.data
+end
+
+local function getProtectedZoneBlockCode(position: Vector3): string?
+	if isInStarterProtectedZone(position) then
+		return "STARTER_ZONE_PROTECTED"
+	end
+
+	local facilities = workspace:FindFirstChild("Facilities")
+	if not facilities then
+		return nil
+	end
+
+	for _, model in ipairs(facilities:GetChildren()) do
+		if not model:IsA("Model") then
+			continue
+		end
+		if model:GetAttribute("FacilityId") ~= "CAMP_TOTEM" then
+			continue
+		end
+
+		local ownerId = tonumber(model:GetAttribute("OwnerId"))
+		if ownerId and ownerId == player.UserId then
+			continue
+		end
+
+		local pp = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")
+		if not pp then
+			continue
+		end
+
+		local structureId = tostring(model:GetAttribute("StructureId") or model.Name)
+		local info = getTotemInfoCached(structureId)
+		if not info then
+			requestTotemInfoAsync(structureId)
+		end
+
+		local radius = (info and tonumber(info.radius)) or (Balance.BASE_DEFAULT_RADIUS or 30)
+		local center = (info and info.centerPosition) or pp.Position
+		local dx = position.X - center.X
+		local dz = position.Z - center.Z
+		if (dx * dx + dz * dz) <= (radius * radius) then
+			if not info then
+				return "NO_PERMISSION"
+			end
+			if info.upkeep and info.upkeep.active == true then
+				return "NO_PERMISSION"
+			end
+		end
+	end
+
+	return nil
 end
 
 -- World Durability Bar (look-at structure)
@@ -208,11 +333,6 @@ local function resolvePlacementTiltOffset(facilityId: string, facilityData: any,
 			local z = tonumber(configured.Z or configured.z) or 0
 			return Vector3.new(x, 0, z)
 		end
-	end
-
-	if facilityId == "LEAN_TO" and ghost then
-		local rx, _, rz = ghost:GetPivot():ToOrientation()
-		return Vector3.new(math.deg(rx), 0, math.deg(rz))
 	end
 
 	return Vector3.new(0, 0, 0)
@@ -525,6 +645,7 @@ function BuildController.startPlacement(facilityId: string)
 	currentGhostGroundOffset = computeGhostGroundOffset(currentGhost)
 	currentGhostBoundsSize = computeGhostBoundsSize(currentGhost)
 	currentIsPlaceable = false
+	currentPlacementBlockCode = nil
 	
 	-- 매 프레임 위치 업데이트
 	heartbeatConn = RunService.Heartbeat:Connect(function()
@@ -547,6 +668,7 @@ function BuildController.startPlacement(facilityId: string)
 		
 		local isPlaceable = false
 		local finalCF = nil
+		local blockCode = nil
 		
 		if result then
 			local hitPos = result.Position
@@ -587,12 +709,20 @@ function BuildController.startPlacement(facilityId: string)
 			if isPlaceable and finalCF and isBlockedByWorld(finalCF, hitPart) then
 				isPlaceable = false
 			end
+
+			if isPlaceable then
+				blockCode = getProtectedZoneBlockCode(hitPos)
+				if blockCode then
+					isPlaceable = false
+				end
+			end
 		else
 			isPlaceable = false
 			currentPlacementGroundPosition = nil
 		end
 
 		currentIsPlaceable = isPlaceable
+		currentPlacementBlockCode = blockCode
 
 		
 		-- Ghost 색상 업데이트
@@ -627,7 +757,13 @@ function BuildController.startPlacement(facilityId: string)
 		if isPlacing and currentGhost then
 			if not currentIsPlaceable then
 				local UIManager = require(script.Parent.Parent.UIManager)
-				UIManager.notify("이 위치에는 건설할 수 없습니다.", Color3.fromRGB(255, 100, 100))
+				if currentPlacementBlockCode == "STARTER_ZONE_PROTECTED" then
+					UIManager.notify("초보자 보호존에서는 건설할 수 없습니다.", Color3.fromRGB(255, 100, 100))
+				elseif currentPlacementBlockCode == "NO_PERMISSION" then
+					UIManager.notify("토템 보호 영역에서는 건설할 수 없습니다.", Color3.fromRGB(255, 100, 100))
+				else
+					UIManager.notify("이 위치에는 건설할 수 없습니다.", Color3.fromRGB(255, 100, 100))
+				end
 				return
 			end
 			
@@ -669,6 +805,7 @@ function BuildController.cancelPlacement()
 	currentPlacementGroundPosition = nil
 	currentGhostGroundOffset = 0
 	currentIsPlaceable = false
+	currentPlacementBlockCode = nil
 	
     local UIManager = require(script.Parent.Parent.UIManager)
     UIManager.showBuildPrompt(false)
@@ -677,6 +814,23 @@ end
 --- 건설 요청 (시설물 배치)
 function BuildController.requestPlace(facilityId: string, position: Vector3, rotation: Vector3?): (boolean, any)
 	print(string.format("[BuildController] Requesting build: %s", facilityId))
+
+	local function toBuildErrorMessage(code)
+		local map = {
+			TOTEM_REQUIRED = "토템이 필요합니다. 먼저 거점 토템을 설치하세요.",
+			TOTEM_UPKEEP_EXPIRED = "토템 유지비가 만료되었습니다. 토템에서 연장 결제를 해주세요.",
+			TOTEM_ALREADY_EXISTS = "이미 토템이 설치되어 있습니다. 한 명당 토템은 하나만 설치할 수 있습니다.",
+			TOTEM_ZONE_OCCUPIED = "이미 다른 토템이 선언된 영역입니다. 해당 영역에는 토템을 설치할 수 없습니다.",
+			STARTER_ZONE_PROTECTED = "초보자 보호존에서는 건설할 수 없습니다.",
+			NO_PERMISSION = "이 영역에서는 건설 권한이 없습니다.",
+			COLLISION = "해당 위치에 다른 구조물이 있어 건설할 수 없습니다.",
+			OUT_OF_RANGE = "건설 가능 거리 밖입니다. 더 가까이 이동하세요.",
+			INVALID_POSITION = "건설할 수 없는 지형입니다. 평평한 위치를 선택하세요.",
+			MISSING_REQUIREMENTS = "재료가 부족합니다.",
+			STRUCTURE_CAP = "구조물 한도에 도달했습니다.",
+		}
+		return map[tostring(code)] or ("건설 실패: " .. tostring(code))
+	end
 	
 	local success, data = NetClient.Request("Build.Place.Request", {
 		facilityId = facilityId,
@@ -690,7 +844,7 @@ function BuildController.requestPlace(facilityId: string, position: Vector3, rot
 	else
 		warn("[BuildController] Build failed:", data)
 		local UIManager = require(script.Parent.Parent.UIManager)
-		UIManager.notify("건설 실패: " .. tostring(data), Color3.fromRGB(255, 100, 100))
+		UIManager.notify(toBuildErrorMessage(data), Color3.fromRGB(255, 100, 100))
 	end
 	
 	return success, data

@@ -36,6 +36,12 @@ function StorageController.openStorage(storageId: string)
 		local UIManager = require(script.Parent.Parent.UIManager)
 		UIManager.openStorage(currentStorageId, storageData)
 	else
+		local UIManager = require(script.Parent.Parent.UIManager)
+		if tostring(data) == "NO_PERMISSION" then
+			UIManager.notify("토템 보호가 활성화된 거점 보관함입니다. 유지비 만료 후 약탈 가능합니다.", Color3.fromRGB(255, 120, 120))
+		else
+			UIManager.notify("보관함 열기 실패: " .. tostring(data), Color3.fromRGB(255, 120, 120))
+		end
 		warn("[StorageController] Failed to open storage:", storageId, data)
 	end
 end
@@ -59,13 +65,18 @@ function StorageController.moveItem(slot: number, fromType: string)
 	
 	local targetType = (fromType == "player") and "storage" or "player"
 	
-	NetClient.Request("Storage.Move.Request", {
+	local success, err = NetClient.Request("Storage.Move.Request", {
 		storageId = currentStorageId,
 		sourceType = fromType,
 		sourceSlot = slot,
 		targetType = targetType,
 		targetSlot = 0, -- 0이면 자동 빈 슬롯 찾기 (서버 InventoryService.MoveInternal 지원)
 	})
+
+	if not success and tostring(err) == "NO_PERMISSION" then
+		local UIManager = require(script.Parent.Parent.UIManager)
+		UIManager.notify("토템 보호가 활성화되어 아이템 이동이 차단되었습니다.", Color3.fromRGB(255, 120, 120))
+	end
 end
 
 --========================================

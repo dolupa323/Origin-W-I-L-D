@@ -253,7 +253,7 @@ local ItemData = {
 	},
 	{
 		id = "FIRM_STONE_AXE",
-		name = "단단한 돌도끼",
+		name = "돌도끼",
 		type = "TOOL",
 		rarity = "UNCOMMON",
 		maxStack = 1,
@@ -267,7 +267,7 @@ local ItemData = {
 	},
 	{
 		id = "FIRM_STONE_PICKAXE",
-		name = "단단한 돌곡괭이",
+		name = "돌곡괭이",
 		type = "TOOL",
 		rarity = "UNCOMMON",
 		maxStack = 1,
@@ -281,7 +281,7 @@ local ItemData = {
 	},
 	{
 		id = "BONE_SPEAR",
-		name = "뼈 창",
+		name = "뼈창",
 		type = "WEAPON",
 		rarity = "UNCOMMON",
 		maxStack = 1,
@@ -493,21 +493,8 @@ local ItemData = {
 	-- 방어구 (Armor)
 	--========================================
 	{
-		id = "GRASS_TUNIC",
-		name = "풀잎 튜닉",
-		type = "ARMOR",
-		rarity = "COMMON",
-		maxStack = 1,
-		weight = 1.0,
-		durability = 80,
-		defense = 10,
-		slot = "SUIT",
-		armorSet = "GRASS",
-		description = "풀잎과 넝쿨을 대충 엮어 만든 초반 방어구. (수리 불가)",
-	},
-	{
 		id = "LEATHER_ARMOR",
-		name = "가죽 옷",
+		name = "가죽옷",
 		type = "ARMOR",
 		rarity = "COMMON",
 		maxStack = 1,
@@ -531,6 +518,22 @@ local ItemData = {
 		armorSet = "LEATHER",
 		modelId = "LEATHER_HAT_MODEL",
 		description = "단단한 가죽으로 만든 모자. (수리 불가)",
+	},
+	{
+		id = "FEATHER_HELMET",
+		name = "깃털 투구",
+		type = "ARMOR",
+		rarity = "COMMON",
+		maxStack = 1,
+		weight = 0.7,
+		durability = 110,
+		defense = 7,
+		slot = "HEAD",
+		armorSet = "LEATHER",
+		icon = "rbxassetid://13515082103",
+		iconName = "FEATHER_HELMET",
+		modelId = "FEATHER_HELMET_MODEL",
+		description = "도도새 깃털과 가죽을 엮은 경량 투구. (수리 불가)",
 	},
 	{
 		id = "BRONZE_ARMOR",
@@ -667,6 +670,13 @@ local ItemData = {
 		description = "방어구 제작에 사용된다.",
 		icon = "rbxassetid://0",
 		modelName = "Leather",
+	},
+	{
+		id = "PLANK", name = "판재", type = "RESOURCE", rarity = "COMMON", maxStack = 99,
+		description = "통나무를 가공해 만든 기본 건축/제작 자재.",
+		icon = "rbxassetid://13515091728",
+		iconName = "PLANK",
+		modelName = "Plank",
 	},
 	{
 		id = "BONE", name = "뼈", type = "RESOURCE", rarity = "COMMON", maxStack = 99,

@@ -1,6 +1,6 @@
 -- StorageService.lua
 -- 공유 창고 서비스 (서버 권위, SSOT)
--- 누구나 열기/닫기/꺼내기 가능 (도둑질 허용)
+-- 유지비 활성 보호영역에서는 소유자만 접근, 만료 시 누구나 약탈 가능
 -- 영속 저장: WorldSave.storages
 
 local Players = game:GetService("Players")
@@ -32,8 +32,31 @@ local viewingPlayers = {}
 -- BuildService 참조 (파티션 조회를 위해 필요)
 local BuildService = nil
 local BaseClaimService = nil
+local TotemService = nil
 -- Internal: Storage Management
 --========================================
+
+local function _canAccessStorage(player: Player, storageId: string): boolean
+	if not BuildService or not BuildService.get then
+		return false
+	end
+
+	local structure = BuildService.get(storageId)
+	if not structure then
+		-- 야생/비구조물 창고는 기존처럼 접근 허용
+		return true
+	end
+
+	if structure.ownerId == player.UserId then
+		return true
+	end
+
+	if TotemService and TotemService.canRaidStructure then
+		return TotemService.canRaidStructure(player.UserId, structure)
+	end
+
+	return false
+end
 
 --- 기본 창고 스키마 생성
 local function _createDefaultStorage()
@@ -170,6 +193,10 @@ function StorageService.open(player: Player, storageId: string): (boolean, strin
 	if not storageId or type(storageId) ~= "string" then
 		return false, Enums.ErrorCode.BAD_REQUEST, nil
 	end
+
+	if not _canAccessStorage(player, storageId) then
+		return false, Enums.ErrorCode.NO_PERMISSION, nil
+	end
 	
 	local storage = _getOrCreateStorage(storageId)
 	
@@ -239,6 +266,10 @@ function StorageService.move(
 	end
 	if targetType ~= "player" and targetType ~= "storage" then
 		return false, Enums.ErrorCode.BAD_REQUEST, nil
+	end
+
+	if not _canAccessStorage(player, storageId) then
+		return false, Enums.ErrorCode.NO_PERMISSION, nil
 	end
 	
 	-- 컨테이너 참조 가져오기
@@ -481,6 +512,10 @@ function StorageService.Init(netController: any, saveService: any, inventoryServ
 	initialized = true
 	print(string.format("[StorageService] Initialized - Slots: %d, MaxStack: %d",
 		Balance.STORAGE_SLOTS, Balance.MAX_STACK))
+end
+
+function StorageService.SetTotemService(totemService: any)
+	TotemService = totemService
 end
 
 function StorageService.GetHandlers()

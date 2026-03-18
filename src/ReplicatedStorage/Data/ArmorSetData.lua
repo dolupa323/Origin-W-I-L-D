@@ -13,7 +13,7 @@ local ArmorSetData = {
 	},
 	LEATHER = {
 		name = "중급 사냥꾼 (가죽)",
-		items = {"LEATHER_HAT", "LEATHER_ARMOR"},
+		items = {"FEATHER_HELMET", "LEATHER_ARMOR"},
 		bonusText = "방어력 +15, 최대 스태미너 +30",
 		bonuses = {
 			defense = 15,

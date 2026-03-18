@@ -104,6 +104,13 @@ local function showStatus(status, force, allowCompletionToast)
 	local displayStatus = buildDisplayStatus(status)
 	UIManager.updateTutorialStatus(displayStatus)
 
+	if type(status.grantedReward) == "table" and not status.completed then
+		local stepReward = rewardSummary(status.grantedReward)
+		if stepReward then
+			UIManager.notify("챕터 완료 보상 지급: " .. stepReward)
+		end
+	end
+
 	if status.completed then
 		UIManager.setTutorialVisible(false)
 		if allowCompletionToast then

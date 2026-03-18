@@ -23,20 +23,12 @@ local ADMIN_USER_IDS = {
 	[10311679477] = true,
 }
 
-local COMPLETION_REWARD = {
-	xp = 120,
-	gold = 150,
-	items = {
-		{ itemId = "COOKED_MEAT", count = 3 },
-	},
-}
-
 local STEPS = {
 	{
 		key = "COLLECT_BASICS",
 		text = "잔돌 1개, 나뭇가지 1개부터 챙기기",
 		command = "주변에서 SMALL_STONE 1개 + BRANCH 1개 줍기",
-		tip = "쓸만한 게 보이면 일단 주워라. 너무 멀리 가지 말고 주변부터 훑어.",
+		tip = "Z 키로 주변 자원을 수집하십시오. 시작 지점 인근에서 우선 확보하십시오.",
 		voiceIntro = "맨손으로는 하루도 못 버틴다. 바닥을 뒤져서 잔돌이랑 나뭇가지부터 챙겨.",
 		voiceHint = "아직 부족하다. 잔해 근처를 조금만 더 뒤져봐.",
 		voiceReady = "좋아, 그 정도면 됐다. 일단 도구부터 하나 만들자.",
@@ -45,86 +37,178 @@ local STEPS = {
 			SMALL_STONE = 1,
 			BRANCH = 1,
 		},
+		reward = {
+			xp = 15,
+			gold = 10,
+			items = {},
+		},
 	},
 	{
 		key = "CRAFT_AXE",
 		text = "조잡한 돌도끼 제작",
-		command = "인벤토리 제작 탭에서 CRAFT_CRUDE_STONE_AXE 제작",
-		tip = "가방을 열어서 도구를 제작해. 부족한 재료는 주변에서 마저 챙기고.",
+		command = "B 키 인벤토리의 간이제작 탭에서 CRAFT_CRUDE_STONE_AXE 1회 제작",
+		tip = "제작 재료가 부족하면 주변 자원을 추가 수집한 뒤 다시 제작하십시오.",
 		voiceIntro = "좋아, 재료는 모았군. 그걸로 대충이라도 돌도끼를 만들어라. 여기선 무기 없으면 바로 끝장이다.",
 		voiceHint = "서두르지 말고 돌도끼부터 확실하게 만들어 둬.",
 		voiceReady = "잘했다. 이제 장작을 좀 구하러 가자.",
 		kind = "RECIPE",
 		target = "CRAFT_CRUDE_STONE_AXE",
+		reward = {
+			xp = 15,
+			gold = 15,
+			items = {},
+		},
 	},
 	{
 		key = "GET_WOOD",
 		text = "나무 자원 확보",
 		command = "WOOD 또는 LOG 1개 이상 확보",
-		tip = "너무 굵은 나무에 욕심내지 말고, 만만한 걸로 하나만 먼저 챙겨.",
+		tip = "도끼를 사용해 접근 가능한 나무 자원부터 최소 수량을 확보하십시오.",
 		voiceIntro = "도끼는 들었나? 그럼 주변 나무부터 베어라. 오늘 밤을 버티려면 장작이 우선이다.",
 		voiceHint = "장작이든 통나무든 하나만 먼저 가져와. 빨리.",
 		voiceReady = "좋아, 나무 됐다. 이제 먹을 거 잡으러 간다.",
 		kind = "ITEM_ANY",
 		targets = { "WOOD", "LOG" },
 		count = 1,
+		reward = {
+			xp = 15,
+			gold = 20,
+			items = {},
+		},
 	},
 	{
 		key = "KILL_DODO",
 		text = "식량 확보를 위한 사냥",
 		command = "DODO 1마리 처치",
-		tip = "한두 번 치고 거리를 벌려. 무식하게 맞서 싸우지 말고 치고 빠지라고.",
+		tip = "근접 공격 후 거리를 유지하며 안전하게 목표를 처치하십시오.",
 		voiceIntro = "슬슬 배가 고플 거다. 근처에 보이는 '도도'를 한 마리 잡아. 그게 네 첫 끼니다.",
 		voiceHint = "도도 한 마리만 잡으면 돼. 무리하지 마.",
 		voiceReady = "좋아, 잡았군. 바로 불 피울 준비 해.",
 		kind = "KILL",
 		target = "DODO",
+		reward = {
+			xp = 15,
+			gold = 20,
+			items = {},
+		},
 	},
 	{
 		key = "BUILD_CAMPFIRE",
-		text = "밤 대비 온기 거점 만들기",
-		command = "CAMPFIRE 1개 설치",
-		tip = "평평하고 시야가 트인 곳에 설치해. 나중에 도망칠 때 길 막히지 않게 조심하고.",
+		text = "밤 대비 온기 수단 준비",
+		command = "C 키 건축으로 CAMPFIRE 1개 설치 + B 키 인벤토리 간이제작 탭에서 CRAFT_TORCH 1회 제작",
+		tip = "모닥불은 평지에 설치하고, 횃불 제작까지 완료해야 단계가 완료됩니다.",
 		voiceIntro = "설마 생고기를 그냥 뜯어먹을 생각은 아니겠지? 모은 나무로 모닥불부터 피워라. 추위랑 짐승을 막으려면 불이 필수야.",
-		voiceHint = "모닥불 하나만 설치하면 된다. 위치를 잘 잡아.",
+		voiceHint = "모닥불 세우고 횃불까지 하나 챙겨. 밤엔 그게 생명줄이다.",
 		voiceReady = "좋아, 불 붙었다. 이제 고기 굽자.",
-		kind = "BUILD",
-		target = "CAMPFIRE",
+		kind = "BUILD_AND_RECIPE",
+		buildTarget = "CAMPFIRE",
+		recipeTarget = "CRAFT_TORCH",
+		reward = {
+			xp = 15,
+			gold = 20,
+			items = {},
+		},
 	},
 	{
 		key = "COOK_MEAT",
 		text = "고기 1개 조리",
 		command = "CRAFT_COOKED_MEAT 제작",
-		tip = "불이 꺼지지 않게 장작 잘 확인하고. 든든하게 먹어둬.",
+		tip = "모닥불이 활성 상태인지 확인한 뒤 조리 1회를 완료하십시오.",
 		voiceIntro = "불은 잘 타오르고 있나? 고기를 올려서 구워라. 체력이 떨어지면 도망도 못 친다.",
 		voiceHint = "익힌 고기 하나만 만들면 된다. 금방 끝난다.",
 		voiceReady = "오케이, 배는 채웠군. 이제 거점을 표시할 차례다.",
 		kind = "RECIPE",
 		target = "CRAFT_COOKED_MEAT",
+		reward = {
+			xp = 15,
+			gold = 20,
+			items = {
+				{ itemId = "COOKED_MEAT", count = 1 },
+			},
+		},
 	},
 	{
 		key = "PLACE_TOTEM",
 		text = "거점 중심점 확보",
 		command = "CAMP_TOTEM 1개 설치",
-		tip = "앞으로 돌아다니기 편하도록 중간 지점에 세우는 게 좋을 거다.",
+		tip = "이동 동선의 중심 지점을 고려해 토템 설치 위치를 선정하십시오.",
 		voiceIntro = "이런 숲에서 길을 잃으면 그걸로 끝이다. 토템을 세워서 네 거점을 표시해 둬.",
 		voiceHint = "토템 하나만 박으면 돼. 위치를 신중하게 골라.",
 		voiceReady = "좋아, 거점 잡혔다. 마지막으로 잠자리 만든다.",
 		kind = "BUILD",
 		target = "CAMP_TOTEM",
+		reward = {
+			xp = 15,
+			gold = 20,
+			items = {},
+		},
 	},
 	{
 		key = "BUILD_LEAN_TO",
 		text = "수면/복귀 지점 확보",
 		command = "LEAN_TO 1개 설치",
-		tip = "모닥불 온기가 닿도록 너무 멀지 않게 세우고, 길은 막지 마라.",
+		tip = "모닥불 온기 범위 인근에 설치하되 이동 경로를 방해하지 않도록 배치하십시오.",
 		voiceIntro = "거의 다 왔다. 밤추위가 오기 전에 임시 대피소(린투)를 세워. 거기서 잠을 자고 위치를 기억해 둬야, 쓰러져도 다시 일어날 수 있다.",
 		voiceHint = "대피소 하나만 세우면 끝이다. 조금만 더 버텨.",
-		voiceReady = "끝났다. 이제부터가 진짜 생존의 시작이다.",
+		voiceReady = "좋아. 이제 기초 작업대를 세워 더 강한 물품 제작을 준비해라.",
 		kind = "BUILD",
 		target = "LEAN_TO",
+		reward = {
+			xp = 15,
+			gold = 25,
+			items = {
+				{ itemId = "COOKED_MEAT", count = 2 },
+			},
+		},
+	},
+	{
+		key = "BUILD_WORKBENCH",
+		text = "기초 작업대 구축",
+		command = "BASIC_WORKBENCH 1개 설치",
+		tip = "기초 작업대를 설치하면 더 강한 도구, 무기, 방어구 제작이 가능합니다.",
+		voiceIntro = "지금부터 생존 단계가 달라진다. 기초 작업대를 세워서 상위 제작을 열어라.",
+		voiceHint = "작업대 하나면 된다. 평평한 곳에 설치해.",
+		voiceReady = "좋아, 이제 더 강한 물품을 만들 준비가 끝났다. 이제부터가 진짜 생존의 시작이다.",
+		kind = "BUILD",
+		target = "BASIC_WORKBENCH",
+		reward = {
+			xp = 20,
+			gold = 30,
+			items = {},
+		},
 	},
 }
+
+local function cloneReward(reward)
+	if type(reward) ~= "table" then
+		return {
+			xp = 0,
+			gold = 0,
+			currency = 0,
+			items = {},
+		}
+	end
+
+	local copy = {
+		xp = tonumber(reward.xp) or 0,
+		gold = tonumber(reward.gold) or 0,
+		items = {},
+	}
+
+	if type(reward.items) == "table" then
+		for _, item in ipairs(reward.items) do
+			if type(item) == "table" and item.itemId and (tonumber(item.count) or 0) > 0 then
+				table.insert(copy.items, {
+					itemId = tostring(item.itemId),
+					count = tonumber(item.count) or 0,
+				})
+			end
+		end
+	end
+
+	copy.currency = copy.gold
+	return copy
+end
 
 local function getCurrentStep(progress)
 	if not progress or progress.completed then
@@ -243,13 +327,7 @@ local function serializeStatus(userId)
 	end
 
 	local step = getCurrentStep(progress)
-	local rewardPreviewItems = {}
-	for _, rewardItem in ipairs(COMPLETION_REWARD.items or {}) do
-		table.insert(rewardPreviewItems, {
-			itemId = rewardItem.itemId,
-			count = rewardItem.count,
-		})
-	end
+	local rewardPreview = cloneReward(step and step.reward)
 
 	local status = {
 		active = progress.active == true and progress.completed ~= true,
@@ -269,12 +347,7 @@ local function serializeStatus(userId)
 		needs = step and step.needs or nil,
 		stepReady = progress.stepReady == true,
 		assigned = progress.assigned == true,
-		rewardPreview = {
-			xp = COMPLETION_REWARD.xp,
-			gold = COMPLETION_REWARD.gold,
-			currency = COMPLETION_REWARD.gold,
-			items = rewardPreviewItems,
-		},
+		rewardPreview = rewardPreview,
 		currentStepText = step and step.text or nil,
 		progress = progress.stepData,
 	}
@@ -299,39 +372,40 @@ local function fireStatus(userId, eventName, extra)
 	NetController.FireClient(player, eventName, payload)
 end
 
-local function grantCompletionReward(userId, progress)
-	if type(progress) ~= "table" then
-		return nil
-	end
-	if progress.rewardClaimed == true then
+local function grantReward(userId, reward, reason)
+	if type(reward) ~= "table" then
 		return nil
 	end
 
-	if PlayerStatService and COMPLETION_REWARD.xp > 0 then
-		PlayerStatService.addXP(userId, COMPLETION_REWARD.xp, "TutorialCompletion")
+	local normalized = cloneReward(reward)
+
+	if PlayerStatService and normalized.xp > 0 then
+		PlayerStatService.addXP(userId, normalized.xp, reason or "TutorialStep")
 	end
 
-	if NPCShopService and COMPLETION_REWARD.gold > 0 then
-		NPCShopService.addGold(userId, COMPLETION_REWARD.gold)
+	if NPCShopService and normalized.gold > 0 then
+		NPCShopService.addGold(userId, normalized.gold)
 	end
 
-	if InventoryService and type(COMPLETION_REWARD.items) == "table" then
-		for _, rewardItem in ipairs(COMPLETION_REWARD.items) do
+	if InventoryService and type(normalized.items) == "table" then
+		for _, rewardItem in ipairs(normalized.items) do
 			if rewardItem.itemId and (rewardItem.count or 0) > 0 then
 				InventoryService.addItem(userId, rewardItem.itemId, rewardItem.count)
 			end
 		end
 	end
 
-	progress.rewardClaimed = true
-	return COMPLETION_REWARD
+	return normalized
 end
 
 local function completeStep(userId)
 	local progress = getOrCreateProgress(userId)
 	if not progress or progress.completed then
-		return
+		return nil
 	end
+
+	local step = getCurrentStep(progress)
+	local grantedReward = grantReward(userId, step and step.reward, "TutorialStepComplete")
 
 	progress.stepIndex = progress.stepIndex + 1
 	progress.stepData = {}
@@ -340,11 +414,13 @@ local function completeStep(userId)
 	if progress.stepIndex > #STEPS then
 		progress.completed = true
 		progress.active = false
-		local reward = grantCompletionReward(userId, progress)
-		fireStatus(userId, "Tutorial.Completed", { reward = reward })
+		progress.rewardClaimed = true
+		fireStatus(userId, "Tutorial.Completed", { reward = grantedReward, grantedReward = grantedReward })
 	else
-		fireStatus(userId, "Tutorial.Step.Updated")
+		fireStatus(userId, "Tutorial.Step.Updated", { grantedReward = grantedReward })
 	end
+
+	return grantedReward
 end
 
 local function handleMultiItemStep(userId, progress, step, itemId, count)
@@ -442,6 +518,23 @@ local function updateByEvent(userId, eventKind, target, count)
 		return
 	end
 
+	if step.kind == "BUILD_AND_RECIPE" then
+		local stepData = progress.stepData or {}
+		if eventKind == "BUILD" and step.buildTarget == target then
+			stepData.buildDone = true
+		elseif eventKind == "RECIPE" and step.recipeTarget == target then
+			stepData.recipeDone = true
+		end
+		progress.stepData = stepData
+
+		if stepData.buildDone == true and stepData.recipeDone == true then
+			markReady(userId, progress)
+		else
+			fireStatus(userId, "Tutorial.Step.Updated")
+		end
+		return
+	end
+
 	if step.kind == "KILL" and eventKind == "KILL" and step.target == target then
 		markReady(userId, progress)
 		return
@@ -499,10 +592,12 @@ local function handleStepComplete(player, _payload)
 		}
 	end
 
-	completeStep(player.UserId)
+	local grantedReward = completeStep(player.UserId)
+	local latest = serializeStatus(player.UserId)
+	latest.grantedReward = grantedReward
 	return {
 		success = true,
-		data = serializeStatus(player.UserId),
+		data = latest,
 	}
 end
 

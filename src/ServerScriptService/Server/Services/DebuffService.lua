@@ -53,10 +53,10 @@ local DEBUFF_DEFS = {
 	CHILLY = {
 		id = "CHILLY",
 		name = "쌀쌀함",
-		description = "밤이 되어 기온이 떨어졌습니다. 모닥불 근처로 가세요.",
+		description = "밤에 온기 수단이 없어 체온이 낮아집니다. 모닥불 근처로 이동하거나 횃불을 사용하세요.",
 		duration = -1, -- 밤 동안 지속
-		tickInterval = 8,
-		tickDamage = 1, -- 매우 미미한 데미지 (학습용)
+		tickInterval = 2,
+		tickDamage = 4, -- 기본 체력 재생을 상회하도록 상향
 	},
 	WARMTH = {
 		id = "WARMTH",
@@ -78,6 +78,71 @@ local function getPlayerDebuffs(userId: number)
 		activeDebuffs[userId] = {}
 	end
 	return activeDebuffs[userId]
+end
+
+local function isPlayerNearCampfire(hrp: BasePart): boolean
+	local overlapParams = OverlapParams.new()
+	local facilitiesFolder = workspace:FindFirstChild("Facilities")
+	if not facilitiesFolder then
+		return false
+	end
+
+	overlapParams.FilterDescendantsInstances = { facilitiesFolder }
+	overlapParams.FilterType = Enum.RaycastFilterType.Include
+	local nearbyParts = workspace:GetPartBoundsInRadius(hrp.Position, 18, overlapParams)
+	for _, part in ipairs(nearbyParts) do
+		local model = part:FindFirstAncestorOfClass("Model")
+		local facilityId = string.upper(tostring(part:GetAttribute("FacilityId") or (model and model:GetAttribute("FacilityId")) or ""))
+		if facilityId == "CAMPFIRE" then
+			return true
+		end
+	end
+
+	return false
+end
+
+local function isPlayerHoldingTorch(userId: number): boolean
+	if not (InventoryService and InventoryService.getActiveSlot and InventoryService.getSlot) then
+		return false
+	end
+
+	local activeSlot = InventoryService.getActiveSlot(userId)
+	if not activeSlot then
+		return false
+	end
+
+	local activeItem = InventoryService.getSlot(userId, activeSlot)
+	local activeItemId = activeItem and string.upper(tostring(activeItem.itemId or "")) or ""
+	return activeItemId == "TORCH"
+end
+
+local function getChillyEnvironmentState(player: Player)
+	if not player then
+		return nil
+	end
+	local char = player.Character
+	if not char then
+		return nil
+	end
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then
+		return nil
+	end
+
+	local isNight = TimeService and TimeService.getPhase and TimeService.getPhase() == "NIGHT"
+	local nearFire = isPlayerNearCampfire(hrp)
+	local holdingTorch = isPlayerHoldingTorch(player.UserId)
+
+	local shouldBeChilly = isNight and (not nearFire) and (not holdingTorch)
+	local shouldBeWarm = (not shouldBeChilly) and (nearFire or holdingTorch)
+
+	return {
+		isNight = isNight,
+		nearFire = nearFire,
+		holdingTorch = holdingTorch,
+		shouldBeChilly = shouldBeChilly,
+		shouldBeWarm = shouldBeWarm,
+	}
 end
 
 --========================================
@@ -215,6 +280,14 @@ function DebuffService._tickLoop()
 				table.insert(toRemove, debuffId)
 				continue
 			end
+
+			if debuffId == "CHILLY" then
+				local env = getChillyEnvironmentState(player)
+				if env and not env.shouldBeChilly then
+					table.insert(toRemove, debuffId)
+					continue
+				end
+			end
 			
 			-- 만료 체크 (duration == -1 이면 영구)
 			if state.duration > 0 then
@@ -256,66 +329,18 @@ end
 function DebuffService._environmentCheck()
 	if not TimeService then return end
 	
-	local isNight = TimeService.getPhase and TimeService.getPhase() == "NIGHT"
-	
 	for _, player in ipairs(Players:GetPlayers()) do
 		local userId = player.UserId
-		local char = player.Character
-		if not char then continue end
-		
-		local hrp = char:FindFirstChild("HumanoidRootPart")
-		if not hrp then continue end
-		
-		-- 1. 물(Water) 체크
-		local isSwimming = false
-		local hum = char:FindFirstChild("Humanoid")
-		if hum then
-			-- 수영 판정은 상태/바닥재질 모두 허용해 누락을 방지한다.
-			local state = hum:GetState()
-			if state == Enum.HumanoidStateType.Swimming or hum.FloorMaterial == Enum.Material.Water then
-				isSwimming = true
-			end
+		local env = getChillyEnvironmentState(player)
+		if not env then
+			DebuffService.removeDebuff(userId, "CHILLY")
+			DebuffService.removeDebuff(userId, "WARMTH")
+			DebuffService.removeDebuff(userId, "FREEZING")
+			continue
 		end
 
-		-- 2. 불(Campfire) 근처인지 체크
-		local nearFire = false
-		local overlapParams = OverlapParams.new()
-		local facilitiesFolder = workspace:FindFirstChild("Facilities")
-		if facilitiesFolder then
-			overlapParams.FilterDescendantsInstances = { facilitiesFolder }
-			overlapParams.FilterType = Enum.RaycastFilterType.Include
-			local nearbyParts = workspace:GetPartBoundsInRadius(hrp.Position, 18, overlapParams)
-			for _, part in ipairs(nearbyParts) do
-				local facilityId = part:GetAttribute("FacilityId") or (part:FindFirstAncestorOfClass("Model") and part:FindFirstAncestorOfClass("Model"):GetAttribute("FacilityId"))
-				if facilityId and DataService then
-					local facilityData = DataService.getFacility(facilityId)
-					if facilityData and facilityData.functionType == "COOKING" then
-						local facilityModel = part:FindFirstAncestorOfClass("Model")
-						local structureId = facilityModel and facilityModel:GetAttribute("StructureId")
-						local runtime = structureId and FacilityService and FacilityService.getRuntime(structureId)
-						if runtime and runtime.state == Enums.FacilityState.ACTIVE then
-							nearFire = true
-							break
-						end
-					end
-				end
-			end
-		end
-
-		-- 2.5 손에 든 횃불 체크 (밤 추위 완화)
-		local holdingTorch = false
-		if InventoryService and InventoryService.getActiveSlot and InventoryService.getSlot then
-			local activeSlot = InventoryService.getActiveSlot(userId)
-			if activeSlot then
-				local activeItem = InventoryService.getSlot(userId, activeSlot)
-				local activeItemId = activeItem and string.upper(tostring(activeItem.itemId or "")) or ""
-				holdingTorch = (activeItemId == "TORCH")
-			end
-		end
-
-		-- 3. 최종 상태 결정
-		local shouldBeChilly = isSwimming or (isNight and not nearFire and not holdingTorch)
-		local shouldBeWarm = (nearFire or holdingTorch) and not isSwimming -- 물속에선 따뜻함 유지 불가
+		local shouldBeChilly = env.shouldBeChilly
+		local shouldBeWarm = env.shouldBeWarm
 
 		-- 적용/해제 처리
 		if shouldBeChilly then
@@ -329,13 +354,13 @@ function DebuffService._environmentCheck()
 			end
 			DebuffService.removeDebuff(userId, "CHILLY")
 		else
-			-- 낮이고, 물 밖이며, 불 근처도 아님
+			-- 낮이거나 온기 수단이 있을 때 쌀쌀함/따뜻함 동시 정리
 			DebuffService.removeDebuff(userId, "CHILLY")
 			DebuffService.removeDebuff(userId, "WARMTH")
 		end
 		
-		-- 극한 추위(FREEZING)는 일단 밤+불없음 일 때만 (Phase 확장 대비)
-		if not isNight or nearFire or holdingTorch then
+		-- 극한 추위(FREEZING)는 온기 수단이 있거나 낮이면 해제
+		if (not env.isNight) or env.nearFire or env.holdingTorch then
 			DebuffService.removeDebuff(userId, "FREEZING")
 		end
 	end

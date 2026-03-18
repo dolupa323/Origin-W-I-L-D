@@ -61,6 +61,7 @@ local StorageUI = require(UI.StorageUI)
 local FacilityUI = require(UI.FacilityUI)
 local CollectionUI = require(UI.CollectionUI)
 local PromptUI = require(UI.PromptUI)
+local TotemUI = require(UI.TotemUI)
 
 local CollectionController = require(Controllers.CollectionController)
 
@@ -91,6 +92,7 @@ local selectedBuildId = nil
 local currentFacilityStructureId = nil
 local currentFacilityType = nil
 local selectedFacilityRecipe = nil
+local currentTotemStructureId = nil
 
 -- 0. UI 관리 헬퍼
 local function isAnyWindowOpen()
@@ -575,6 +577,10 @@ function UIManager.onEquipmentSlotClick(slotName)
 end
 
 function UIManager.onEquipmentSlotRightClick(slotName)
+	if slotName == "HAND" then
+		UIManager.notify("도구/무기 표시는 핫바 1번 슬롯 기준입니다.", C.WHITE)
+		return
+	end
 	local equip = InventoryController.getEquipment()
 	if equip[slotName] then
 		InventoryController.requestUnequip(slotName)
@@ -688,10 +694,16 @@ function UIManager._onInvSlotDoubleClick(idx)
 	if not itemData then return end
 	
 	if itemData.type == "ARMOR" or itemData.type == "TOOL" or itemData.type == "WEAPON" then
-		local slot = itemData.slot and itemData.slot:upper() or "HAND"
-		-- [Phase 11] 한벌옷(SUIT) 장착 시 상하의가 해제됨을 유도하거나, 
-		-- 그냥 서버에서 처리하도록 요청 (InventoryController.requestEquip)
-		print("[UIManager] Quick Equip:", item.itemId, "to", slot)
+		local slot = itemData.slot and itemData.slot:upper() or nil
+		if itemData.type == "ARMOR" then
+			if slot ~= "HEAD" and slot ~= "SUIT" then
+				UIManager.notify("방어구 슬롯 정보가 올바르지 않습니다.", C.RED)
+				return
+			end
+		end
+		if not slot then
+			slot = "HAND"
+		end
 		InventoryController.requestEquip(idx, slot)
 	elseif itemData.type == "FOOD" or itemData.type == "CONSUMABLE" then
 		InventoryController.requestUse(idx)
@@ -700,6 +712,27 @@ end
 
 function UIManager.onUseItem()
 	if not selectedInvSlot then return end
+	local item = InventoryController.getSlot(selectedInvSlot)
+	if not item or not item.itemId then return end
+
+	local itemData = DataHelper.GetData("ItemData", item.itemId)
+	if not itemData then return end
+
+	if itemData.type == "ARMOR" or itemData.type == "TOOL" or itemData.type == "WEAPON" then
+		local slot = itemData.slot and itemData.slot:upper() or nil
+		if itemData.type == "ARMOR" then
+			if slot ~= "HEAD" and slot ~= "SUIT" then
+				UIManager.notify("방어구 슬롯 정보가 올바르지 않습니다.", C.RED)
+				return
+			end
+		end
+		if not slot then
+			slot = "HAND"
+		end
+		InventoryController.requestEquip(selectedInvSlot, slot)
+		return
+	end
+
 	InventoryController.requestUse(selectedInvSlot)
 end
 
@@ -1276,6 +1309,18 @@ function UIManager._onOpenFacility(structureId, data)
 	
 	FacilityUI.SetVisible(true)
 	updateUIMode()
+
+	if FacilityUI.Refs and FacilityUI.Refs.Title then
+		if currentFacilityType == "CRAFTING_T1" then
+			FacilityUI.Refs.Title.Text = UILocalizer.Localize("기초 작업대 제작")
+		elseif currentFacilityType == "COOKING" then
+			FacilityUI.Refs.Title.Text = UILocalizer.Localize("요리")
+		elseif currentFacilityType and string.find(currentFacilityType, "SMELTING") then
+			FacilityUI.Refs.Title.Text = UILocalizer.Localize("제련")
+		else
+			FacilityUI.Refs.Title.Text = UILocalizer.Localize("제작")
+		end
+	end
 	
 	-- [추가] 초기 내구도 정보 반영
 	if data and data.health and data.maxHealth then
@@ -1306,6 +1351,83 @@ function UIManager._onCloseFacility()
 	selectedFacilityRecipe = nil
 	FacilityUI.SetVisible(false)
 	FacilityController.closeFacility()
+end
+
+----------------------------------------------------------------
+-- Totem UI
+----------------------------------------------------------------
+
+function UIManager.openTotem(structureId, data)
+	WindowManager.open("TOTEM", structureId, data)
+end
+
+function UIManager._onOpenTotem(structureId, data)
+	currentTotemStructureId = structureId
+	TotemUI.SetVisible(true)
+	updateUIMode()
+
+	if not blurEffect then
+		blurEffect = Instance.new("BlurEffect"); blurEffect.Size = 15; blurEffect.Parent = Lighting
+	end
+
+	if data then
+		TotemUI.Refresh(data)
+	else
+		UIManager.refreshTotem()
+	end
+end
+
+function UIManager.closeTotem()
+	WindowManager.close("TOTEM")
+end
+
+function UIManager._onCloseTotem()
+	if blurEffect then blurEffect:Destroy(); blurEffect = nil end
+	currentTotemStructureId = nil
+	TotemUI.SetVisible(false)
+end
+
+function UIManager.refreshTotem()
+	if not currentTotemStructureId then
+		return
+	end
+	local TotemController = require(Controllers.TotemController)
+	TotemController.refreshInfo(currentTotemStructureId, function(ok, data)
+		if ok and type(data) == "table" then
+			TotemUI.Refresh(data)
+		end
+	end)
+end
+
+function UIManager.requestTotemPay(days)
+	if not currentTotemStructureId then
+		UIManager.notify("토템 정보를 먼저 열어주세요.", C.RED)
+		return
+	end
+
+	local TotemController = require(Controllers.TotemController)
+	TotemController.requestPay(days, function(ok, data)
+		if ok then
+			TotemUI.Refresh(data)
+			UIManager.notify(string.format("유지비 결제 완료: %d일 연장", days), C.GOLD)
+		else
+			local code = tostring(data)
+			local map = {
+				INSUFFICIENT_GOLD = "골드가 부족합니다.",
+				TOTEM_NOT_OWNER = "소유한 토템에서만 유지비를 결제할 수 있습니다.",
+				TOTEM_NOT_FOUND = "토템을 찾을 수 없습니다.",
+				BAD_REQUEST = "요청 정보가 올바르지 않습니다.",
+				INVALID_COUNT = "결제 기간이 올바르지 않습니다.",
+			}
+			UIManager.notify(map[code] or ("유지비 결제 실패: " .. code), C.RED)
+		end
+	end)
+end
+
+function UIManager.highlightTotemZone()
+	local TotemController = require(Controllers.TotemController)
+	TotemController.flashPreview()
+	UIManager.notify("영역 효과 범위를 확인하세요.", C.WHITE)
 end
 
 ----------------------------------------------------------------
@@ -1348,6 +1470,25 @@ function UIManager.refreshFacility()
 			if r.requiredFacility == currentFacilityType then
 				table.insert(recipes, r)
 			end
+		end
+
+		if currentFacilityType == "CRAFTING_T1" then
+			local pinnedOrder = {
+				CRAFT_SPLIT_LOG_TO_PLANK = 1,
+				CRAFT_FIRM_STONE_AXE = 2,
+				CRAFT_FIRM_STONE_PICKAXE = 3,
+				CRAFT_BONE_SPEAR = 4,
+				CRAFT_LEATHER_ARMOR = 5,
+				CRAFT_FEATHER_HELMET = 6,
+			}
+			table.sort(recipes, function(a, b)
+				local ap = pinnedOrder[a.id] or 999
+				local bp = pinnedOrder[b.id] or 999
+				if ap ~= bp then
+					return ap < bp
+				end
+				return (a.id or "") < (b.id or "")
+			end)
 		end
 		
 		-- 2. Get current queue for this facility
@@ -1903,6 +2044,7 @@ function UIManager.Init()
 	StorageUI.Init(mainGui, UIManager, isMobile)
 	FacilityUI.Init(mainGui, UIManager, isMobile)
 	CollectionUI.Init(mainGui, UIManager)
+	TotemUI.Init(mainGui, UIManager, isMobile)
 	PromptUI.Init()
 	UILocalizer.StartAuto(mainGui)
 
@@ -1941,6 +2083,7 @@ function UIManager.Init()
 	WindowManager.register("STORAGE", UIManager._onOpenStorage, UIManager._onCloseStorage)
 	WindowManager.register("FACILITY", UIManager._onOpenFacility, UIManager._onCloseFacility)
 	WindowManager.register("COLLECTION", UIManager._onOpenCollection, UIManager._onCloseCollection)
+	WindowManager.register("TOTEM", UIManager._onOpenTotem, UIManager._onCloseTotem)
 
 	-- [Refactor] DragDropController 초기화
 	DragDropController.Init(UIManager, InventoryController, Balance, mainGui)

@@ -199,6 +199,15 @@ Balance.BASE_DEFAULT_RADIUS = 30       -- 기본 베이스 반경
 Balance.BASE_MAX_RADIUS = 100          -- 최대 베이스 반경
 Balance.BASE_RADIUS_PER_LEVEL = 10     -- 레벨당 추가 반경
 Balance.BASE_MAX_PER_PLAYER = 1        -- 플레이어당 최대 베이스 수
+Balance.TOTEM_UPKEEP_DAY_SECONDS = 86400 -- 유지비 단위 시간(24시간)
+Balance.TOTEM_UPKEEP_COST_1D = 100       -- 1일 유지비
+Balance.TOTEM_UPKEEP_COST_3D = 280       -- 3일 유지비(할인)
+Balance.TOTEM_UPKEEP_COST_7D = 630       -- 7일 유지비(할인)
+Balance.TOTEM_INITIAL_GRACE_SECONDS = 86400 -- 토템 첫 설치 무료 유지시간
+Balance.TOTEM_PREVIEW_HEIGHT = 0.25      -- 토템 범위 프리뷰 높이
+Balance.TOTEM_PROXIMITY_SHOW_RANGE = 65  -- 토템 범위 프리뷰 노출 거리
+Balance.STARTER_PROTECTION_RADIUS = 45   -- 초보자 스폰 보호존 반경
+Balance.STARTER_PROTECTION_SHOW_RANGE = 130 -- 스폰 보호존 프리뷰 표시 거리
 
 --========================================
 -- 자동화 시스템 (Phase 7)

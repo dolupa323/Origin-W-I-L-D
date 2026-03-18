@@ -16,6 +16,28 @@ local WorldDropService
 local PlayerStatService -- Phase 6 연동
 local DropTableData -- require 나중에 (상호참조 방지)
 local DebuffService -- Phase 4-4 연동
+local protectedZoneChecker = nil -- TotemService에서 주입
+
+local function getProtectedZoneInfo(position: Vector3)
+	if not protectedZoneChecker then
+		return nil
+	end
+
+	local result = protectedZoneChecker(position)
+	if result == true then
+		return {
+			active = true,
+			centerPosition = position,
+			radius = 20,
+		}
+	end
+
+	if type(result) == "table" and result.active then
+		return result
+	end
+
+	return nil
+end
 
 -- Private State
 local activeCreatures = {} -- [instanceId] = { model=Part, data=Data, state=..., targetPosition=Vector3, lastStateChange=number }
@@ -1369,11 +1391,31 @@ function CreatureService._updateAILoop()
 			humanoid:MoveTo(hrp.Position) -- 정지
 			humanoid:MoveTo(hrp.Position) -- 정지
 		elseif creature.state == "CHASE" or creature.state == "WANDER" or creature.state == "FLEE" then
+			local currentZone = getProtectedZoneInfo(hrp.Position)
+			if currentZone then
+				local center = currentZone.centerPosition or hrp.Position
+				local radius = tonumber(currentZone.radius) or 30
+				local dir = Vector3.new(hrp.Position.X - center.X, 0, hrp.Position.Z - center.Z)
+				if dir.Magnitude < 0.1 then
+					dir = Vector3.new((math.random() - 0.5), 0, (math.random() - 0.5))
+				end
+				creature.state = "FLEE"
+				creature.lastStateChange = now
+				creature.stateDuration = getRandomDuration(WANDER_MIN_TIME, WANDER_MAX_TIME)
+				creature.chaseStartTime = nil
+				if dir.Magnitude > 0.1 then
+					local escapeTarget = center + dir.Unit * (radius + 10)
+					creature.targetPosition = CreatureService._getSafeTarget(hrp.Position, escapeTarget)
+				else
+					creature.targetPosition = nil
+				end
+			end
+
 			-- [목적지 결정]
 			local target = nil
 			if creature.state == "CHASE" and closestPlayerPos then
 				-- 추격: 목표가 물이면 추격 포기
-				if CreatureService._isWaterPosition(closestPlayerPos) then
+				if CreatureService._isWaterPosition(closestPlayerPos) or getProtectedZoneInfo(closestPlayerPos) then
 					creature.state = "WANDER"; creature.lastStateChange = now
 					creature.stateDuration = getRandomDuration(WANDER_MIN_TIME, WANDER_MAX_TIME)
 					creature.targetPosition = nil
@@ -1414,6 +1456,31 @@ function CreatureService._updateAILoop()
 
 			-- [이동 실행 (Pathfinding)]
 			if target then
+				local targetZone = getProtectedZoneInfo(target)
+				if targetZone then
+					local center = targetZone.centerPosition or target
+					local radius = tonumber(targetZone.radius) or 30
+					local escapeDir = hrp.Position - center
+					if escapeDir.Magnitude < 0.1 then
+						escapeDir = Vector3.new((math.random() - 0.5), 0, (math.random() - 0.5))
+					end
+					if escapeDir.Magnitude > 0.1 then
+						local fallbackTarget = center + escapeDir.Unit * (radius + 8)
+						if not CreatureService._isWaterPosition(fallbackTarget) then
+							target = fallbackTarget
+							creature.targetPosition = target
+						else
+							target = nil
+							creature.targetPosition = nil
+							humanoid:MoveTo(hrp.Position)
+						end
+					end
+				end
+
+				if not target then
+					continue
+				end
+
 				-- [추가] 공격 사거리 내에 있으면 플레이어를 바라보고 정지 (공격 집중)
 				if creature.state == "CHASE" and isInAttackRange then
 					humanoid:MoveTo(hrp.Position)
@@ -1530,9 +1597,23 @@ function CreatureService._updateAILoop()
 		
 		-- 5. Creature -> Player/Structure Damage (Phase 11-4)
 		if creature.state == "CHASE" then
+			if getProtectedZoneInfo(hrp.Position) then
+				creature.state = "FLEE"
+				creature.lastStateChange = now
+				creature.chaseStartTime = nil
+				continue
+			end
+
 			local dmg = creature.data.damage or 0
 			if dmg > 0 then
 				if closestPlayerPos and isInAttackRange then
+					if getProtectedZoneInfo(closestPlayerPos) then
+						creature.state = "FLEE"
+						creature.lastStateChange = now
+						creature.chaseStartTime = nil
+						continue
+					end
+
 					if not creature.lastAttackTime or (now - creature.lastAttackTime >= CREATURE_ATTACK_COOLDOWN) then
 						creature.lastAttackTime = now
 						if closestPlayerHum and closestPlayerHum.Health > 0 then
@@ -1546,6 +1627,10 @@ function CreatureService._updateAILoop()
 								-- 1. 활성 상태 및 거리 재확인 (피했을 경우 판정 무효)
 								local currentCreature = activeCreatures[id]
 								if not currentCreature or not currentCreature.model or not currentCreature.model.Parent then return end
+
+								if getProtectedZoneInfo(currentCreature.rootPart.Position) then
+									return
+								end
 								
 								local player = Players:GetPlayerByUserId(closestPlayerUserId)
 								if not player then return end
@@ -1553,6 +1638,7 @@ function CreatureService._updateAILoop()
 								local playerChar = player.Character
 								local playerHrp = playerChar and playerChar:FindFirstChild("HumanoidRootPart")
 								if not playerHrp then return end
+								if getProtectedZoneInfo(playerHrp.Position) then return end
 								
 								local currentDist = (currentCreature.model.PrimaryPart.Position - playerHrp.Position).Magnitude
 								-- 판정 관용도: 원래 사거리의 1.3배까지 인정 (돌진 중일 수 있음)
@@ -1565,6 +1651,9 @@ function CreatureService._updateAILoop()
 					end
 				else
 					if not creature.lastAttackTime or (now - creature.lastAttackTime >= CREATURE_ATTACK_COOLDOWN) then
+						if getProtectedZoneInfo(hrp.Position) then
+							continue
+						end
 						local facFolder = workspace:FindFirstChild("Facilities")
 						if facFolder then
 							local params = OverlapParams.new()
@@ -1609,6 +1698,10 @@ function CreatureService._updateAILoop()
 			end
 		end
 	end
+end
+
+function CreatureService.SetProtectedZoneChecker(checkerFn)
+	protectedZoneChecker = checkerFn
 end
 
 --========================================

@@ -31,6 +31,12 @@ function FacilityController.openFacility(structureId: string)
 		local UIManager = require(script.Parent.Parent.UIManager)
 		UIManager.openFacility(structureId, data)
 	else
+		local UIManager = require(script.Parent.Parent.UIManager)
+		if tostring(data) == "NO_PERMISSION" then
+			UIManager.notify("토템 보호가 활성화된 시설입니다. 유지비 만료 후 약탈 가능합니다.", Color3.fromRGB(255, 120, 120))
+		else
+			UIManager.notify("시설 접근 실패: " .. tostring(data), Color3.fromRGB(255, 120, 120))
+		end
 		warn("[FacilityController] Failed to get facility info:", structureId, data)
 	end
 end

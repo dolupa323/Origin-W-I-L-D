@@ -341,6 +341,21 @@ for command, handler in pairs(NPCShopService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)
 end
 
+-- TotemService 초기화 (거점 토템 유지비/영역 보호)
+local TotemService = require(Services.TotemService)
+TotemService.Init(NetController, SaveService, BaseClaimService, BuildService, NPCShopService)
+
+for command, handler in pairs(TotemService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
+end
+
+BuildService.SetTotemService(TotemService)
+StorageService.SetTotemService(TotemService)
+FacilityService.SetTotemService(TotemService)
+CreatureService.SetProtectedZoneChecker(function(position)
+	return TotemService.getProtectionInfoAt(position)
+end)
+
 -- StaminaService 핸들러 등록 (이미 초기화됨)
 for command, handler in pairs(StaminaService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)

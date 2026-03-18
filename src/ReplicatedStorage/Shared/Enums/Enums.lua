@@ -101,6 +101,15 @@ Enums.ErrorCode = {
 	SHOP_TOO_FAR = "SHOP_TOO_FAR",                   -- 상점 거리 초과
 	LEVEL_NOT_MET = "LEVEL_NOT_MET",                 -- 필요 레벨 미충족
 	GOLD_CAP_REACHED = "GOLD_CAP_REACHED",           -- 골드 한도 도달
+
+	-- 토템/거점 유지비 관련
+	TOTEM_REQUIRED = "TOTEM_REQUIRED",               -- 토템 없이 건설 시도
+	TOTEM_NOT_FOUND = "TOTEM_NOT_FOUND",             -- 토템 없음
+	TOTEM_NOT_OWNER = "TOTEM_NOT_OWNER",             -- 토템 소유자 아님
+	TOTEM_UPKEEP_EXPIRED = "TOTEM_UPKEEP_EXPIRED",   -- 토템 유지비 만료
+	TOTEM_ALREADY_EXISTS = "TOTEM_ALREADY_EXISTS",     -- 이미 토템이 존재함
+	TOTEM_ZONE_OCCUPIED = "TOTEM_ZONE_OCCUPIED",       -- 기존 토템 영역 내 배치 시도
+	STARTER_ZONE_PROTECTED = "STARTER_ZONE_PROTECTED", -- 초보자 보호존 건설 금지
 }
 
 --========================================
@@ -242,8 +251,6 @@ Enums.NodeType = {
 --========================================
 Enums.EquipSlot = {
 	HEAD = "HEAD",     -- 투구
-	TOP = "TOP",       -- 상의 (섬유 등)
-	BOTTOM = "BOTTOM", -- 하의 (섬유 등)
 	SUIT = "SUIT",     -- 한벌옷 (중갑 등)
 	HAND = "HAND",     -- 손 (도구/무기)
 }

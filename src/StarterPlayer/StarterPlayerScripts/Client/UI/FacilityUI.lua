@@ -227,8 +227,8 @@ function FacilityUI.UpdateDetail(recipe, playerItemCounts, getItemData, getIcon,
 
 	local output = recipe.outputs[1]
 	local outData = getItemData(output.itemId)
-	
-	d.Name.Text = UILocalizer.LocalizeDataText("ItemData", tostring(output.itemId), "name", (outData and outData.name) or output.itemId)
+
+	d.Name.Text = UILocalizer.Localize(recipe.name or output.itemId)
 	d.Icon.Image = getIcon(output.itemId)
 	d.Time.Text = UILocalizer.Localize(string.format("맡김 제작 : %d초", recipe.craftTime or 0))
 	d.BagCount.Text = tostring(playerItemCounts[output.itemId] or 0)
@@ -291,9 +291,16 @@ function FacilityUI.RefreshQueue(fullQueue, structureId, getIcon, UIManager)
 			count = count + 1
 			local item = Utils.mkFrame({size=UDim2.new(1, -10, 0, 50), bg=Color3.fromRGB(45, 45, 50), bgT=0.5, r=4, parent=grid})
 			
+			local RecipeData = require(game.ReplicatedStorage.Data.RecipeData)
+			local recipe = nil
+			for _, r in ipairs(RecipeData) do
+				if r.id == entry.recipeId then recipe = r; break end
+			end
+			
 			local icon = Instance.new("ImageLabel")
 			icon.Size = UDim2.new(0, 40, 0, 40); icon.Position = UDim2.new(0, 5, 0.5, 0); icon.AnchorPoint = Vector2.new(0, 0.5)
-			icon.Image = getIcon(entry.recipeId); icon.BackgroundTransparency = 1; icon.Parent = item
+			local outputItemId = recipe and recipe.outputs and recipe.outputs[1] and recipe.outputs[1].itemId
+			icon.Image = outputItemId and getIcon(outputItemId) or getIcon(entry.recipeId); icon.BackgroundTransparency = 1; icon.Parent = item
 			
 			local isDone = (entry.remaining <= 0)
 			local statusText = isDone and UILocalizer.Localize("완료") or UILocalizer.Localize(string.format("제작 중 (%ds)", entry.remaining))
@@ -322,12 +329,6 @@ function FacilityUI.RefreshQueue(fullQueue, structureId, getIcon, UIManager)
 					strokeC = Color3.fromRGB(120, 120, 120),
 					parent = item
 				})
-				
-				local RecipeData = require(game.ReplicatedStorage.Data.RecipeData)
-				local recipe = nil
-				for _, r in ipairs(RecipeData) do
-					if r.id == entry.recipeId then recipe = r; break end
-				end
 				
 				if recipe and recipe.craftTime and recipe.craftTime > 0 then
 					local total = recipe.craftTime

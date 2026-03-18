@@ -15,7 +15,7 @@ local TechUnlockData = {
 			recipes = { 
 				"CRAFT_CRUDE_STONE_PICKAXE", "CRAFT_CRUDE_STONE_AXE", 
 				"CRAFT_CRUDE_WOODEN_SPEAR", "CRAFT_TORCH",
-				"CRAFT_FIRM_STONE_AXE", "CRAFT_FIRM_STONE_PICKAXE"
+				"CRAFT_SPLIT_LOG_TO_PLANK", "CRAFT_FIRM_STONE_AXE", "CRAFT_FIRM_STONE_PICKAXE"
 			}, 
 			facilities = { 
 				"CAMPFIRE", "PRIMITIVE_WORKBENCH", "STORAGE_BOX",
@@ -39,9 +39,9 @@ local TechUnlockData = {
 		name = "기초 방어구",
 		cost = { { itemId = "FIBER", amount = 20 }, { itemId = "DURABLE_LEAF", amount = 10 } },
 		prerequisites = { "TECH_SETTLEMENT" },
-		unlocks = { recipes = { "CRAFT_GRASS_TUNIC" }, facilities = {} },
+		unlocks = { recipes = { "CRAFT_LEATHER_ARMOR", "CRAFT_FEATHER_HELMET" }, facilities = {} },
 		category = "SURVIVAL",
-		description = "주변 풀과 섬유를 엮어 초보적인 방어구를 만듭니다.",
+		description = "작업대에서 깃털 투구와 가죽옷까지 제작 가능한 방어구 체계를 해금합니다.",
 	},
 	{
 		id = "TECH_HUNTING",

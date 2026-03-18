@@ -57,11 +57,19 @@ end
 local function _getDefaultEquipment()
 	return {
 		HEAD = nil,
-		TOP = nil,
-		BOTTOM = nil,
 		SUIT = nil,
 		HAND = nil,
 	}
+end
+
+local HOTBAR_SLOT_MAX = 8
+
+local function _isArmorItemId(itemId: string): boolean
+	if not (DataService and DataService.getItem and itemId) then
+		return false
+	end
+	local itemData = DataService.getItem(itemId)
+	return itemData and itemData.type == "ARMOR" or false
 end
 
 local function _normalizeEquipmentSlots(equipment: any): any
@@ -71,8 +79,6 @@ local function _normalizeEquipmentSlots(equipment: any): any
 	end
 
 	normalized.HEAD = equipment.HEAD or equipment.Head
-	normalized.TOP = equipment.TOP or equipment.Top or equipment.Body
-	normalized.BOTTOM = equipment.BOTTOM or equipment.Bottom or equipment.Feet
 	normalized.SUIT = equipment.SUIT or equipment.Suit
 	normalized.HAND = equipment.HAND or equipment.Hand
 
@@ -361,19 +367,12 @@ function InventoryService.equipItem(player: Player, inventorySlot: number, equip
 	
 	-- 슬롯 타입 체크
 	local targetSlot = equipmentSlotName:upper()
+	if targetSlot ~= "HEAD" and targetSlot ~= "SUIT" and targetSlot ~= "HAND" then
+		return false, Enums.ErrorCode.BAD_REQUEST
+	end
 	if itemData.slot and itemData.slot:upper() ~= targetSlot then
 		warn(string.format("[InventoryService] Slot mismatch: %s vs %s", itemData.slot, targetSlot))
 		return false, Enums.ErrorCode.BAD_REQUEST
-	end
-	
-	-- [Phase 11] 한벌옷(SUIT) vs 상하의(TOP/BOTTOM) 갈등 로직
-	if targetSlot == "SUIT" then
-		-- 한벌옷 장착 시 상의와 하의 해제
-		InventoryService.unequipItem(player, "TOP")
-		InventoryService.unequipItem(player, "BOTTOM")
-	elseif targetSlot == "TOP" or targetSlot == "BOTTOM" then
-		-- 상의 또는 하의 장착 시 한벌옷 해제
-		InventoryService.unequipItem(player, "SUIT")
 	end
 
 	-- 기존 장비와 교체
@@ -654,6 +653,11 @@ function InventoryService.move(player: Player, fromSlot: number, toSlot: number,
 	
 	local fromData = inv.slots[fromSlot]
 	local moveCount = count or fromData.count  -- nil이면 전체
+
+	-- 방어구는 핫바(1~8) 슬롯으로 이동 금지
+	if _isArmorItemId(fromData.itemId) and toSlot <= HOTBAR_SLOT_MAX then
+		return false, Enums.ErrorCode.BAD_REQUEST, nil
+	end
 	
 	-- 이동 수량 검증
 	ok, err = _validateCountAvailable(inv, fromSlot, moveCount)
@@ -1037,7 +1041,23 @@ function InventoryService.addItem(userId: number, itemId: string, count: number,
 	end
 	
 	-- 2. 빈 슬롯에 새 스택 생성
-	for slot = 1, Balance.INV_SLOTS do
+	-- 방어구는 핫바(1~8) 자동 등록을 피하기 위해 9번 이후 슬롯을 우선 사용
+	local slotOrder = {}
+	local isArmor = itemData and itemData.type == "ARMOR"
+	if isArmor then
+		for slot = HOTBAR_SLOT_MAX + 1, Balance.INV_SLOTS do
+			table.insert(slotOrder, slot)
+		end
+		for slot = 1, HOTBAR_SLOT_MAX do
+			table.insert(slotOrder, slot)
+		end
+	else
+		for slot = 1, Balance.INV_SLOTS do
+			table.insert(slotOrder, slot)
+		end
+	end
+
+	for _, slot in ipairs(slotOrder) do
 		if remaining <= 0 then break end
 		
 		if inv.slots[slot] == nil then

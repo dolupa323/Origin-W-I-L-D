@@ -343,10 +343,8 @@ function EquipService.updateAppearance(player: Player)
 	local shirt = char:FindFirstChildOfClass("Shirt") or Instance.new("Shirt", char)
 	local pants = char:FindFirstChildOfClass("Pants") or Instance.new("Pants", char)
 	
-	-- 1. 상의/하의/한벌옷 텍스처 적용
+	-- 1. 한벌옷 텍스처 적용 (상의/하의 슬롯은 제거됨)
 	local suitItem = equip.SUIT and DataService.getItem(equip.SUIT.itemId)
-	local topItem = equip.TOP and DataService.getItem(equip.TOP.itemId)
-	local botItem = equip.BOTTOM and DataService.getItem(equip.BOTTOM.itemId)
 	
 	-- [FIX] 장비가 없는 경우 기본 원시인 의상 유지
 	local Appearance = require(ReplicatedStorage.Shared.Config.Appearance)
@@ -361,15 +359,8 @@ function EquipService.updateAppearance(player: Player)
 			EquipService._applyArmorModel(char, suitItem.modelId)
 		end
 	else
-		shirt.ShirtTemplate = _formatAssetId(topItem and topItem.shirtId, defaultShirt)
-		pants.PantsTemplate = _formatAssetId(botItem and botItem.pantsId, defaultPants)
-		
-		if topItem and topItem.modelId then
-			EquipService._applyArmorModel(char, topItem.modelId)
-		end
-		if botItem and botItem.modelId then
-			EquipService._applyArmorModel(char, botItem.modelId)
-		end
+		shirt.ShirtTemplate = _formatAssetId(nil, defaultShirt)
+		pants.PantsTemplate = _formatAssetId(nil, defaultPants)
 	end
 	
 	-- 2. 투구(HEAD) 적용

@@ -77,14 +77,14 @@ local FINALE_LINES = {
 local TUTORIAL_STEP_EN = {
 	COLLECT_BASICS = {
 		currentStepText = "Gather 1 Small Stone and 1 Branch first",
-		stepTip = "Grab anything useful first, but don't wander too far from the crash site.",
+		stepTip = "Use Z to collect nearby resources and secure the required quantity near the starting area.",
 		stepVoiceIntro = "You won't survive a day barehanded. Search the ground and grab a small stone and a branch first.",
 		stepVoiceHint = "Still not enough. Search around the wreckage a little more.",
 		stepVoiceReady = "Good. That's enough. Let's craft a tool first.",
 	},
 	CRAFT_AXE = {
 		currentStepText = "Craft a Crude Stone Axe",
-		stepTip = "Open your bag and craft a tool. If you're short on materials, gather a little more nearby.",
+		stepTip = "Press B and craft CRAFT_CRUDE_STONE_AXE from the quick-craft tab.",
 		stepVoiceIntro = "Good, you've got materials. Make a crude stone axe with them. You die fast here without a weapon.",
 		stepVoiceHint = "No rush, but secure that stone axe first.",
 		stepVoiceReady = "Well done. Now go get some wood.",
@@ -104,10 +104,10 @@ local TUTORIAL_STEP_EN = {
 		stepVoiceReady = "Good kill. Prepare to light a fire now.",
 	},
 	BUILD_CAMPFIRE = {
-		currentStepText = "Build a warmth point before night",
-		stepTip = "Place it on flat open ground so you can escape quickly later.",
+		currentStepText = "Prepare heat tools before night",
+		stepTip = "Place 1 campfire with C build mode, then craft CRAFT_TORCH once from the B inventory quick-craft tab.",
 		stepVoiceIntro = "Don't tell me you'll eat raw meat. Use the wood and place a campfire. Fire is essential against cold and predators.",
-		stepVoiceHint = "Just place one campfire. Choose the spot well.",
+		stepVoiceHint = "Set the campfire and craft a torch too. Night cold will hit hard.",
 		stepVoiceReady = "Good. Fire is up. Now cook.",
 	},
 	COOK_MEAT = {
@@ -129,7 +129,14 @@ local TUTORIAL_STEP_EN = {
 		stepTip = "Keep it close enough to the campfire warmth, but don't block movement paths.",
 		stepVoiceIntro = "Almost done. Build a lean-to before the night cold hits. Sleep there and lock your position so you can recover if you go down.",
 		stepVoiceHint = "One shelter and you're done. Just a little more.",
-		stepVoiceReady = "Done. Real survival starts now.",
+		stepVoiceReady = "Good. Now build a basic workbench to unlock stronger crafting.",
+	},
+	BUILD_WORKBENCH = {
+		currentStepText = "Build a Basic Workbench",
+		stepTip = "Once built, you can craft stronger tools, weapons, and armor.",
+		stepVoiceIntro = "Your next survival tier starts now. Build a basic workbench and unlock advanced crafting.",
+		stepVoiceHint = "You only need one workbench. Place it on flat ground.",
+		stepVoiceReady = "Good. You're ready to craft stronger gear. Real survival begins now.",
 	},
 }
 
@@ -916,13 +923,11 @@ function RadioStoryController.interact()
 				if stepVoiceIntro ~= "" then
 					appendSpokenLines(lines, "이안", stepVoiceIntro)
 				end
-				local stepTip = localizeTutorialStepField(pendingStatus, "stepTip")
-				if stepTip ~= "" then
-					appendSpokenLines(lines, "이안", stepTip)
-				end
-				local currentStepText = localizeTutorialStepField(pendingStatus, "currentStepText")
-				if #lines == 0 and currentStepText ~= "" then
-					appendSpokenLines(lines, "이안", currentStepText)
+				if #lines == 0 then
+					local stepVoiceHint = localizeTutorialStepField(pendingStatus, "stepVoiceHint")
+					if stepVoiceHint ~= "" then
+						appendSpokenLines(lines, "이안", stepVoiceHint)
+					end
 				end
 				stepInteractCounts[stepKey] = 0
 			else
@@ -934,9 +939,9 @@ function RadioStoryController.interact()
 					if stepVoiceReady ~= "" then
 						appendSpokenLines(lines, "이안", stepVoiceReady)
 					else
-						local stepTip = localizeTutorialStepField(pendingStatus, "stepTip")
-						if stepTip ~= "" then
-							appendSpokenLines(lines, "이안", stepTip)
+						local stepVoiceHint = localizeTutorialStepField(pendingStatus, "stepVoiceHint")
+						if stepVoiceHint ~= "" then
+							appendSpokenLines(lines, "이안", stepVoiceHint)
 						end
 					end
 					stepInteractCounts[stepKey] = 0
@@ -945,22 +950,16 @@ function RadioStoryController.interact()
 					if stepVoiceHint ~= "" then
 						appendSpokenLines(lines, "이안", stepVoiceHint)
 					else
-						local stepTip = localizeTutorialStepField(pendingStatus, "stepTip")
-						local currentStepText = localizeTutorialStepField(pendingStatus, "currentStepText")
-						if stepTip ~= "" then
-							appendSpokenLines(lines, "이안", stepTip)
-						elseif currentStepText ~= "" then
-							appendSpokenLines(lines, "이안", currentStepText)
+						local stepVoiceIntro = localizeTutorialStepField(pendingStatus, "stepVoiceIntro")
+						if stepVoiceIntro ~= "" then
+							appendSpokenLines(lines, "이안", stepVoiceIntro)
 						end
 					end
 					stepInteractCounts[stepKey] = 0
 				else
-					local stepTip = localizeTutorialStepField(pendingStatus, "stepTip")
-					local currentStepText = localizeTutorialStepField(pendingStatus, "currentStepText")
-					if stepTip ~= "" then
-						appendSpokenLines(lines, "이안", stepTip)
-					elseif currentStepText ~= "" then
-						appendSpokenLines(lines, "이안", currentStepText)
+					local stepVoiceHint = localizeTutorialStepField(pendingStatus, "stepVoiceHint")
+					if stepVoiceHint ~= "" then
+						appendSpokenLines(lines, "이안", stepVoiceHint)
 					end
 				end
 			end

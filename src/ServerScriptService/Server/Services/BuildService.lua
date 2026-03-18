@@ -27,6 +27,7 @@ local InventoryService = nil
 local SaveService = nil
 local FacilityService = nil  -- SetFacilityService로 주입 (Phase 6 버그픽스)
 local BaseClaimService = nil -- SetBaseClaimService로 주입 (Phase 7)
+local TotemService = nil     -- SetTotemService로 주입
 local TechService = nil      -- Phase 6 연동
 local PlayerStatService = nil -- Phase 6 연동
 local WorldDropService = nil
@@ -507,6 +508,8 @@ end
 function BuildService.place(player: Player, facilityId: string, position: Vector3, rotation: Vector3?): (boolean, string?, any?)
 	local userId = player.UserId
 	local character = player.Character
+	local isCampfire = facilityId == "CAMPFIRE"
+	local isCampTotem = facilityId == "CAMP_TOTEM"
 	
 	-- Vector3 type safety (in case called from other server scripts)
 	if type(position) == "table" then
@@ -521,6 +524,23 @@ function BuildService.place(player: Player, facilityId: string, position: Vector
 	if not facilityData then
 		return false, Enums.ErrorCode.NOT_FOUND, nil
 	end
+
+	-- 1aa. 토템 선행 규칙 검증
+	-- 기본 규칙: 토템 없이는 건설 불가
+	-- 예외: CAMPFIRE, CAMP_TOTEM
+	if TotemService and TotemService.isBuildAllowed then
+		local buildAllowed, buildErr = TotemService.isBuildAllowed(userId, facilityId, position)
+		if not buildAllowed then
+			return false, buildErr or Enums.ErrorCode.NO_PERMISSION, nil
+		end
+	else
+		if not isCampfire and not isCampTotem then
+			local hasBase = BaseClaimService and BaseClaimService.getBase and BaseClaimService.getBase(userId)
+			if not hasBase then
+				return false, Enums.ErrorCode.TOTEM_REQUIRED, nil
+			end
+		end
+	end
 	
 	-- 1a. 기술 해금 검증 (장기적 리뉴얼을 위해 일시 제거)
 	-- if TechService and not TechService.isFacilityUnlocked(userId, facilityId) then
@@ -531,7 +551,13 @@ function BuildService.place(player: Player, facilityId: string, position: Vector
 	if BaseClaimService and BaseClaimService.getOwnerAt then
 		local zoneOwnerId = BaseClaimService.getOwnerAt(position)
 		if zoneOwnerId and zoneOwnerId ~= userId then
-			return false, Enums.ErrorCode.NO_PERMISSION, nil
+			local zoneProtected = true
+			if TotemService and TotemService.isProtectionActiveForOwner then
+				zoneProtected = TotemService.isProtectionActiveForOwner(zoneOwnerId)
+			end
+			if zoneProtected then
+				return false, Enums.ErrorCode.NO_PERMISSION, nil
+			end
 		end
 	end
 	
@@ -672,6 +698,18 @@ function BuildService.place(player: Player, facilityId: string, position: Vector
 	if BaseClaimService and BaseClaimService.onStructurePlaced then
 		BaseClaimService.onStructurePlaced(userId, position)
 	end
+
+	-- 14a. 토템 설치 시 기본 유지시간 부여
+	if isCampTotem and TotemService and TotemService.onTotemPlaced then
+		TotemService.onTotemPlaced(userId)
+	end
+
+	if isCampTotem and BaseClaimService and BaseClaimService.moveBaseCenter then
+		local moved, moveErr = BaseClaimService.moveBaseCenter(userId, position)
+		if not moved then
+			warn(string.format("[BuildService] Failed to move base center for totem placement (user=%d, err=%s)", userId, tostring(moveErr)))
+		end
+	end
 	
 	print(string.format("[BuildService] Placed %s at (%.1f, %.1f, %.1f) by player %d", 
 		facilityId, position.X, position.Y, position.Z, userId))
@@ -709,7 +747,13 @@ function BuildService.remove(player: Player, structureId: string): (boolean, str
 	
 	-- 3. 권한 검증 (소유자만 해체 가능)
 	if structure.ownerId ~= userId then
-		return false, Enums.ErrorCode.NO_PERMISSION, nil
+		local canRaid = false
+		if TotemService and TotemService.canRaidStructure then
+			canRaid = TotemService.canRaidStructure(userId, structure)
+		end
+		if not canRaid then
+			return false, Enums.ErrorCode.NO_PERMISSION, nil
+		end
 	end
 	
 	-- === 실행 단계 ===
@@ -1057,6 +1101,10 @@ end
 --- BaseClaimService 의존성 주입 (Phase 7)
 function BuildService.SetBaseClaimService(baseClaimService)
 	BaseClaimService = baseClaimService
+end
+
+function BuildService.SetTotemService(totemService)
+	TotemService = totemService
 end
 
 function BuildService.GetHandlers()

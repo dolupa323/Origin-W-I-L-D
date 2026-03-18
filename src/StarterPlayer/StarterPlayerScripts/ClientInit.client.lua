@@ -89,6 +89,10 @@ if success then
 	-- TutorialController 초기화 (첫 진입 튜토리얼)
 	local TutorialController = require(Controllers.TutorialController)
 	TutorialController.Init()
+
+	-- TotemController 초기화 (거점 토템 유지비/범위 프리뷰)
+	local TotemController = require(Controllers.TotemController)
+	TotemController.Init()
 	
 	-- MovementController 스태미나 → UIManager 연동
 	MovementController.onStaminaChanged(function(current, max)
@@ -134,6 +138,9 @@ if success then
 		UIManager.closeBuild()
 		UIManager.closeCollection()
 		UIManager.closeShop()
+		if UIManager.closeTotem then
+			UIManager.closeTotem()
+		end
 	end)
 end
 

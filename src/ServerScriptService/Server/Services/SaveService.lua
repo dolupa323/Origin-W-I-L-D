@@ -52,8 +52,6 @@ local NetController = nil
 local function _getDefaultEquipment()
 	return {
 		HEAD = nil,
-		TOP = nil,
-		BOTTOM = nil,
 		SUIT = nil,
 		HAND = nil,
 	}
@@ -222,8 +220,6 @@ local function _normalizeEquipment(equipment: any): any
 	end
 
 	normalized.HEAD = equipment.HEAD or equipment.Head
-	normalized.TOP = equipment.TOP or equipment.Top or equipment.Body
-	normalized.BOTTOM = equipment.BOTTOM or equipment.Bottom or equipment.Feet
 	normalized.SUIT = equipment.SUIT or equipment.Suit
 	normalized.HAND = equipment.HAND or equipment.Hand
 

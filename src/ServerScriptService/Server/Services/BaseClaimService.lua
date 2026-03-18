@@ -256,6 +256,43 @@ function BaseClaimService.expand(userId: number): (boolean, string?)
 	return true, nil
 end
 
+--- 베이스 중심 이동 (토템 재배치용)
+function BaseClaimService.moveBaseCenter(userId: number, newPosition: Vector3): (boolean, string?)
+	local baseClaim = bases[userId]
+	if not baseClaim then
+		return false, Enums.ErrorCode.NOT_FOUND
+	end
+
+	for otherUserId, otherBase in pairs(bases) do
+		if otherUserId ~= userId then
+			local dx = newPosition.X - otherBase.centerPosition.X
+			local dz = newPosition.Z - otherBase.centerPosition.Z
+			local dist = math.sqrt(dx * dx + dz * dz)
+			local minSafeDist = (baseClaim.radius or (Balance.BASE_DEFAULT_RADIUS or 30)) + otherBase.radius
+			if dist < minSafeDist then
+				return false, Enums.ErrorCode.COLLISION
+			end
+		end
+	end
+
+	baseClaim.centerPosition = newPosition
+	saveBase(baseClaim)
+
+	if NetController then
+		local player = game:GetService("Players"):GetPlayerByUserId(userId)
+		if player then
+			NetController.FireClient(player, "Base.Relocated", {
+				baseId = baseClaim.id,
+				centerPosition = newPosition,
+				radius = baseClaim.radius,
+				level = baseClaim.level,
+			})
+		end
+	end
+
+	return true, nil
+end
+
 --- 베이스 내 시설 목록 조회
 function BaseClaimService.getStructuresInBase(userId: number): {string}
 	local baseClaim = bases[userId]

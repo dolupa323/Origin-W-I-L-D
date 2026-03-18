@@ -342,6 +342,9 @@ local function interactFacility(target: Instance)
 		-- 보관함 UI 열기
 		local StorageController = require(Client.Controllers.StorageController)
 		StorageController.openStorage(structureId)
+	elseif facilityData.functionType == "BASE_CORE" then
+		local TotemController = require(Client.Controllers.TotemController)
+		TotemController.openTotem(structureId)
 	elseif facilityData.functionType == "RESPAWN" then
 		playSleepTransitionAndRequest(structureId)
 	end
@@ -351,15 +354,6 @@ local function removeFacility(target: Instance)
 	local structureId = getStructureIdFromTarget(target)
 	if not structureId then
 		clearPendingRemove()
-		return
-	end
-
-	local ownerId = tonumber(target:GetAttribute("OwnerId"))
-	if ownerId and ownerId ~= player.UserId then
-		clearPendingRemove()
-		if UIManager then
-			UIManager.notify("내 시설만 해체할 수 있습니다.", Color3.fromRGB(255, 120, 120))
-		end
 		return
 	end
 
@@ -383,7 +377,12 @@ local function removeFacility(target: Instance)
 		end
 	else
 		if UIManager then
-			UIManager.notify("해체 실패: " .. tostring(data), Color3.fromRGB(255, 120, 120))
+			local code = tostring(data)
+			if code == "NO_PERMISSION" then
+				UIManager.notify("토템 보호가 활성화되어 해체할 수 없습니다. 유지비 만료 후 약탈 가능합니다.", Color3.fromRGB(255, 120, 120))
+			else
+				UIManager.notify("해체 실패: " .. code, Color3.fromRGB(255, 120, 120))
+			end
 		end
 	end
 end
@@ -501,12 +500,7 @@ local function onUpdate()
 				elseif targetType == "npc" then
 					promptText = UILocalizer.Localize("[Z] 대화")
 				elseif targetType == "facility" then
-					local ownerId = tonumber(target:GetAttribute("OwnerId"))
-					if ownerId and ownerId == player.UserId then
-						promptText = UILocalizer.Localize("[R] 사용") .. "  " .. UILocalizer.Localize("[T] 해체")
-					else
-						promptText = UILocalizer.Localize("[R] 사용")
-					end
+					promptText = UILocalizer.Localize("[R] 사용") .. "  " .. UILocalizer.Localize("[T] 해체")
 				elseif targetType == "radio" then
 					promptText = UILocalizer.Localize("[R] 무전 수신")
 				else

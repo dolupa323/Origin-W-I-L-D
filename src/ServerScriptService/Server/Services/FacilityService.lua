@@ -19,6 +19,7 @@ local WorldDropService
 local TechService    -- Phase 6: 기술 해금 검증 (Relinquish 어뷰징 방지)
 local PalboxService  -- Phase 5-5: 팰 작업 배치
 local PalAIService   -- Phase 7-5: 팰 AI 및 비주얼
+local TotemService   -- Totem 유지비 만료 시 약탈 권한 판정
 
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Enums = require(Shared.Enums.Enums)
@@ -103,6 +104,7 @@ end
 local function determineState(runtime: any): string
 	local facilityData = DataService.getFacility(runtime.facilityId)
 	if not facilityData then return Enums.FacilityState.IDLE end
+	local fuelConsumption = tonumber(facilityData.fuelConsumption) or 0
 
 	-- Output 슬롯이 꽉 찼으면 → FULL (총 아이템 개수가 한도를 넘으면)
 	if facilityData.hasOutputSlot and runtime.outputSlot then
@@ -120,7 +122,7 @@ local function determineState(runtime: any): string
 	local hasFuel = (runtime.currentFuel > 0)
 	
 	-- 연료 필요한 시설
-	if facilityData.fuelConsumption > 0 then
+	if fuelConsumption > 0 then
 		-- 연료 슬롯에 뭔가 있거나 현재 연소 중인 연료가 있거나
 		local hasAnyFuel = (runtime.currentFuel > 0 or (runtime.fuelSlot ~= nil and runtime.fuelSlot.count > 0))
 		
@@ -161,6 +163,7 @@ local function lazyUpdate(runtime)
 		runtime.lastUpdateAt = now
 		return
 	end
+	local fuelConsumption = tonumber(facilityData.fuelConsumption) or 0
 	
 	-- 연료가 필요 없거나 Input이 없으면 skip
 	local hasInput = (runtime.inputSlot ~= nil and runtime.inputSlot.count > 0)
@@ -212,8 +215,8 @@ local function lazyUpdate(runtime)
 	if maxCanProduceByInput <= 0 then timeNeededForFullWork = 0 end
 	
 	-- 연료 보충 (연료가 필요한데 부족한 경우)
-	if facilityData.fuelConsumption > 0 and runtime.currentFuel < math.min(deltaTime, timeNeededForFullWork) * facilityData.fuelConsumption then
-		while runtime.fuelSlot and runtime.fuelSlot.count > 0 and runtime.currentFuel < deltaTime * facilityData.fuelConsumption do
+	if fuelConsumption > 0 and runtime.currentFuel < math.min(deltaTime, timeNeededForFullWork) * fuelConsumption then
+		while runtime.fuelSlot and runtime.fuelSlot.count > 0 and runtime.currentFuel < deltaTime * fuelConsumption do
 			local itemData = DataService.getItem(runtime.fuelSlot.itemId)
 			if itemData and itemData.fuelValue then
 				runtime.currentFuel = runtime.currentFuel + itemData.fuelValue
@@ -224,12 +227,12 @@ local function lazyUpdate(runtime)
 	end
 
 	-- 실제 가동 시간 (델타타임, 연료 한트, 작업 가능 시간 중 최소값)
-	local fuelCapTime = (facilityData.fuelConsumption > 0) and (runtime.currentFuel / facilityData.fuelConsumption) or deltaTime
+	local fuelCapTime = (fuelConsumption > 0) and (runtime.currentFuel / fuelConsumption) or deltaTime
 	local workTime = math.max(0, math.min(deltaTime, fuelCapTime, timeNeededForFullWork))
 	
 	-- 연료 차감 (실제 한 일만큼만)
-	if facilityData.fuelConsumption > 0 then
-		runtime.currentFuel = math.max(0, runtime.currentFuel - workTime * facilityData.fuelConsumption)
+	if fuelConsumption > 0 then
+		runtime.currentFuel = math.max(0, runtime.currentFuel - workTime * fuelConsumption)
 	end
 	
 	-- 생산 결과 적용
@@ -281,6 +284,18 @@ local function emitFacilityEvent(eventName: string, player: Player, data: any)
 	end
 end
 
+local function canAccessFacility(userId: number, runtime: any, structure: any): boolean
+	if runtime and runtime.ownerId == userId then
+		return true
+	end
+
+	if TotemService and TotemService.canRaidStructure then
+		return TotemService.canRaidStructure(userId, structure)
+	end
+
+	return false
+end
+
 --========================================
 -- Public API
 --========================================
@@ -291,7 +306,7 @@ function FacilityService.register(structureId: string, facilityId: string, owner
 	if not facilityData then return end
 	
 	-- Input/Fuel/Output 슬롯이 있는 시설만 등록
-	if facilityData.hasInputSlot or facilityData.hasFuelSlot or facilityData.hasOutputSlot then
+	if facilityData.hasInputSlot or facilityData.hasFuelSlot or facilityData.hasOutputSlot or facilityData.functionType == "CRAFTING_T1" then
 		facilityStates[structureId] = createFacilityRuntime(structureId, facilityId, ownerId)
 		print(string.format("[FacilityService] Registered facility: %s (%s)", structureId, facilityId))
 	end
@@ -324,6 +339,10 @@ function FacilityService.getInfo(player: Player, structureId: string)
 	local facilityData = DataService.getFacility(runtime.facilityId)
 	if not facilityData then
 		return false, Enums.ErrorCode.INTERNAL_ERROR, nil
+	end
+
+	if not canAccessFacility(player.UserId, runtime, structure) then
+		return false, Enums.ErrorCode.NO_PERMISSION, nil
 	end
 	
 	local character = player.Character
@@ -392,6 +411,14 @@ function FacilityService.addFuel(player: Player, structureId: string, invSlot: n
 	local runtime = facilityStates[structureId]
 	if not runtime then
 		return false, Enums.ErrorCode.NOT_FOUND, nil
+	end
+
+	local structure = BuildService.get and BuildService.get(structureId)
+	if not structure then
+		return false, Enums.ErrorCode.NOT_FOUND, nil
+	end
+	if not canAccessFacility(player.UserId, runtime, structure) then
+		return false, Enums.ErrorCode.NO_PERMISSION, nil
 	end
 	
 	local facilityData = DataService.getFacility(runtime.facilityId)
@@ -469,6 +496,14 @@ function FacilityService.addInput(player: Player, structureId: string, invSlot: 
 	local runtime = facilityStates[structureId]
 	if not runtime then
 		return false, Enums.ErrorCode.NOT_FOUND, nil
+	end
+
+	local structure = BuildService.get and BuildService.get(structureId)
+	if not structure then
+		return false, Enums.ErrorCode.NOT_FOUND, nil
+	end
+	if not canAccessFacility(player.UserId, runtime, structure) then
+		return false, Enums.ErrorCode.NO_PERMISSION, nil
 	end
 	
 	local facilityData = DataService.getFacility(runtime.facilityId)
@@ -562,6 +597,14 @@ function FacilityService.collectOutput(player: Player, structureId: string)
 	if not runtime then
 		return false, Enums.ErrorCode.NOT_FOUND, nil
 	end
+
+	local structure = BuildService.get and BuildService.get(structureId)
+	if not structure then
+		return false, Enums.ErrorCode.NOT_FOUND, nil
+	end
+	if not canAccessFacility(player.UserId, runtime, structure) then
+		return false, Enums.ErrorCode.NO_PERMISSION, nil
+	end
 	
 	-- [보안/기획] 기술 해금 검증 (일체 제거)
 	-- if TechService and not TechService.isFacilityUnlocked(player.UserId, runtime.facilityId) then
@@ -575,6 +618,7 @@ function FacilityService.collectOutput(player: Player, structureId: string)
 	local anyCollected = false
 	local firstError = nil
 	local totalAdded = 0
+	local userId = player.UserId
 	
 	-- 복사본을 만들어 순회 (수집 중 테이블 변경 방지)
 	local currentOutputs = {}
@@ -621,6 +665,14 @@ function FacilityService.removeInput(player: Player, structureId: string)
 	if not runtime or not runtime.inputSlot then
 		return false, Enums.ErrorCode.SLOT_EMPTY, nil
 	end
+
+	local structure = BuildService.get and BuildService.get(structureId)
+	if not structure then
+		return false, Enums.ErrorCode.NOT_FOUND, nil
+	end
+	if not canAccessFacility(player.UserId, runtime, structure) then
+		return false, Enums.ErrorCode.NO_PERMISSION, nil
+	end
 	
 	-- [보안/기획] 기술 해금 검증 (일체 제거)
 	-- if TechService and not TechService.isFacilityUnlocked(player.UserId, runtime.facilityId) then
@@ -664,6 +716,14 @@ function FacilityService.removeFuel(player: Player, structureId: string)
 	local runtime = facilityStates[structureId]
 	if not runtime or not runtime.fuelSlot then
 		return false, Enums.ErrorCode.SLOT_EMPTY, nil
+	end
+
+	local structure = BuildService.get and BuildService.get(structureId)
+	if not structure then
+		return false, Enums.ErrorCode.NOT_FOUND, nil
+	end
+	if not canAccessFacility(player.UserId, runtime, structure) then
+		return false, Enums.ErrorCode.NO_PERMISSION, nil
 	end
 	
 	-- [보안/기획] 기술 해금 검증 (일체 제거)
@@ -1109,6 +1169,11 @@ end
 function FacilityService.SetPalAIService(_PalAIService)
 	PalAIService = _PalAIService
 	print("[FacilityService] PalAIService injected")
+end
+
+function FacilityService.SetTotemService(_TotemService)
+	TotemService = _TotemService
+	print("[FacilityService] TotemService injected")
 end
 
 --- 핸들러 맵 반환 (ServerInit에서 NetController에 등록)

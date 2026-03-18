@@ -113,6 +113,10 @@ Protocol.Commands = {
 	["Base.Get.Request"] = true,               -- 베이스 정보 조회
 	["Base.Expand.Request"] = true,            -- 베이스 확장
 	
+	-- Totem 명령어
+	["Totem.GetInfo.Request"] = true,          -- 토템 상태/유지비 정보 조회
+	["Totem.PayUpkeep.Request"] = true,       -- 토템 유지비 결제
+	
 	-- (Quest 시스템 삭제됨)
 	
 	-- Recipe 목록 조회
