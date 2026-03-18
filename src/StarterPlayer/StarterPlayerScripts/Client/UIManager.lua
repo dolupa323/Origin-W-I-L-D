@@ -851,7 +851,17 @@ function UIManager.refreshPersonalCrafting(forceRefresh)
 				local nodeCount = 0
 				for _ in pairs(personalCraftNodes) do nodeCount = nodeCount + 1 end
 				local idx = nodeCount + 1
-				local nf = mkFrame({name="PNode"..idx, size=UDim2.new(1,0,1,0), bg=C.BG_SLOT, r=6, stroke=1.5, strokeC=isLocked and C.DIM or C.BORDER, z=12, parent=invPersonalCraftGrid})
+				local nf = mkFrame({
+					name="PNode"..idx,
+					size=UDim2.new(1,0,1,0),
+					bg=C.BG_SLOT,
+					bgT=0.3,
+					r=0,
+					stroke=1,
+					strokeC=isLocked and C.DIM or C.BORDER_DIM,
+					z=12,
+					parent=invPersonalCraftGrid
+				})
 				
 				local icon = Instance.new("ImageLabel")
 				icon.Name="Icon"; icon.Size=UDim2.new(0.7,0,0.7,0); icon.Position=UDim2.new(0.5,0,0.5,0)
@@ -871,7 +881,7 @@ function UIManager.refreshPersonalCrafting(forceRefresh)
 				local iconLbl = mkLabel({text=recipe.name, size=UDim2.new(0.9,0,0.9,0), pos=UDim2.new(0.5,0,0.5,0), anchor=Vector2.new(0.5,0.5), ts=8, color=C.WHITE, wrap=true, z=14, parent=nf})
 				iconLbl.Visible = (iconId == "")
 
-				local lockBG = mkFrame({name="LockBG", size=UDim2.new(1,0,1,0), bg=Color3.new(0.1,0.1,0.1), bgT=0.5, r=6, z=20, parent=nf})
+				local lockBG = mkFrame({name="LockBG", size=UDim2.new(1,0,1,0), bg=Color3.new(0.1,0.1,0.1), bgT=0.5, r=0, z=20, parent=nf})
 				local lockIcon = Instance.new("ImageLabel")
 				lockIcon.Name = "LockIcon"; lockIcon.Size = UDim2.new(0.5,0,0.5,0); lockIcon.Position = UDim2.new(0.5,0,0.5,0)
 				lockIcon.AnchorPoint = Vector2.new(0.5,0.5); lockIcon.BackgroundTransparency = 1; lockIcon.ZIndex = 21

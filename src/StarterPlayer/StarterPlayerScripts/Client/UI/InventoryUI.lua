@@ -74,7 +74,7 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	local titleList = Instance.new("UIListLayout"); titleList.FillDirection=Enum.FillDirection.Horizontal; titleList.VerticalAlignment=Enum.VerticalAlignment.Center; titleList.Padding=UDim.new(0, 20); titleList.Parent=leftHeader
 	
 	InventoryUI.Refs.TabBag = Utils.mkBtn({text="INVENTORY [B]", size=UDim2.new(0, 140, 0, 35), bgT=1, font=F.TITLE, ts=18, color=C.GOLD_SEL, parent=leftHeader})
-	InventoryUI.Refs.TabCraft = Utils.mkBtn({text="CRAFTING", size=UDim2.new(0, 140, 0, 35), bgT=1, font=F.TITLE, ts=18, color=C.GRAY, parent=leftHeader})
+	InventoryUI.Refs.TabCraft = Utils.mkBtn({text="간이제작", size=UDim2.new(0, 140, 0, 35), bgT=1, font=F.TITLE, ts=18, color=C.GRAY, parent=leftHeader})
 	
 	InventoryUI.Refs.WeightText = Utils.mkLabel({text="0 / 100 kg", size=UDim2.new(0, 80, 1, 0), ts=14, color=C.GRAY, parent=leftHeader})
 	
