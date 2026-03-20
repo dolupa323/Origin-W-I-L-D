@@ -307,6 +307,25 @@ function InventoryController.Init()
 			-- 초기 정렬 (Auto-stacking on first load)
 			InventoryController.requestSort()
 			
+			-- DNA/스탯/펫 데이터 프리로드 (로딩 화면 완료 전에 동기화)
+			pcall(function()
+				local CollectionController = require(script.Parent.CollectionController)
+				if CollectionController and CollectionController.Init then
+					CollectionController.Init()
+				end
+				-- 스탯/DNA 데이터 요청 (UIManager보다 먼저)
+				local ok2, statsData = NetClient.Request("Player.Stats.Request", {})
+				if ok2 and statsData then
+					if CollectionController and CollectionController.updateLocalDna then
+						CollectionController.updateLocalDna(statsData)
+					end
+				end
+				-- 펫 슬롯 데이터 프리로드
+				if CollectionController and CollectionController.requestPetSlots then
+					CollectionController.requestPetSlots()
+				end
+			end)
+			
 			local player = game:GetService("Players").LocalPlayer
 			if player then
 				player:SetAttribute("InventoryLoaded", true)

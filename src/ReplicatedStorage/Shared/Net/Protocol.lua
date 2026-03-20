@@ -146,6 +146,14 @@ Protocol.Commands = {
 	["Tutorial.Step.Complete.Request"] = true,
 	["Tutorial.Admin.Reset.Request"] = true,
 	["Tutorial.Admin.SetStep.Request"] = true,
+
+	-- Pet 명령어 (도감 펫 시스템)
+	["Pet.Slots.Request"] = true,
+	["Pet.Equip.Request"] = true,
+	["Pet.Unequip.Request"] = true,
+
+	-- Portal 명령어 (고대 포탈 시스템)
+	["Portal.GetStatus.Request"] = true,
 }
 
 -- 에러 코드는 Enums.ErrorCode 사용

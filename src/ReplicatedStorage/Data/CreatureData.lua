@@ -19,26 +19,38 @@ local CreatureData = {
 		attackRange = 4,
 		detectRange = 12,
 		behavior = "NEUTRAL",
-		modelName = "DODO", -- 폴더 이름과 일치
+		modelName = "DODO",
 		xpReward = 5,
-		icon = "rbxassetid://0", -- 실제 아이콘 ID 추가 필요
+		icon = "rbxassetid://0",
+		-- 도감 시스템
+		dnaRequired = 3,
+		passiveEffect = { stat = "workSpeed", value = 5 },       -- 작업 속도 +5
+		petScale = 5.0,     -- 목표 크기 (스터드)
+		petDamage = 3,
+		petHealth = 20,
 	},
 	{
 		id = "COMPY",
 		name = "콤프소그나투스",
 		description = "아주 작고 빠른 소형 공룡. 호기심이 많다",
-		maxHealth = 12, -- 체력 대폭 하향 (무리 스폰 대응)
-		maxTorpor = 10, -- 기절 수치도 함께 하향
+		maxHealth = 12,
+		maxTorpor = 10,
 		walkSpeed = 10,
-		runSpeed = 22, -- 더 기민하게 추격
+		runSpeed = 22,
 		damage = 10,
 		attackRange = 5,
-		detectRange = 30, -- 탐지 범위 확대
-		behavior = "AGGRESSIVE", -- 선공형으로 변경
-		modelName = "COMPY", -- 폴더 이름과 일치
-		groupSize = 3, -- 3마리씩 무리지어 스폰
+		detectRange = 30,
+		behavior = "AGGRESSIVE",
+		modelName = "COMPY",
+		groupSize = 3,
 		xpReward = 3,
 		icon = "rbxassetid://0",
+		-- 도감 시스템
+		dnaRequired = 3,
+		passiveEffect = { stat = "attackMult", value = 0.03 },   -- 공격력 +3%
+		petScale = 4.0,     -- 목표 크기 (스터드)
+		petDamage = 6,
+		petHealth = 15,
 	},
 	{
 		id = "PARASAUR",
@@ -54,6 +66,12 @@ local CreatureData = {
 		behavior = "NEUTRAL",
 		modelName = "Parasaur",
 		xpReward = 20,
+		-- 도감 시스템
+		dnaRequired = 5,
+		passiveEffect = { stat = "maxStamina", value = 15 },     -- 최대 기력 +15
+		petScale = 7.0,     -- 목표 크기 (스터드)
+		petDamage = 10,
+		petHealth = 80,
 	},
 
 	--========================================
@@ -73,7 +91,13 @@ local CreatureData = {
 		behavior = "NEUTRAL",
 		modelName = "Triceratops",
 		xpReward = 40,
-		attackDelay = 1.3, -- 공격 애니메이션 종료 후 타격 판정 (Prep 0.6s + Charge 0.6s + 여유 0.1s)
+		attackDelay = 1.3,
+		-- 도감 시스템
+		dnaRequired = 5,
+		passiveEffect = { stat = "defense", value = 5 },         -- 방어력 +5
+		petScale = 7.0,     -- 목표 크기 (스터드)
+		petDamage = 20,
+		petHealth = 200,
 	},
 	{
 		id = "BABY_TRICERATOPS",
@@ -86,10 +110,16 @@ local CreatureData = {
 		damage = 10,
 		attackRange = 6,
 		detectRange = 15,
-		behavior = "NEUTRAL", -- 아기도 성체처럼 반격함
-		modelName = "BABY_TRICERATOPS", -- 전용 모델 사용
-		scale = 1, -- 전용 모델이므로 스케일은 1 (필요 시 조절 가능)
+		behavior = "NEUTRAL",
+		modelName = "BABY_TRICERATOPS",
+		scale = 1,
 		xpReward = 15,
+		-- 도감 시스템
+		dnaRequired = 3,
+		passiveEffect = { stat = "maxHealth", value = 10 },      -- 최대 체력 +10
+		petScale = 5.0,     -- 목표 크기 (스터드)
+		petDamage = 5,
+		petHealth = 50,
 	},
 	{
 		id = "STEGOSAURUS",
@@ -105,6 +135,12 @@ local CreatureData = {
 		behavior = "NEUTRAL",
 		modelName = "Stegosaurus",
 		xpReward = 35,
+		-- 도감 시스템
+		dnaRequired = 5,
+		passiveEffect = { stat = "maxHealth", value = 20 },      -- 최대 체력 +20
+		petScale = 7.0,     -- 목표 크기 (스터드)
+		petDamage = 18,
+		petHealth = 180,
 	},
 	{
 		id = "ANKYLOSAURUS",
@@ -120,6 +156,12 @@ local CreatureData = {
 		behavior = "NEUTRAL",
 		modelName = "Ankylosaurus",
 		xpReward = 50,
+		-- 도감 시스템
+		dnaRequired = 5,
+		passiveEffect = { stat = "defense", value = 8 },         -- 방어력 +8
+		petScale = 7.0,     -- 목표 크기 (스터드)
+		petDamage = 18,
+		petHealth = 250,
 	},
 
 	--========================================
@@ -134,11 +176,17 @@ local CreatureData = {
 		walkSpeed = 12,
 		runSpeed = 24,
 		damage = 15,
-		attackRange = 8, -- 5 -> 8 상향
-		detectRange = 50, -- 22 -> 50 상향
+		attackRange = 8,
+		detectRange = 50,
 		behavior = "AGGRESSIVE",
 		modelName = "Raptor",
 		xpReward = 25,
+		-- 도감 시스템
+		dnaRequired = 5,
+		passiveEffect = { stat = "attackMult", value = 0.05 },   -- 공격력 +5%
+		petScale = 6.0,     -- 목표 크기 (스터드)
+		petDamage = 12,
+		petHealth = 60,
 	},
 	{
 		id = "TREX",
@@ -149,11 +197,17 @@ local CreatureData = {
 		walkSpeed = 10,
 		runSpeed = 22,
 		damage = 120,
-		attackRange = 12, -- 8 -> 12 상향
-		detectRange = 80, -- 30 -> 80 상향
+		attackRange = 12,
+		detectRange = 80,
 		behavior = "AGGRESSIVE",
 		modelName = "TRex",
 		xpReward = 120,
+		-- 도감 시스템
+		dnaRequired = 3,
+		passiveEffect = { stat = "attackMult", value = 0.08 },   -- 공격력 +8%
+		petScale = 8.0,     -- 목표 크기 (스터드)
+		petDamage = 40,
+		petHealth = 400,
 	},
 }
 

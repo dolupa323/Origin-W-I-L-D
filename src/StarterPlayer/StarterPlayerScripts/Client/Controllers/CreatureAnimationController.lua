@@ -183,6 +183,14 @@ function CreatureAnimationController.Init()
 		end
 	end)
 
+	-- 펫 폴더도 동일하게 감시 (펫도 크리처 애니메이션 사용)
+	task.spawn(function()
+		local petFolder = Workspace:WaitForChild("ActivePets", 30)
+		if petFolder then
+			setupFolderListeners(petFolder)
+		end
+	end)
+
 	-- 서버 공격 이벤트 수신
 	NetClient.On("Creature.Attack.Play", function(data)
 		local model = nil

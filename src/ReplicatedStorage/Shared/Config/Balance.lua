@@ -249,6 +249,17 @@ Balance.CREATURE_AI_TICK = 0.3             -- 크리처 AI 업데이트 간격 (
 Balance.CREATURE_INITIAL_SPAWN_RADIUS = 300 -- 서버 시작 시 크리처 스폰 반경
 Balance.CREATURE_DESPAWN_DIST = 300        -- 크리처 디스폰 거리
 
+-- 펫 시스템
+Balance.PET_MAX_SLOTS = 3                  -- 최대 펫 슬롯 수
+Balance.PET_DEFAULT_SLOTS = 1              -- 기본 해금 슬롯 수
+Balance.PET_FOLLOW_DIST = 5                -- 펫 추적 거리 (스터드)
+Balance.PET_FOLLOW_SPEED = 18              -- 펫 추적 이동 속도
+Balance.PET_ATTACK_RANGE = 10              -- 펫 공격 범위 (스터드)
+Balance.PET_ATTACK_COOLDOWN = 1.5          -- 펫 공격 쿨다운 (초)
+Balance.PET_RESPAWN_TIME = 30              -- 펫 사망 후 재소환 시간 (초)
+Balance.PET_DETECT_RANGE = 20              -- 펫 적 감지 범위 (스터드)
+Balance.PET_LEASH_DIST = 40                -- 펫 최대 이탈 거리 (초과 시 텔레포트)
+
 table.freeze(Balance)
 
 return Balance

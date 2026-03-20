@@ -16,6 +16,7 @@ local StaminaService
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Balance = require(Shared.Config.Balance)
 local Enums = require(Shared.Enums.Enums)
+local DataHelper = require(Shared.Util.DataHelper)
 
 --========================================
 -- Internal State
@@ -292,9 +293,30 @@ function PlayerStatService.GetCalculatedStats(userId: number)
 		if setBonuses.attackMult then finalAtk = finalAtk + setBonuses.attackMult end
 	end
 	
-	-- 도감 상시 효과는 비활성화: 수집/표시용 데이터만 유지한다.
-	local dnaBonuses = { attackMult = 0, workSpeedMult = 0 }
-	local finalWork = 100 + ((stats[Enums.StatId.WORK_SPEED] or 0) * Balance.WORKSPEED_PER_POINT)
+	-- 도감 완성 패시브 효과 적용
+	local dnaBonuses = { attackMult = 0, maxHealth = 0, maxStamina = 0, defense = 0, workSpeed = 0 }
+	local pStats = playerStats[userId]
+	if pStats and pStats.dnaData then
+		local creatureTbl = DataHelper.GetTable("CreatureData") or {}
+		for _, cData in pairs(creatureTbl) do
+			local cid = string.upper(cData.id or "")
+			local required = cData.dnaRequired or 5
+			local current = pStats.dnaData[cid] or 0
+			if current >= required and cData.passiveEffect then
+				local eff = cData.passiveEffect
+				if eff.stat and eff.value then
+					if dnaBonuses[eff.stat] ~= nil then
+						dnaBonuses[eff.stat] = dnaBonuses[eff.stat] + eff.value
+					end
+				end
+			end
+		end
+	end
+	
+	finalHp = finalHp + dnaBonuses.maxHealth
+	finalSta = finalSta + dnaBonuses.maxStamina
+	finalAtk = finalAtk + dnaBonuses.attackMult
+	local finalWork = 100 + ((stats[Enums.StatId.WORK_SPEED] or 0) * Balance.WORKSPEED_PER_POINT) + dnaBonuses.workSpeed
 
 	-- 이동 속도 보너스 (방어구 세트 등)
 	local speedMult = 0
@@ -308,7 +330,7 @@ function PlayerStatService.GetCalculatedStats(userId: number)
 		maxWeight = 300 + ((stats[Enums.StatId.WEIGHT] or 0) * Balance.WEIGHT_PER_POINT),
 		workSpeed = finalWork,
 		attackMult = finalAtk,
-		defense = defense,
+		defense = defense + dnaBonuses.defense,
 		speedMult = speedMult, -- StaminaService 안티치트에서 참조
 		dnaBonuses = dnaBonuses, -- 클라이언트 UI용 정보 포함
 	}

@@ -2077,6 +2077,31 @@ local function setupEventListeners()
 				UIManager.notify("🧬 " .. displayName .. " DNA가 도감에 등록되었습니다!", Color3.fromRGB(0, 255, 180))
 			end
 		end)
+		
+		-- 펫 사망/재소환 알림
+		NetClient.On("Pet.Died", function(data)
+			if data and data.creatureId then
+				local displayName = data.creatureId
+				pcall(function()
+					local DataHelper = require(game.ReplicatedStorage.Shared.Util.DataHelper)
+					local cd = DataHelper.GetData("CreatureData", data.creatureId)
+					if cd and cd.name then displayName = cd.name end
+				end)
+				UIManager.notify("🐾 " .. displayName .. " 펫이 쓰러졌습니다! (재소환 대기중)", Color3.fromRGB(255, 100, 100))
+			end
+		end)
+		
+		NetClient.On("Pet.Respawned", function(data)
+			if data and data.creatureId then
+				local displayName = data.creatureId
+				pcall(function()
+					local DataHelper = require(game.ReplicatedStorage.Shared.Util.DataHelper)
+					local cd = DataHelper.GetData("CreatureData", data.creatureId)
+					if cd and cd.name then displayName = cd.name end
+				end)
+				UIManager.notify("🐾 " .. displayName .. " 펫이 재소환되었습니다!", Color3.fromRGB(100, 255, 150))
+			end
+		end)
 	end
 
 	-- Debuff Events
@@ -2099,6 +2124,34 @@ local function setupEventListeners()
 				activeDebuffs[data.debuffId] = nil
 				UIManager.refreshStatusEffects()
 			end
+		end)
+	end
+
+	-- Portal Events (고대 포탈 시스템)
+	if NetClient.On then
+		NetClient.On("Portal.MissingMaterials", function(data)
+			if data and data.cost then
+				UIManager.notify("⚡ 포탈 수리 재료가 부족합니다", Color3.fromRGB(255, 200, 80))
+				for _, item in ipairs(data.cost) do
+					local status = item.met and "✅ 충분" or "❌ 부족"
+					local msg = string.format("%s %d개 — %s", item.name or item.itemId, item.required or 0, status)
+					UIManager.sideNotify(msg, item.met and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(255, 120, 80))
+				end
+			end
+		end)
+
+		NetClient.On("Portal.Repaired", function(_data)
+			UIManager.notify("🌀 고대 포탈이 수리되었습니다!", Color3.fromRGB(255, 200, 0))
+			UIManager.sideNotify("다시 상호작용하면 열대섬으로 이동합니다", Color3.fromRGB(100, 200, 255))
+		end)
+
+		NetClient.On("Portal.Teleporting", function(_data)
+			UIManager.sideNotify("🌀 저장 중... 열대섬으로 이동합니다", Color3.fromRGB(100, 200, 255))
+		end)
+
+		NetClient.On("Portal.Error", function(data)
+			local msg = (data and data.message) or "포탈 오류"
+			UIManager.sideNotify("❌ " .. msg, Color3.fromRGB(255, 80, 80))
 		end)
 	end
 

@@ -23,7 +23,8 @@ local CATEGORY_TABS = {
 	{ label = "초원", key = "GRASSLAND" },
 	{ label = "열대", key = "TROPICAL" },
 	{ label = "사막", key = "DESERT" },
-	{ label = "툰드라", key = "TUNDRA" }
+	{ label = "툰드라", key = "TUNDRA" },
+	{ label = "펫", key = "PET" }
 }
 
 -- 현재 운영 기준: 초원섬 도감은 3종 중심으로 노출
@@ -41,10 +42,29 @@ local REGION_MAP = {
 
 local activeTabKey = "ALL"
 local selectedCreatureId = nil
+local selectedPetSlot = nil
+local selectedPetCreatureId = nil
 
 --========================================
 -- Helpers
 --========================================
+
+local PASSIVE_STAT_NAMES = {
+	attackMult = "공격력",
+	maxHealth = "최대 체력",
+	maxStamina = "최대 스태미나",
+	defense = "방어력",
+	workSpeed = "작업 속도",
+}
+
+local function getPassiveEffectText(creatureId)
+	local cData = DataHelper.GetData("CreatureData", creatureId)
+	if not cData or not cData.passiveEffect then return nil end
+	local eff = cData.passiveEffect
+	local statName = PASSIVE_STAT_NAMES[eff.stat] or eff.stat
+	local sign = (eff.value >= 0) and "+" or ""
+	return string.format("%s %s%s", statName, sign, tostring(eff.value))
+end
 
 local function getCreatureIcon(cid)
 	-- 1. CreatureData 아이콘 ID 확인 (DataHelper 경유)
@@ -209,6 +229,8 @@ local function _renderDetails()
 	
 	local data = CollectionController.getCreatureData(selectedCreatureId)
 	local dnaCount = CollectionController.getDnaCount(selectedCreatureId)
+	local dnaRequired = (data and data.dnaRequired) or 5
+	local isComplete = CollectionController.isCodexComplete(selectedCreatureId)
 	
 	local iconBg = pnl:FindFirstChild("IconBg")
 	if iconBg and iconBg:FindFirstChild("IconImg") then
@@ -221,14 +243,335 @@ local function _renderDetails()
 	end
 	local dnaTxt = pnl:FindFirstChild("DnaTxt")
 	if dnaTxt then
-		dnaTxt.Text = UILocalizer.Localize(string.format("DNA: %d/5", dnaCount))
+		if isComplete then
+			dnaTxt.Text = UILocalizer.Localize(string.format("DNA: %d/%d ✓ 완성!", dnaCount, dnaRequired))
+			dnaTxt.TextColor3 = Color3.fromRGB(100, 255, 100)
+		else
+			dnaTxt.Text = UILocalizer.Localize(string.format("DNA: %d/%d", dnaCount, dnaRequired))
+			dnaTxt.TextColor3 = C.GOLD
+		end
 	end
 	
 	local effVal = pnl:FindFirstChild("EffBg") and pnl.EffBg:FindFirstChild("EffVal")
-	if effVal then
-		effVal.Text = UILocalizer.Localize("[장착 보너스 비활성]\n준비 중인 기능입니다.")
-		effVal.TextColor3 = C.DIM
+	local effTit = pnl:FindFirstChild("EffBg") and pnl.EffBg:FindFirstChild("EffTit")
+	if effTit then
+		effTit.Text = UILocalizer.Localize("도감 패시브 효과")
 	end
+	if effVal then
+		local passiveText = getPassiveEffectText(selectedCreatureId)
+		if isComplete and passiveText then
+			effVal.Text = UILocalizer.Localize("✓ " .. passiveText .. "\n펫 활성화 가능!")
+			effVal.TextColor3 = Color3.fromRGB(100, 255, 100)
+		elseif passiveText then
+			effVal.Text = UILocalizer.Localize(passiveText .. "\n(도감 완성 시 활성화)")
+			effVal.TextColor3 = C.DIM
+		else
+			effVal.Text = UILocalizer.Localize("효과 없음")
+			effVal.TextColor3 = C.DIM
+		end
+	end
+end
+
+----------------------------------------------------------------
+-- Pet Tab Detail Panel
+----------------------------------------------------------------
+local function _renderPetDetails()
+	local detailFrame = CollectionUI.Refs.DetailFrame
+	if not detailFrame then return end
+	
+	for _, c in ipairs(detailFrame:GetChildren()) do
+		if c:IsA("GuiObject") then c.Visible = false end
+	end
+	
+	if not selectedPetCreatureId then
+		local mt = detailFrame:FindFirstChild("PetEmptyText")
+		if not mt then
+			mt = Utils.CreateTextLabel("PetEmptyText", UDim2.new(1,0,1,0), UDim2.new(0,0,0,0), UILocalizer.Localize("펫을 선택하세요."))
+			mt.TextColor3 = C.DIM
+			mt.Parent = detailFrame
+		end
+		mt.Visible = true
+		return
+	end
+	
+	local pnl = detailFrame:FindFirstChild("PetDetailPnl")
+	if not pnl then
+		pnl = Instance.new("Frame")
+		pnl.Name = "PetDetailPnl"
+		pnl.Size = UDim2.new(1,0,1,0)
+		pnl.BackgroundTransparency = 1
+		pnl.Parent = detailFrame
+		
+		local iconBg = Utils.CreateFrame("PetIconBg", UDim2.new(0, 100, 0, 100), UDim2.new(0.5, 0, 0, 20), C.BG_SLOT)
+		iconBg.AnchorPoint = Vector2.new(0.5, 0)
+		Instance.new("UICorner", iconBg).CornerRadius = UDim.new(0, 12)
+		local iconImg = Utils.CreateImage("IconImg", UDim2.new(0.8,0,0.8,0), UDim2.new(0.1,0,0.1,0), "")
+		iconImg.Parent = iconBg
+		iconBg.Parent = pnl
+		
+		local nameTxt = Utils.CreateTextLabel("PetNameTxt", UDim2.new(1,0,0,30), UDim2.new(0,0,0,130), "")
+		nameTxt.Font = F.TITLE; nameTxt.TextSize = 22
+		nameTxt.Parent = pnl
+		
+		local statsTxt = Utils.CreateTextLabel("PetStatsTxt", UDim2.new(0.9,0,0,50), UDim2.new(0.05,0,0,165), "")
+		statsTxt.TextColor3 = C.DIM; statsTxt.TextXAlignment = Enum.TextXAlignment.Left
+		statsTxt.TextYAlignment = Enum.TextYAlignment.Top; statsTxt.TextSize = 14
+		statsTxt.Parent = pnl
+		
+		local equipBtn = Utils.CreateFrame("EquipBtn", UDim2.new(0.8,0,0,40), UDim2.new(0.1,0,0,230), C.GOLD)
+		Instance.new("UICorner", equipBtn).CornerRadius = UDim.new(0, 8)
+		local equipTxt = Utils.CreateTextLabel("Txt", UDim2.new(1,0,1,0), UDim2.new(0,0,0,0), UILocalizer.Localize("장착"))
+		equipTxt.Font = F.TITLE; equipTxt.TextSize = 18; equipTxt.TextColor3 = C.BG_OVERLAY
+		equipTxt.Parent = equipBtn
+		local equipBtnClick = Instance.new("TextButton")
+		equipBtnClick.Name = "Click"; equipBtnClick.Size = UDim2.new(1,0,1,0)
+		equipBtnClick.BackgroundTransparency = 1; equipBtnClick.Text = ""
+		equipBtnClick.Parent = equipBtn
+		equipBtn.Parent = pnl
+		
+		local unequipBtn = Utils.CreateFrame("UnequipBtn", UDim2.new(0.8,0,0,36), UDim2.new(0.1,0,0,280), C.BTN)
+		Instance.new("UICorner", unequipBtn).CornerRadius = UDim.new(0, 8)
+		local unequipTxt = Utils.CreateTextLabel("Txt", UDim2.new(1,0,1,0), UDim2.new(0,0,0,0), UILocalizer.Localize("해제"))
+		unequipTxt.Font = F.TITLE; unequipTxt.TextSize = 16; unequipTxt.TextColor3 = C.WHITE
+		unequipTxt.Parent = unequipBtn
+		local unequipBtnClick = Instance.new("TextButton")
+		unequipBtnClick.Name = "Click"; unequipBtnClick.Size = UDim2.new(1,0,1,0)
+		unequipBtnClick.BackgroundTransparency = 1; unequipBtnClick.Text = ""
+		unequipBtnClick.Parent = unequipBtn
+		unequipBtn.Parent = pnl
+	end
+	pnl.Visible = true
+	
+	local cData = CollectionController.getCreatureData(selectedPetCreatureId)
+	local slots = CollectionController.getPetSlots()
+	
+	-- 이미 장착된 슬롯 찾기
+	local equippedSlot = nil
+	for i, cid in pairs(slots) do
+		if cid == selectedPetCreatureId then equippedSlot = i; break end
+	end
+	
+	local iconBg = pnl:FindFirstChild("PetIconBg")
+	if iconBg and iconBg:FindFirstChild("IconImg") then
+		iconBg.IconImg.Image = getCreatureIcon(selectedPetCreatureId)
+	end
+	
+	local nameTxt = pnl:FindFirstChild("PetNameTxt")
+	if nameTxt then
+		local sourceName = (cData and cData.name) or selectedPetCreatureId
+		nameTxt.Text = UILocalizer.LocalizeDataText("CreatureData", selectedPetCreatureId, "name", sourceName)
+	end
+	
+	local statsTxt = pnl:FindFirstChild("PetStatsTxt")
+	if statsTxt and cData then
+		statsTxt.Text = UILocalizer.Localize(string.format(
+			"체력: %d | 공격력: %d\n크기: %.0f%%",
+			cData.petHealth or 50, cData.petDamage or 5, (cData.petScale or 0.3) * 100
+		))
+	end
+	
+	local equipBtn = pnl:FindFirstChild("EquipBtn")
+	local unequipBtn = pnl:FindFirstChild("UnequipBtn")
+	
+	if equippedSlot then
+		-- 이미 장착중 → 해제 버튼만 보여줌
+		if equipBtn then equipBtn.Visible = false end
+		if unequipBtn then
+			unequipBtn.Visible = true
+			local click = unequipBtn:FindFirstChild("Click")
+			if click then
+				-- 기존 연결 제거 및 새 연결
+				for _, conn in ipairs(click:GetChildren()) do
+					if conn:IsA("BindableEvent") then conn:Destroy() end
+				end
+				click.MouseButton1Click:Connect(function()
+					task.spawn(function()
+						CollectionController.requestUnequipPet(equippedSlot)
+					end)
+				end)
+			end
+		end
+	else
+		-- 미장착 → 장착 버튼 보여줌 (첫 빈 슬롯에 장착)
+		if unequipBtn then unequipBtn.Visible = false end
+		if equipBtn then
+			equipBtn.Visible = true
+			local click = equipBtn:FindFirstChild("Click")
+			if click then
+				click.MouseButton1Click:Connect(function()
+					task.spawn(function()
+						local maxSlots = CollectionController.getPetMaxSlots()
+						local freeSlot = nil
+						for i = 1, maxSlots do
+							if not slots[i] and not slots[tostring(i)] then
+								freeSlot = i; break
+							end
+						end
+						if not freeSlot then freeSlot = 1 end -- 빈 슬롯 없으면 1번 교체
+						CollectionController.requestEquipPet(freeSlot, selectedPetCreatureId)
+					end)
+				end)
+			end
+		end
+	end
+end
+
+----------------------------------------------------------------
+-- Pet Tab Scroll Content
+----------------------------------------------------------------
+local function _renderPetTab()
+	local scroll = CollectionUI.Refs.Scroll
+	
+	for _, c in ipairs(scroll:GetChildren()) do
+		if c:IsA("GuiObject") then c:Destroy() end
+	end
+	
+	local slots = CollectionController.getPetSlots()
+	local maxSlots = CollectionController.getPetMaxSlots()
+	local y = 10
+	
+	-- 섹션 헤더: 펫 슬롯
+	local slotHeader = Utils.CreateTextLabel("SlotHeader", UDim2.new(1, -20, 0, 28), UDim2.new(0, 10, 0, y), UILocalizer.Localize("펫 슬롯"))
+	slotHeader.Font = F.TITLE; slotHeader.TextSize = 18; slotHeader.TextXAlignment = Enum.TextXAlignment.Left
+	slotHeader.Parent = scroll
+	y = y + 35
+	
+	-- 3개 슬롯 렌더링
+	local SLOT_W = 140
+	local SLOT_H = 150
+	for i = 1, 3 do
+		local isUnlocked = (i <= maxSlots)
+		local creatureId = slots[i] or slots[tostring(i)]
+		local xPos = 10 + (i - 1) * (SLOT_W + 12)
+		
+		local slotBg = Utils.CreateFrame("Slot_" .. i, UDim2.new(0, SLOT_W, 0, SLOT_H), UDim2.new(0, xPos, 0, y), isUnlocked and C.BG_SLOT or Color3.fromRGB(40, 40, 40))
+		Instance.new("UICorner", slotBg).CornerRadius = UDim.new(0, 10)
+		
+		local stroke = Instance.new("UIStroke")
+		stroke.Thickness = 2
+		stroke.Color = (selectedPetSlot == i) and C.GOLD or Color3.fromRGB(60, 60, 60)
+		stroke.Parent = slotBg
+		
+		if not isUnlocked then
+			-- 잠긴 슬롯
+			local lockTxt = Utils.CreateTextLabel("Lock", UDim2.new(1, 0, 0, 30), UDim2.new(0, 0, 0.5, -15), UILocalizer.Localize("🔒 잠김"))
+			lockTxt.TextColor3 = C.DIM; lockTxt.TextSize = 16
+			lockTxt.Parent = slotBg
+			
+			local infoTxt = Utils.CreateTextLabel("Info", UDim2.new(0.9, 0, 0, 20), UDim2.new(0.05, 0, 0.7, 0), UILocalizer.Localize("(상점에서 해제)"))
+			infoTxt.TextColor3 = C.DIM; infoTxt.TextSize = 11
+			infoTxt.Parent = slotBg
+		elseif creatureId then
+			-- 장착된 펫
+			local icon = Utils.CreateImage("Icon", UDim2.new(0, 60, 0, 60), UDim2.new(0.5, -30, 0, 15), getCreatureIcon(creatureId))
+			icon.Parent = slotBg
+			
+			local cData = CollectionController.getCreatureData(creatureId)
+			local sourceName = (cData and cData.name) or creatureId
+			local localizedName = UILocalizer.LocalizeDataText("CreatureData", creatureId, "name", sourceName)
+			local nameL = Utils.CreateTextLabel("Name", UDim2.new(1, 0, 0, 20), UDim2.new(0, 0, 0, 80), localizedName)
+			nameL.TextSize = 13; nameL.Parent = slotBg
+			
+			local slotLabel = Utils.CreateTextLabel("Label", UDim2.new(1, 0, 0, 18), UDim2.new(0, 0, 0, 105), UILocalizer.Localize(string.format("슬롯 %d", i)))
+			slotLabel.TextSize = 11; slotLabel.TextColor3 = C.GOLD; slotLabel.Parent = slotBg
+		else
+			-- 빈 슬롯
+			local emptyTxt = Utils.CreateTextLabel("Empty", UDim2.new(1, 0, 0, 30), UDim2.new(0, 0, 0.5, -15), UILocalizer.Localize("비어있음"))
+			emptyTxt.TextColor3 = C.DIM; emptyTxt.TextSize = 14
+			emptyTxt.Parent = slotBg
+			
+			local slotLabel = Utils.CreateTextLabel("Label", UDim2.new(1, 0, 0, 18), UDim2.new(0, 0, 0, 105), UILocalizer.Localize(string.format("슬롯 %d", i)))
+			slotLabel.TextSize = 11; slotLabel.TextColor3 = C.DIM; slotLabel.Parent = slotBg
+		end
+		
+		-- Click
+		if isUnlocked then
+			local btn = Instance.new("TextButton")
+			btn.Size = UDim2.new(1, 0, 1, 0); btn.BackgroundTransparency = 1; btn.Text = ""; btn.Parent = slotBg
+			btn.MouseButton1Click:Connect(function()
+				selectedPetSlot = i
+				selectedPetCreatureId = creatureId
+				CollectionUI.refreshData()
+			end)
+		end
+		
+		slotBg.Parent = scroll
+	end
+	y = y + SLOT_H + 20
+	
+	-- 섹션 헤더: 사용 가능한 펫
+	local availHeader = Utils.CreateTextLabel("AvailHeader", UDim2.new(1, -20, 0, 28), UDim2.new(0, 10, 0, y), UILocalizer.Localize("사용 가능한 펫"))
+	availHeader.Font = F.TITLE; availHeader.TextSize = 18; availHeader.TextXAlignment = Enum.TextXAlignment.Left
+	availHeader.Parent = scroll
+	y = y + 35
+	
+	-- 완성된 도감 엔트리로부터 펫 리스트 (도감 완성한 크리처 전부)
+	local creatures = CollectionController.getCreatureList()
+	local CARD_W = 110
+	local CARD_H = 130
+	local SPACING = 10
+	local cols = 4
+	local x = 10
+	local count = 0
+	local hasAny = false
+	
+	for _, data in ipairs(creatures) do
+		local cid = data.id
+		if CollectionController.isCodexComplete(cid) then
+			hasAny = true
+			
+			local card = Utils.CreateFrame("PetCard_" .. cid, UDim2.new(0, CARD_W, 0, CARD_H), UDim2.new(0, x, 0, y), C.BTN)
+			Instance.new("UICorner", card).CornerRadius = UDim.new(0, 8)
+			
+			local stroke = Instance.new("UIStroke")
+			stroke.Thickness = 2
+			stroke.Color = (selectedPetCreatureId == cid) and C.GOLD_SEL or Color3.fromRGB(60, 60, 60)
+			stroke.Parent = card
+			
+			local icon = Utils.CreateImage("Icon", UDim2.new(0, 60, 0, 60), UDim2.new(0.5, -30, 0, 15), getCreatureIcon(cid))
+			icon.Parent = card
+			
+			local sourceName = data.name or cid
+			local localizedName = UILocalizer.LocalizeDataText("CreatureData", cid, "name", sourceName)
+			local nameL = Utils.CreateTextLabel("Name", UDim2.new(1, 0, 0, 20), UDim2.new(0, 0, 0, 80), localizedName)
+			nameL.TextSize = 13; nameL.Parent = card
+			
+			-- 장착 여부 표시
+			local equipped = false
+			for _, sid in pairs(slots) do if sid == cid then equipped = true; break end end
+			if equipped then
+				local eqTag = Utils.CreateTextLabel("Eq", UDim2.new(1, 0, 0, 18), UDim2.new(0, 0, 0, 105), UILocalizer.Localize("장착중"))
+				eqTag.TextColor3 = Color3.fromRGB(100, 255, 100); eqTag.TextSize = 12; eqTag.Parent = card
+			end
+			
+			local btn = Instance.new("TextButton")
+			btn.Size = UDim2.new(1, 0, 1, 0); btn.BackgroundTransparency = 1; btn.Text = ""; btn.Parent = card
+			btn.MouseButton1Click:Connect(function()
+				selectedPetCreatureId = cid
+				selectedPetSlot = nil
+				CollectionUI.refreshData()
+			end)
+			
+			card.Parent = scroll
+			count = count + 1
+			if count % cols == 0 then
+				x = 10
+				y = y + CARD_H + SPACING
+			else
+				x = x + CARD_W + SPACING
+			end
+		end
+	end
+	
+	if not hasAny then
+		local noTxt = Utils.CreateTextLabel("NoPet", UDim2.new(1, -20, 0, 30), UDim2.new(0, 10, 0, y), UILocalizer.Localize("도감을 완성하면 펫이 활성화됩니다."))
+		noTxt.TextColor3 = C.DIM; noTxt.TextSize = 14
+		noTxt.Parent = scroll
+		y = y + 40
+	end
+	
+	scroll.CanvasSize = UDim2.new(0, 0, 0, y + CARD_H + SPACING)
+	_renderPetDetails()
 end
 
 ----------------------------------------------------------------
@@ -236,6 +579,12 @@ end
 ----------------------------------------------------------------
 function CollectionUI.refreshData()
 	if not isUIInitialized then return end
+	
+	-- 펫 탭이면 별도 렌더링
+	if activeTabKey == "PET" then
+		_renderPetTab()
+		return
+	end
 	
 	local scroll = CollectionUI.Refs.Scroll
 	
@@ -260,6 +609,7 @@ function CollectionUI.refreshData()
 		
 		if activeTabKey == "ALL" or activeTabKey == region then
 			local dCount = CollectionController.getDnaCount(cid)
+			local dRequired = data.dnaRequired or 5
 			
 			local card = Utils.CreateFrame("Card_"..cid, UDim2.new(0, CARD_W, 0, CARD_H), UDim2.new(0, x, 0, y), C.BTN)
 			local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 8); corner.Parent = card
@@ -285,12 +635,12 @@ function CollectionUI.refreshData()
 			local barBg = Utils.CreateFrame("BarBg", UDim2.new(0.8, 0, 0, 10), UDim2.new(0.1, 0, 0, 105), Color3.fromRGB(0,0,0))
 			Instance.new("UICorner", barBg).CornerRadius = UDim.new(0, 5)
 			
-			local fillRatio = math.clamp(dCount / 5, 0, 1)
+			local fillRatio = math.clamp(dCount / dRequired, 0, 1)
 			local barFill = Utils.CreateFrame("BarFill", UDim2.new(fillRatio, 0, 1, 0), UDim2.new(0,0,0,0), C.GOLD)
 			Instance.new("UICorner", barFill).CornerRadius = UDim.new(0, 5)
 			barFill.Parent = barBg
 			
-			local countT = Utils.CreateTextLabel("Cnt", UDim2.new(1,0,1,0), UDim2.new(0,0,0,0), UILocalizer.Localize(string.format("%d/5", dCount)))
+			local countT = Utils.CreateTextLabel("Cnt", UDim2.new(1,0,1,0), UDim2.new(0,0,0,0), UILocalizer.Localize(string.format("%d/%d", dCount, dRequired)))
 			countT.TextSize = 10
 			countT.Parent = barBg
 			
@@ -416,12 +766,21 @@ function CollectionUI.Show()
 			CollectionUI.refreshData()
 		end
 	end)
+	
+	-- 펫 슬롯 업데이트 반영
+	CollectionController.onPetUpdated(function()
+		if WindowManager.isOpen("COLLECTION") then
+			CollectionUI.refreshData()
+		end
+	end)
 end
 
 function CollectionUI.Hide()
 	if not CollectionUI.Refs.Frame then return end
 	CollectionUI.Refs.Frame.Visible = false
 	selectedCreatureId = nil
+	selectedPetCreatureId = nil
+	selectedPetSlot = nil
 end
 
 return CollectionUI

@@ -364,12 +364,26 @@ end
 -- CombatService에 StaminaService 연동 (무적 프레임 체크용)
 CombatService.SetStaminaService(StaminaService)
 
+-- PetService 초기화 (도감 펫 시스템)
+local PetService = require(Services.PetService)
+PetService.Init(NetController, DataService, PlayerStatService, SaveService, CreatureService)
+
+-- PetService 핸들러 등록
+for command, handler in pairs(PetService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
+end
+
 -- CharacterSetupService 초기화 (선사시대 캐릭터 스타일)
 local CharacterSetupService = require(Services.CharacterSetupService)
 CharacterSetupService.Init()
 
--- PortalService 초기화 (플레이스 이동 테스트 포털)
+-- PortalService 초기화 (고대 포탈 - 수리 + 텔레포트)
 local PortalService = require(Services.PortalService)
-PortalService.Init()
+PortalService.Init(NetController, SaveService, InventoryService)
+
+-- PortalService 핸들러 등록
+for command, handler in pairs(PortalService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
+end
 
 print("[ServerInit] Server initialized (Phase 10)") -- 최종 완료 로그

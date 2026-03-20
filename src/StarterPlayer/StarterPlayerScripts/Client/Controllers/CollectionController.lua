@@ -26,6 +26,12 @@ do
 end
 
 local onDnaUpdatedCallbacks = {}
+local onPetUpdatedCallbacks = {}
+
+-- 펫 슬롯 상태
+local petSlots = {}
+local petMaxSlots = 1
+local completedCreatures = {}
 
 --========================================
 -- Public API
@@ -79,6 +85,54 @@ function CollectionController.onDnaUpdated(callback)
 end
 
 --========================================
+-- Pet API
+--========================================
+
+function CollectionController.getPetSlots()
+	return petSlots
+end
+
+function CollectionController.getPetMaxSlots()
+	return petMaxSlots
+end
+
+function CollectionController.getCompletedCreatures()
+	return completedCreatures
+end
+
+function CollectionController.isCodexComplete(creatureId: string): boolean
+	local cData = DataHelper.GetData("CreatureData", creatureId)
+	if not cData then return false end
+	local required = cData.dnaRequired or 5
+	local current = localDnaData[string.upper(tostring(creatureId))] or 0
+	return current >= required
+end
+
+function CollectionController.requestEquipPet(slotIndex: number, creatureId: string)
+	local ok, result = NetClient.Request("Pet.Equip.Request", { slotIndex = slotIndex, creatureId = creatureId })
+	return ok and result
+end
+
+function CollectionController.requestUnequipPet(slotIndex: number)
+	local ok, result = NetClient.Request("Pet.Unequip.Request", { slotIndex = slotIndex })
+	return ok and result
+end
+
+function CollectionController.requestPetSlots()
+	local ok, result = NetClient.Request("Pet.Slots.Request", {})
+	if ok and result and result.success and result.data then
+		petSlots = result.data.slots or {}
+		petMaxSlots = result.data.maxSlots or 1
+		completedCreatures = result.data.completed or {}
+	end
+	return ok and result
+end
+
+function CollectionController.onPetUpdated(callback)
+	table.insert(onPetUpdatedCallbacks, callback)
+end
+
+--========================================
 -- Init
 --========================================
 
@@ -89,6 +143,18 @@ function CollectionController.Init()
 	NetClient.On("Player.Stats.Changed", function(data)
 		if data then
 			CollectionController.updateLocalDna(data)
+		end
+	end)
+	
+	-- 펫 슬롯 동기화 이벤트
+	NetClient.On("Pet.Sync", function(data)
+		if data then
+			petSlots = data.slots or {}
+			petMaxSlots = data.maxSlots or 1
+			completedCreatures = data.completed or {}
+			for _, cb in ipairs(onPetUpdatedCallbacks) do
+				pcall(cb)
+			end
 		end
 	end)
 	
