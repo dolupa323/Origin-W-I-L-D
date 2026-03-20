@@ -1188,6 +1188,7 @@ function CreatureService._updateAILoop()
 		local closestPlayerRoot = creature.closestPlayerRoot
 		local closestPlayerHum = creature.closestPlayerHum
 		local closestPlayerUserId = creature.closestPlayerUserId
+		local behavior = creature.data.behavior -- AGGRESSIVE, NEUTRAL, PASSIVE
 		
 		-- 1.1 LOD 업데이트 주기 결정
 		local updateInterval = AI_UPDATE_INTERVAL -- 기본 0.3s
@@ -1279,7 +1280,6 @@ function CreatureService._updateAILoop()
 		end
 		
 		-- 3. State Machine
-		local behavior = creature.data.behavior -- AGGRESSIVE, NEUTRAL, PASSIVE
 		local detectRange = creature.data.detectRange or 20
 		
 		-- BloodSmell 어그로 배율 적용 (Phase 4-4)
@@ -1509,6 +1509,9 @@ function CreatureService._updateAILoop()
 						if creature.lastPathCompute and (now - creature.lastPathCompute) < 1.0 then
 							needsNewPath = false
 						end
+						if creature.pathComputeInFlight then
+							needsNewPath = false
+						end
 					end
 
 					if needsNewPath then
@@ -1522,22 +1525,54 @@ function CreatureService._updateAILoop()
 
 						if isObstructed then
 							creature.lastPathCompute = now
-							local path = PathfindingService:CreatePath({ 
-								AgentRadius = 3, 
-								AgentHeight = 6, 
-								AgentCanJump = true,
-								AgentStepHeight = 4
-							})
-							
-							-- 비동기 호출 (ComputeAsync는 무거운 연산)
-							path:ComputeAsync(hrp.Position, target)
-							
-							if path.Status == Enum.PathStatus.Success then
-								creature.pathData = { waypoints = path:GetWaypoints(), currentIndex = 2, targetPos = target, lastRecalc = now }
-							else
-								-- 실패 시 쿨다운을 위해 더미 경로 생성
-								creature.pathData = { waypoints = {{Position = target}}, currentIndex = 1, targetPos = target, lastRecalc = now }
-							end
+							creature.pathComputeInFlight = true
+							creature.pathReqToken = (creature.pathReqToken or 0) + 1
+							local reqToken = creature.pathReqToken
+							local creatureId = creature.id
+							local startPos = hrp.Position
+							local targetPos = target
+							local recalcAt = now
+
+							task.spawn(function()
+								local path = PathfindingService:CreatePath({
+									AgentRadius = 3,
+									AgentHeight = 6,
+									AgentCanJump = true,
+									AgentStepHeight = 4,
+								})
+
+								local ok = pcall(function()
+									path:ComputeAsync(startPos, targetPos)
+								end)
+
+								local latest = activeCreatures[creatureId]
+								if not latest then
+									return
+								end
+								if latest.pathReqToken ~= reqToken then
+									return
+								end
+
+								latest.pathComputeInFlight = false
+								if ok and path.Status == Enum.PathStatus.Success then
+									local waypoints = path:GetWaypoints()
+									local startIndex = (#waypoints >= 2) and 2 or 1
+									latest.pathData = {
+										waypoints = waypoints,
+										currentIndex = startIndex,
+										targetPos = targetPos,
+										lastRecalc = recalcAt,
+									}
+								else
+									-- 실패 시 쿨다운을 위해 더미 경로 생성
+									latest.pathData = {
+										waypoints = {{Position = targetPos}},
+										currentIndex = 1,
+										targetPos = targetPos,
+										lastRecalc = recalcAt,
+									}
+								end
+							end)
 						else
 							-- 3. 장애물 없음 → 직접 이동 (최우선)
 							creature.pathData = nil

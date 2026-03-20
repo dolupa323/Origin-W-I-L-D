@@ -10,17 +10,20 @@ local DataHelper = require(ReplicatedStorage.Shared.Util.DataHelper)
 local CollectionController = {}
 local initialized = false
 
-local localDnaData = {
-	COMPY = 0,
-	DODO = 0,
-	BABY_TRICERATOPS = 0,
-}
+local localDnaData = {}
 
-local CURRENT_GRASSLAND_CREATURES = {
-	COMPY = true,
-	DODO = true,
-	BABY_TRICERATOPS = true,
-}
+-- CreatureData에서 전체 크리처 ID를 로드하여 초기값 설정
+local CURRENT_GRASSLAND_CREATURES = {}
+do
+	local tbl = DataHelper.GetTable("CreatureData") or {}
+	for _, data in pairs(tbl) do
+		local cid = tostring(data.id or "")
+		if cid ~= "" then
+			localDnaData[cid] = 0
+			CURRENT_GRASSLAND_CREATURES[cid] = true
+		end
+	end
+end
 
 local onDnaUpdatedCallbacks = {}
 
@@ -32,15 +35,12 @@ function CollectionController.getDnaCount(creatureId: string): number
 	return localDnaData[tostring(creatureId or "")] or 0
 end
 
--- 전체 동물 리스트 반환 (분류별 필터링을 위함)
+-- 전체 동물 리스트 반환 (도감에 등록 가능한 모든 크리처)
 function CollectionController.getCreatureList()
 	local tbl = DataHelper.GetTable("CreatureData") or {}
 	local list = {}
 	for _, data in pairs(tbl) do
-		local cid = tostring(data.id or "")
-		if CURRENT_GRASSLAND_CREATURES[cid] then
-			table.insert(list, data)
-		end
+		table.insert(list, data)
 	end
 	table.sort(list, function(a, b)
 		return tostring(a.id or "") < tostring(b.id or "")
@@ -67,11 +67,6 @@ function CollectionController.updateLocalDna(statsData)
 		end
 	end
 
-	if statsData.dnaCompy and localDnaData.COMPY ~= statsData.dnaCompy then
-		localDnaData.COMPY = statsData.dnaCompy
-		changed = true
-	end
-	
 	if changed then
 		for _, cb in ipairs(onDnaUpdatedCallbacks) do
 			pcall(cb)

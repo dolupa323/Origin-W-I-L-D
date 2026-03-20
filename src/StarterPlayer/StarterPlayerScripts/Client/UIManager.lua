@@ -1710,6 +1710,142 @@ function UIManager.notify(text, color)
 	end)
 end
 
+--- DNA 획득 특별 연출 (화면 중앙 대형 알림)
+function UIManager.showDnaObtained(data)
+	if not mainGui then return end
+	local creatureName = data.creatureId or ""
+	local creatureData = nil
+	pcall(function()
+		local DataHelper = require(game.ReplicatedStorage.Shared.Util.DataHelper)
+		creatureData = DataHelper.GetData("CreatureData", creatureName)
+	end)
+	local displayName = (creatureData and creatureData.name) or creatureName
+
+	-- 희귀도별 색상
+	local rarityColors = {
+		COMMON = Color3.fromRGB(200, 200, 200),
+		UNCOMMON = Color3.fromRGB(30, 255, 30),
+		RARE = Color3.fromRGB(0, 170, 255),
+		EPIC = Color3.fromRGB(200, 80, 255),
+		LEGENDARY = Color3.fromRGB(255, 200, 0),
+	}
+	local glowColor = rarityColors[data.rarity] or rarityColors.RARE
+
+	-- 전체 화면 오버레이 (살짝 어둡게)
+	local overlay = Utils.mkFrame({
+		name = "DnaOverlay",
+		size = UDim2.new(1, 0, 1, 0),
+		bg = Color3.new(0, 0, 0),
+		bgT = 1,
+		parent = mainGui
+	})
+	overlay.ZIndex = 50
+
+	-- 중앙 컨테이너
+	local container = Utils.mkFrame({
+		name = "DnaContainer",
+		size = UDim2.new(0, 400, 0, 200),
+		pos = UDim2.new(0.5, 0, 0.4, 0),
+		anchor = Vector2.new(0.5, 0.5),
+		bgT = 1,
+		parent = overlay
+	})
+	container.ZIndex = 51
+
+	-- 🧬 DNA 아이콘 텍스트 (이모지 대용)
+	local dnaIcon = Utils.mkLabel({
+		text = "🧬",
+		size = UDim2.new(0, 80, 0, 80),
+		pos = UDim2.new(0.5, 0, 0, 0),
+		anchor = Vector2.new(0.5, 0),
+		ts = 60,
+		color = glowColor,
+		parent = container
+	})
+	dnaIcon.ZIndex = 52
+	dnaIcon.TextTransparency = 1
+
+	-- "DNA 획득!" 타이틀
+	local title = Utils.mkLabel({
+		text = "DNA 획득!",
+		size = UDim2.new(1, 0, 0, 40),
+		pos = UDim2.new(0.5, 0, 0, 85),
+		anchor = Vector2.new(0.5, 0),
+		ts = 28,
+		color = glowColor,
+		parent = container
+	})
+	title.ZIndex = 52
+	title.TextTransparency = 1
+	title.Font = Enum.Font.GothamBold
+
+	-- 크리처 이름
+	local subtitle = Utils.mkLabel({
+		text = displayName .. " DNA",
+		size = UDim2.new(1, 0, 0, 30),
+		pos = UDim2.new(0.5, 0, 0, 130),
+		anchor = Vector2.new(0.5, 0),
+		ts = 20,
+		color = C.WHITE,
+		parent = container
+	})
+	subtitle.ZIndex = 52
+	subtitle.TextTransparency = 1
+
+	-- 희귀도 텍스트
+	local rarityText = Utils.mkLabel({
+		text = "[" .. (data.rarity or "RARE") .. "]",
+		size = UDim2.new(1, 0, 0, 22),
+		pos = UDim2.new(0.5, 0, 0, 165),
+		anchor = Vector2.new(0.5, 0),
+		ts = 16,
+		color = glowColor,
+		parent = container
+	})
+	rarityText.ZIndex = 52
+	rarityText.TextTransparency = 1
+
+	-- 애니메이션 시퀀스
+	local fadeIn = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+	local fadeInSlow = TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+
+	-- 1. 오버레이 살짝 어둡게
+	TweenService:Create(overlay, fadeIn, {BackgroundTransparency = 0.7}):Play()
+
+	-- 2. DNA 아이콘 페이드인 + 스케일 팝
+	task.delay(0.1, function()
+		TweenService:Create(dnaIcon, fadeIn, {TextTransparency = 0}):Play()
+		dnaIcon.TextScaled = false
+		dnaIcon.TextSize = 20
+		TweenService:Create(dnaIcon, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {TextSize = 60}):Play()
+	end)
+
+	-- 3. 타이틀/서브 순차 페이드인
+	task.delay(0.3, function()
+		TweenService:Create(title, fadeInSlow, {TextTransparency = 0}):Play()
+	end)
+	task.delay(0.5, function()
+		TweenService:Create(subtitle, fadeInSlow, {TextTransparency = 0}):Play()
+	end)
+	task.delay(0.7, function()
+		TweenService:Create(rarityText, fadeInSlow, {TextTransparency = 0}):Play()
+	end)
+
+	-- 4. 3초 후 전체 페이드아웃
+	task.delay(3.0, function()
+		if not overlay or not overlay.Parent then return end
+		local fadeOut = TweenInfo.new(0.8, Enum.EasingStyle.Quart, Enum.EasingDirection.In)
+		TweenService:Create(overlay, fadeOut, {BackgroundTransparency = 1}):Play()
+		TweenService:Create(dnaIcon, fadeOut, {TextTransparency = 1}):Play()
+		TweenService:Create(title, fadeOut, {TextTransparency = 1}):Play()
+		TweenService:Create(subtitle, fadeOut, {TextTransparency = 1}):Play()
+		TweenService:Create(rarityText, fadeOut, {TextTransparency = 1}):Play()
+		task.delay(1.0, function()
+			if overlay and overlay.Parent then overlay:Destroy() end
+		end)
+	end)
+end
+
 -- [New] Side Notification (Corner stack)
 function UIManager.sideNotify(text, color, icon)
 	if not mainGui then return end
@@ -1911,17 +2047,37 @@ local function setupEventListeners()
 				if d.leveledUp then 
 					UIManager.notify(" 레벨업! Lv. "..d.level, C.WHITE)
 				end
+				if d.upgradedStat then
+					UIManager.notify(" 💪 능력치 강화 성공!", C.GREEN)
+				end
 				if d.statPointsAvailable ~= nil then UIManager.updateStatPoints(d.statPointsAvailable) end
 				if WindowManager.isOpen("EQUIP") then UIManager.refreshStats() end
 			end
 		end)
-		
-		NetClient.On("Player.Stats.Upgraded", function(data)
-			UIManager.notify(" 💪 능력치 강화 성공!", C.GREEN)
-			-- refreshStats는 Stats.Changed에 의해 호출됨
-		end)
 	end
 
+
+	-- DNA 획득 이벤트
+	if NetClient.On then
+		NetClient.On("DNA.Obtained", function(data)
+			if data then
+				UIManager.showDnaObtained(data)
+			end
+		end)
+		
+		NetClient.On("DNA.Registered", function(data)
+			if data then
+				local creatureName = data.creatureId or ""
+				local displayName = creatureName
+				pcall(function()
+					local DataHelper = require(game.ReplicatedStorage.Shared.Util.DataHelper)
+					local cd = DataHelper.GetData("CreatureData", creatureName)
+					if cd and cd.name then displayName = cd.name end
+				end)
+				UIManager.notify("🧬 " .. displayName .. " DNA가 도감에 등록되었습니다!", Color3.fromRGB(0, 255, 180))
+			end
+		end)
+	end
 
 	-- Debuff Events
 	if NetClient.On then

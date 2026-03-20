@@ -45,9 +45,9 @@ NPCShopData.TOOL_SHOP = {
 	npcName = "대장장이 한스",
 	
 	buyList = {
-		{ itemId = "STONE_PICKAXE", price = 50, stock = -1 },
-		{ itemId = "STONE_AXE", price = 50, stock = -1 },
-		{ itemId = "STONE_SPEAR", price = 60, stock = -1 },
+		{ itemId = "FIRM_STONE_PICKAXE", price = 50, stock = -1 },
+		{ itemId = "FIRM_STONE_AXE", price = 50, stock = -1 },
+		{ itemId = "CRUDE_WOODEN_SPEAR", price = 60, stock = -1 },
 		{ itemId = "WOODEN_CLUB", price = 40, stock = -1 },
 		{ itemId = "BRONZE_PICKAXE", price = 250, stock = 10 },
 		{ itemId = "BRONZE_AXE", price = 250, stock = 10 },
@@ -55,9 +55,9 @@ NPCShopData.TOOL_SHOP = {
 	
 
 	sellList = {
-		{ itemId = "STONE_PICKAXE", price = 15 },
-		{ itemId = "STONE_AXE", price = 15 },
-		{ itemId = "STONE_SPEAR", price = 18 },
+		{ itemId = "FIRM_STONE_PICKAXE", price = 15 },
+		{ itemId = "FIRM_STONE_AXE", price = 15 },
+		{ itemId = "CRUDE_WOODEN_SPEAR", price = 18 },
 		{ itemId = "BRONZE_PICKAXE", price = 75 },
 		{ itemId = "IRON_PICKAXE", price = 200 },
 	},

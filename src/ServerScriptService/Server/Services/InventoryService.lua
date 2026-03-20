@@ -993,17 +993,6 @@ function InventoryService.addItem(userId: number, itemId: string, count: number,
 	local added = 0
 	local changedSlots = {}
 	
-	-- [추가] HIDDEN_STACK 타입 처리 (DNA 등 도감 아이템) - 인벤토리 슬롯 대신 도감 누적
-	local itemData = DataService and DataService.getItem(itemId)
-	if itemData and itemData.type == "HIDDEN_STACK" then
-		if PlayerStatService and (itemId:find("DNA") or itemData.id:find("DNA")) then
-			local creatureId = itemId:gsub("_DNA", "") -- COMPY_DNA -> COMPY
-			PlayerStatService.addCollectionDna(userId, creatureId, count)
-			return count, 0 -- 모두 성공적으로 "도감"에 추가됨
-		end
-		-- 만약 다른 타입의 HIDDEN_STACK이 있다면 여기서 핸들링 가능
-	end
-	
 	-- 무게 체크
 	local currentWeight = _getTotalWeight(inv)
 	local maxWeight = _getMaxWeight(userId)
@@ -1518,7 +1507,33 @@ local function handleUse(player: Player, payload: any)
 		end
 	end
 	
-	-- 2. 소모성 아이템
+	-- 2. DNA 아이템 (사용 → 도감 등록)
+	if itemData.type == "DNA" then
+		local creatureId = itemData.creatureId
+		if not creatureId then
+			return { success = false, errorCode = Enums.ErrorCode.INVALID_ITEM }
+		end
+		
+		-- 도감에 DNA 등록
+		if PlayerStatService and PlayerStatService.addCollectionDna then
+			PlayerStatService.addCollectionDna(userId, creatureId, 1)
+		end
+		
+		-- 인벤토리에서 1개 소모 (슬롯 기반 제거)
+		InventoryService.removeItemFromSlot(userId, slot, 1)
+		
+		-- 클라이언트에 도감 등록 성공 알림
+		if NetController then
+			NetController.FireClient(player, "DNA.Registered", {
+				creatureId = creatureId,
+				itemId = slotData.itemId,
+			})
+		end
+
+		return { success = true, data = { action = "DNA_REGISTER", creatureId = creatureId, itemId = slotData.itemId } }
+	end
+	
+	-- 3. 소모성 아이템
 	if itemData.type == Enums.ItemType.CONSUMABLE then
 		-- 임시: 사용 알림만
 		print(string.format("[InventoryService] User %d used %s", userId, slotData.itemId))

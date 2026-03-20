@@ -171,7 +171,11 @@ function PlayerStatService.addXP(userId: number, amount: number, source: string?
 			userId, oldLevel, newLevel, techPointsGained, statPointsGained))
 		
 		if levelUpCallback then
-			levelUpCallback(userId, newLevel)
+			for reachedLevel = oldLevel + 1, newLevel do
+				-- Backward-compatible: existing callbacks can keep using (userId, level).
+				-- Extended metadata (oldLevel/newLevel) is provided for multi-level unlock handling.
+				levelUpCallback(userId, reachedLevel, oldLevel, newLevel)
+			end
 		end
 		
 		-- 레벨업 시 스탯 재적용 (최대치 상승 등)
@@ -243,18 +247,11 @@ function PlayerStatService.upgradeStat(userId: number, statId: string): (boolean
 	-- 실제 캐릭터에 스탯 보너스 적용
 	PlayerStatService.applyStats(userId)
 	
-	-- 업그레이드 성공 알림
+	-- 업그레이드 성공 알림 (Changed 이벤트에 통합)
 	local player = game:GetService("Players"):GetPlayerByUserId(userId)
 	if player and NetController then
-		-- 1. 개별 업그레이드 이벤트 (이전 버전 호환용)
-		NetController.FireClient(player, "Player.Stats.Upgraded", {
-			statId = statId,
-			newValue = stats.statInvested[statId],
-			pointsRemaining = PlayerStatService.getStatPoints(userId)
-		})
-		
-		-- 2. 전체 스탯 변경 이벤트 (클라이언트 상태 동기화용)
 		local fullStats = PlayerStatService.getStats(userId)
+		fullStats.upgradedStat = statId
 		NetController.FireClient(player, "Player.Stats.Changed", fullStats)
 	end
 	
@@ -298,6 +295,12 @@ function PlayerStatService.GetCalculatedStats(userId: number)
 	-- 도감 상시 효과는 비활성화: 수집/표시용 데이터만 유지한다.
 	local dnaBonuses = { attackMult = 0, workSpeedMult = 0 }
 	local finalWork = 100 + ((stats[Enums.StatId.WORK_SPEED] or 0) * Balance.WORKSPEED_PER_POINT)
+
+	-- 이동 속도 보너스 (방어구 세트 등)
+	local speedMult = 0
+	if setBonuses and setBonuses.speedMult then
+		speedMult = speedMult + setBonuses.speedMult
+	end
 	
 	return {
 		maxHealth = finalHp,
@@ -306,6 +309,7 @@ function PlayerStatService.GetCalculatedStats(userId: number)
 		workSpeed = finalWork,
 		attackMult = finalAtk,
 		defense = defense,
+		speedMult = speedMult, -- StaminaService 안티치트에서 참조
 		dnaBonuses = dnaBonuses, -- 클라이언트 UI용 정보 포함
 	}
 end

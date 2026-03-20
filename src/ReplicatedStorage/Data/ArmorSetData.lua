@@ -2,15 +2,13 @@
 -- 방어구 세트 효과 정의
 
 local ArmorSetData = {
-	FIBER = {
-		name = "초보 생존자 (섬유)",
-		items = {"FIBER_SHIRT", "FIBER_PANTS"},
-		bonusText = "방어력 +5, 최대 체력 +20",
-		bonuses = {
-			defense = 5,
-			maxHealth = 20,
-		}
-	},
+	-- FIBER 세트: FIBER_SHIRT, FIBER_PANTS 아이템 미구현으로 비활성화
+	-- FIBER = {
+	-- 	name = "초보 생존자 (섬유)",
+	-- 	items = {"FIBER_SHIRT", "FIBER_PANTS"},
+	-- 	bonusText = "방어력 +5, 최대 체력 +20",
+	-- 	bonuses = { defense = 5, maxHealth = 20 }
+	-- },
 	LEATHER = {
 		name = "중급 사냥꾼 (가죽)",
 		items = {"FEATHER_HELMET", "LEATHER_ARMOR"},

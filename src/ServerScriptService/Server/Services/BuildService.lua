@@ -6,14 +6,10 @@
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ServerScriptService = game:GetService("ServerScriptService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Balance = require(Shared.Config.Balance)
 local Enums = require(Shared.Enums.Enums)
-
-local Server = ServerScriptService:WaitForChild("Server")
-local Services = Server:WaitForChild("Services")
 
 local BuildService = {}
 
@@ -194,7 +190,7 @@ end
 --========================================
 -- Internal: 위치 검증
 --========================================
-local function validatePosition(position: Vector3): (boolean, string?, string?, number?, Vector3?, Instance?)
+local function validatePosition(position: Vector3): (boolean, string?, string?, number?, Vector3?, Instance?, Enum.Material?)
 	-- 1. 해수면/최소 높이 검증 (지하 건설 및 수중 건설 방지)
 	local minHeight = math.max(Balance.BUILD_MIN_GROUND_DIST, Balance.SEA_LEVEL or 0)
 	if position.Y < minHeight then
@@ -256,22 +252,6 @@ local function consumeRequirements(userId: number, requirements: any)
 	for _, req in ipairs(requirements) do
 		InventoryService.removeItem(userId, req.itemId, req.amount)
 	end
-end
-
-local function getWorldDropService()
-	if WorldDropService then
-		return WorldDropService
-	end
-
-	local ok, svc = pcall(function()
-		return require(Services:WaitForChild("WorldDropService"))
-	end)
-	if ok then
-		WorldDropService = svc
-		return WorldDropService
-	end
-
-	return nil
 end
 
 local function scatterDropPosition(basePos: Vector3, index: number): Vector3
@@ -678,12 +658,20 @@ function BuildService.place(player: Player, facilityId: string, position: Vector
 		if baseId then
 			-- 베이스 파티션에 저장
 			structure.partitionId = baseId
-			SaveService.updatePartition(baseId, function(pState)
-				if not pState then return nil end -- 파티션이 아직 없으면 무시 (BaseClaimService가 생성해야 함)
+			local saved = SaveService.updatePartition(baseId, function(pState)
 				if not pState.structures then pState.structures = {} end
 				pState.structures[structureId] = structure
 				return pState
 			end)
+			if not saved then
+				-- 파티션 미초기화 → wilderness로 폴백
+				structure.partitionId = nil
+				SaveService.updateWorldState(function(state)
+					if not state.wildernessStructures then state.wildernessStructures = {} end
+					state.wildernessStructures[structureId] = structure
+					return state
+				end)
+			end
 		else
 			-- 야생(Wilderness)으로 월드 공용 상태에 저장
 			SaveService.updateWorldState(function(state)
@@ -775,6 +763,11 @@ function BuildService.removeStructure(structureId: string, reason: string)
 	if FacilityService and FacilityService.unregister then
 		FacilityService.unregister(structureId)
 	end
+
+	-- 토템 캐시 무효화 (해체된 건물이 CAMP_TOTEM인 경우)
+	if structure.facilityId == "CAMP_TOTEM" and TotemService and TotemService.invalidateTotemCache then
+		TotemService.invalidateTotemCache(structure.ownerId)
+	end
 	
 	-- Workspace에서 제거
 	despawnFacilityModel(structureId)
@@ -797,7 +790,7 @@ function BuildService.removeStructure(structureId: string, reason: string)
 		if facilityData and facilityData.requirements then
 			local ownerId = structure.ownerId
 			local player = ownerId and Players:GetPlayerByUserId(ownerId)
-			local dropService = getWorldDropService()
+			local dropService = WorldDropService
 			local dropIndex = 0
 			
 			for _, req in ipairs(facilityData.requirements) do
@@ -1105,6 +1098,10 @@ end
 
 function BuildService.SetTotemService(totemService)
 	TotemService = totemService
+end
+
+function BuildService.SetWorldDropService(worldDropService)
+	WorldDropService = worldDropService
 end
 
 function BuildService.GetHandlers()

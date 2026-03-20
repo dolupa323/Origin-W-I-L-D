@@ -152,7 +152,10 @@ function PalboxService.modifyPalStats(userId: number, palUID: string, statChange
 	for statName, delta in pairs(statChanges) do
 		local current = pal.stats[statName] or 0
 		local maxVal = 100
-		if statName == "hp" then maxVal = pal.stats.hp or 100 end -- 임시
+		if statName == "hp" then
+			local creatureData = DataService and DataService.getCreature(pal.creatureId)
+			maxVal = (creatureData and creatureData.maxHealth) or 100
+		end
 		if statName == "hunger" then maxVal = Balance.PAL_HUNGER_MAX or 100 end
 		if statName == "san" then maxVal = Balance.PAL_SAN_MAX or 100 end
 		
@@ -209,10 +212,20 @@ function PalboxService.renamePal(userId: number, palUID: string, newName: string
 		return false
 	end
 	
-	pal.nickname = filteredName
+	-- 비동기 대기 후 재검증: 필터링 중 팰이 삭제/이동되었을 수 있음
+	local palboxAfter = getOrCreatePalbox(userId)
+	local palAfter = palboxAfter[palUID]
+	if not palAfter then
+		warn("[PalboxService] Pal removed during rename async:", palUID)
+		return false
+	end
+	local playerAfter = Players:GetPlayerByUserId(userId)
+	if not playerAfter then return false end
+	
+	palAfter.nickname = filteredName
 	
 	if NetController then
-		NetController.FireClient(player, "Palbox.Updated", {
+		NetController.FireClient(playerAfter, "Palbox.Updated", {
 			action = "RENAME",
 			palUID = palUID,
 			nickname = filteredName,

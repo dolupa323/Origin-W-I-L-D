@@ -51,7 +51,12 @@ local function getItemDisplayName(itemId: string): string
 	return (itemData and itemData.name) or itemId
 end
 
-local function findLootModel(itemId: string): Instance?
+local function findLootModel(itemId: string): (Instance?, boolean)
+	-- 0. DNA 타입 체크: 전용 모델 사용
+	local itemData = DataHelper.GetData("ItemData", itemId:upper())
+	local isDna = itemData and itemData.type == "DNA"
+	local modelTarget = isDna and "DNA_Sample" or nil
+	
 	-- 1. 검색 시작 지점 (Assets 우선, 없으면 ReplicatedStorage 전체)
 	local root = ReplicatedStorage:FindFirstChild("Assets") or ReplicatedStorage
 	
@@ -96,18 +101,24 @@ local function findLootModel(itemId: string): Instance?
 		return nil
 	end
 	
-	-- 4. POUCH 최우선 검색 (모든 드롭아이템은 POUCH로 통일)
-	local template = searchRecursive(root, modelName)
-	if template then return template end
+	-- 4. DNA는 전용 모델, 일반은 POUCH
+	if modelTarget then
+		local template = searchRecursive(root, modelTarget)
+		if template then return template, true end
+	end
 	
-	-- 5. POUCH가 없는 경우에만 원래 아이템 모델 검색 (폴백)
-	return searchRecursive(root, itemId)
+	-- 5. POUCH 최우선 검색 (일반 드롭아이템은 POUCH로 통일)
+	local template = searchRecursive(root, modelName)
+	if template then return template, false end
+	
+	-- 6. POUCH가 없는 경우에만 원래 아이템 모델 검색 (폴백)
+	return searchRecursive(root, itemId), false
 end
 
 local function createDropModel(dropData)
 	if not dropData or not dropData.pos then return nil end
 	
-	local template = findLootModel(dropData.itemId)
+	local template, isDna = findLootModel(dropData.itemId)
 	local mainObject
 	local isModel = false
 	
@@ -129,6 +140,22 @@ local function createDropModel(dropData)
 			mainObject.CanCollide = false
 		end
 		
+		-- [크기 정규화] DNA 등 대형 모델은 드롭 목표 크기로 축소
+		local DROP_TARGET = isDna and 1.0 or (Balance.DROP_TARGET_SIZE or 1.5)
+		if mainObject:IsA("Model") then
+			local _, mSize = mainObject:GetBoundingBox()
+			local maxDim = math.max(mSize.X, mSize.Y, mSize.Z)
+			if maxDim > 0 and maxDim > DROP_TARGET then
+				mainObject:ScaleTo(DROP_TARGET / maxDim)
+			end
+		elseif mainObject:IsA("BasePart") then
+			local maxDim = math.max(mainObject.Size.X, mainObject.Size.Y, mainObject.Size.Z)
+			if maxDim > 0 and maxDim > DROP_TARGET then
+				local s = DROP_TARGET / maxDim
+				mainObject.Size = mainObject.Size * s
+			end
+		end
+		
 		-- [핵심] 피벗을 모델/파트의 최하단으로 설정
 		local cframe, size = mainObject:GetBoundingBox()
 		local bottomPivot = CFrame.new(cframe.Position - Vector3.new(0, size.Y/2, 0))
@@ -143,15 +170,16 @@ local function createDropModel(dropData)
 		
 		-- [수정] 자연스러운 등장을 위해 팝업 애니메이션 적용
 		if mainObject:IsA("Model") then
-			mainObject:ScaleTo(0.1)
+			local finalScale = mainObject:GetScale()
+			mainObject:ScaleTo(finalScale * 0.1)
 			local scaleVal = Instance.new("NumberValue")
-			scaleVal.Value = 0.1
+			scaleVal.Value = finalScale * 0.1
 			scaleVal.Changed:Connect(function(v)
 				if mainObject.Parent then
 					mainObject:ScaleTo(v)
 				end
 			end)
-			local tween = TweenService:Create(scaleVal, TweenInfo.new(0.4, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out), { Value = 1 })
+			local tween = TweenService:Create(scaleVal, TweenInfo.new(0.4, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out), { Value = finalScale })
 			tween.Completed:Connect(function() scaleVal:Destroy() end)
 			tween:Play()
 		elseif mainObject:IsA("BasePart") then
@@ -180,11 +208,31 @@ local function createDropModel(dropData)
 	
 	-- [수정] 상단 이름표 박스 제거 (요청 사항)
 	local highlight = Instance.new("Highlight")
-	highlight.FillColor = template and Color3.new(1,1,1) or (mainObject:IsA("BasePart") and mainObject.Color or Color3.new(1,1,1))
-	highlight.FillTransparency = 0.7
-	highlight.OutlineColor = Color3.new(1, 1, 1)
-	highlight.OutlineTransparency = 0.5
+	if isDna then
+		-- DNA 전용 하이라이트: 밝은 녹색 발광
+		highlight.FillColor = Color3.fromRGB(0, 255, 180)
+		highlight.FillTransparency = 0.3
+		highlight.OutlineColor = Color3.fromRGB(100, 255, 200)
+		highlight.OutlineTransparency = 0.0
+	else
+		highlight.FillColor = template and Color3.new(1,1,1) or (mainObject:IsA("BasePart") and mainObject.Color or Color3.new(1,1,1))
+		highlight.FillTransparency = 0.7
+		highlight.OutlineColor = Color3.new(1, 1, 1)
+		highlight.OutlineTransparency = 0.5
+	end
 	highlight.Parent = mainObject
+	
+	-- DNA 드랍 시 PointLight로 빛 연출
+	if isDna then
+		local lightPart = mainObject:IsA("Model") and (mainObject.PrimaryPart or mainObject:FindFirstChildWhichIsA("BasePart", true)) or mainObject
+		if lightPart and lightPart:IsA("BasePart") then
+			local light = Instance.new("PointLight")
+			light.Color = Color3.fromRGB(0, 255, 180)
+			light.Brightness = 3
+			light.Range = 12
+			light.Parent = lightPart
+		end
+	end
 	
 	-- 상호작용 포인트 설정 (아이템 본체)
 	local attachmentPoint = mainObject

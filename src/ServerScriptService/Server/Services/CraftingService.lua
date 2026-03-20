@@ -467,6 +467,8 @@ function CraftingService.cancel(player: Player, craftId: string)
 	end
 	
 	local entry = queue[craftId]
+	local now = os.time()
+	syncEntryProgress(entry, now)
 	
 	-- 이미 완료된 항목은 취소 불가
 	if entry.state == Enums.CraftState.COMPLETED then
@@ -478,8 +480,10 @@ function CraftingService.cancel(player: Player, craftId: string)
 	if recipe and Balance.CRAFT_CANCEL_REFUND > 0 then
 		local pPos = getPlayerPosition(player)
 		local batchCount = math.max(1, tonumber(entry.batchCount) or 1)
+		local completedCount = math.max(0, math.min(batchCount, tonumber(entry.completedCount) or 0))
+		local refundableUnits = math.max(0, batchCount - completedCount)
 		for _, input in ipairs(recipe.inputs) do
-			local refundCount = math.floor((input.count * batchCount) * Balance.CRAFT_CANCEL_REFUND)
+			local refundCount = math.floor((input.count * refundableUnits) * Balance.CRAFT_CANCEL_REFUND)
 			if refundCount > 0 then
 				local added, remaining = InventoryService.addItem(userId, input.itemId, refundCount)
 				

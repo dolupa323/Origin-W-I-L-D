@@ -52,6 +52,21 @@ local function syncStaminaToClient(player: Player)
 	})
 end
 
+-- 플레이어의 버프/스탯 반영된 기본 이동 속도 산출
+local function _getBaseSpeed(userId: number): number
+	local base = Balance.BASE_WALK_SPEED
+	local ok, PlayerStatService = pcall(function()
+		return require(game:GetService("ServerScriptService").Server.Services.PlayerStatService)
+	end)
+	if ok and PlayerStatService and PlayerStatService.GetCalculatedStats then
+		local calc = PlayerStatService.GetCalculatedStats(userId)
+		if calc and calc.speedMult then
+			base = base * (1 + calc.speedMult)
+		end
+	end
+	return base
+end
+
 --========================================
 -- Public API
 --========================================
@@ -184,14 +199,14 @@ function StaminaService._tickLoop()
 			end
 		end
 		
-		-- [Anti-Cheat] 속도 검증 (서버 사이드 권위 유지)
+		-- [Anti-Cheat] 속도 검증 (버프/스탯 반영 최대 속도 기준)
 		local character = player.Character
 		local humanoid = character and character:FindFirstChild("Humanoid")
 		if humanoid then
-			local maxAllowedSpeed = Balance.BASE_WALK_SPEED * (data.isSprinting and Balance.SPRINT_SPEED_MULT or 1.0)
+			local baseSpeed = _getBaseSpeed(player.UserId)
+			local maxAllowedSpeed = baseSpeed * (data.isSprinting and Balance.SPRINT_SPEED_MULT or 1.0)
 			-- 무게 초과 등 다른 감속 요인이 있을 수 있으므로, '초과'하는 경우만 제재
 			if humanoid.WalkSpeed > maxAllowedSpeed + 0.1 then
-				-- warn(string.format("[StaminaService] Speed violation detected for %s: %.1f > %.1f", player.Name, humanoid.WalkSpeed, maxAllowedSpeed))
 				humanoid.WalkSpeed = maxAllowedSpeed
 			end
 		end
@@ -253,8 +268,8 @@ function StaminaService._updatePlayerSpeed(player: Player, sprinting: boolean)
 	local humanoid = character:FindFirstChild("Humanoid")
 	if not humanoid then return end
 	
-	-- 기본 속도
-	local baseSpeed = Balance.BASE_WALK_SPEED
+	-- 버프/스탯 반영된 기본 속도
+	local baseSpeed = _getBaseSpeed(player.UserId)
 	
 	if sprinting then
 		humanoid.WalkSpeed = baseSpeed * Balance.SPRINT_SPEED_MULT

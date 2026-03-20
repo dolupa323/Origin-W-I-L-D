@@ -10,7 +10,7 @@ local ContextActionService = game:GetService("ContextActionService")
 ReplicatedFirst:RemoveDefaultLoadingScreen()
 
 local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
+local playerGui = player:WaitForChild("PlayerGui", 30)
 
 --=========================================
 -- UI 생성 헬퍼 함수
@@ -247,7 +247,7 @@ create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = closeCredits })
 local function setMovementEnabled(enabled)
 	local controls = nil
 	pcall(function()
-		local PlayerModule = require(player.PlayerScripts:WaitForChild("PlayerModule"))
+		local PlayerModule = require(player.PlayerScripts:WaitForChild("PlayerModule", 10))
 		controls = PlayerModule:GetControls()
 	end)
 	
@@ -279,7 +279,7 @@ local hrp = nil
 
 task.spawn(function()
 	local char = player.Character or player.CharacterAdded:Wait()
-	hrp = char:WaitForChild("HumanoidRootPart")
+	hrp = char:WaitForChild("HumanoidRootPart", 10)
 	task.wait(0.2) -- 스폰 후 위치 확정을 위한 짧은 대기
 	
 	if hrp then

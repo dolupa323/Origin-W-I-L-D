@@ -312,11 +312,10 @@ function InventoryController.Init()
 				player:SetAttribute("InventoryLoaded", true)
 			end
 		else
-			warn("[InventoryController] FATAL: Failed to sync inventory data. The server might have kicked the player or is unreachable.")
-			-- 서버에서 킥을 시키겠지만 만일의 사태에 대비해 강제 로딩 해제
+			warn("[InventoryController] FATAL: Failed to sync inventory data after all retries.")
 			local player = game:GetService("Players").LocalPlayer
 			if player then
-				player:SetAttribute("InventoryLoaded", true)
+				player:Kick("인벤토리 데이터를 불러올 수 없습니다. 다시 접속해 주세요.")
 			end
 		end
 	end)

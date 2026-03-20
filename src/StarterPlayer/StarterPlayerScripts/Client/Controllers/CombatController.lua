@@ -68,7 +68,7 @@ local BOW_GHOST_LINE_COLOR = Color3.fromRGB(218, 255, 210)
 local BOW_GHOST_TIP_COLOR = Color3.fromRGB(232, 255, 226)
 local BOW_AIM_SNAP_RADIUS = 8
 local BOW_NOTIFY_COOLDOWN = 0.45
-local BOW_AIM_VERTICAL_COMPENSATION = -1.15
+local BOW_AIM_VERTICAL_COMPENSATION = 0
 local bowNoAmmoNotifyAt = 0
 local bowIncompleteNotifyAt = 0
 
@@ -255,7 +255,10 @@ local function getMouseAimTarget(origin: Vector3): Vector3?
 	local _, pos = InputManager.raycastFromMouse(nil, BOW_AIM_RAYCAST_DISTANCE)
 	if pos then
 		local snap = resolveNearbyAimSnap(pos, origin)
-		return snap or pos
+		if snap then
+			return Vector3.new(snap.X, pos.Y, snap.Z)
+		end
+		return pos
 	end
 
 	local camera = workspace.CurrentCamera
@@ -264,7 +267,10 @@ local function getMouseAimTarget(origin: Vector3): Vector3?
 		local ray = camera:ViewportPointToRay(mouse.X, mouse.Y)
 		local fallback = ray.Origin + (ray.Direction * 300)
 		local snap = resolveNearbyAimSnap(fallback, origin)
-		return snap or fallback
+		if snap then
+			return Vector3.new(snap.X, fallback.Y, snap.Z)
+		end
+		return fallback
 	end
 
 	return nil
@@ -401,11 +407,23 @@ local function updateBowPreview(itm)
 	local minRange = math.max(8, tonumber(itm and itm.minRange) or math.floor(maxRange * 0.25))
 	local effectiveRange = minRange + ((maxRange - minRange) * chargeRatio)
 
-	local rayParams = RaycastParams.new()
-	rayParams.FilterType = Enum.RaycastFilterType.Exclude
-	rayParams.FilterDescendantsInstances = { player.Character }
-	local rayResult = workspace:Raycast(origin, direction * effectiveRange, rayParams)
-	local hitPos = rayResult and rayResult.Position or (origin + (direction * effectiveRange))
+	local aimTarget = getMouseAimTarget(origin)
+	local hitPos = nil
+	if aimTarget then
+		local toAim = aimTarget - origin
+		if toAim.Magnitude > 0.001 then
+			if toAim.Magnitude > effectiveRange then
+				hitPos = origin + (toAim.Unit * effectiveRange)
+			else
+				hitPos = aimTarget
+			end
+		end
+	end
+	if not hitPos then
+		hitPos = origin + (direction * effectiveRange)
+	end
+
+	direction = (hitPos - origin).Magnitude > 0.001 and (hitPos - origin).Unit or direction
 
 	bowPredictedOrigin = origin
 	bowPredictedDirection = direction

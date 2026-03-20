@@ -5,6 +5,14 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local NetClient = require(script.Parent.Parent.NetClient)
 local InventoryController = require(script.Parent.Parent.Controllers.InventoryController)
 
+local UIManager -- deferred to avoid circular dependency
+local function getUIManager()
+	if not UIManager then
+		UIManager = require(script.Parent.Parent.UIManager)
+	end
+	return UIManager
+end
+
 local FacilityController = {}
 
 --========================================
@@ -28,17 +36,15 @@ function FacilityController.openFacility(structureId: string)
 		currentStructureId = structureId
 		currentFacilityData = data
 		
-		local UIManager = require(script.Parent.Parent.UIManager)
-		UIManager.openFacility(structureId, data)
+		getUIManager().openFacility(structureId, data)
 	else
-		local UIManager = require(script.Parent.Parent.UIManager)
 		local code = tostring(data)
 		if code == "NO_PERMISSION" then
-			UIManager.notify("토템 보호가 활성화된 시설입니다. 유지비 만료 후 약탈 가능합니다.", Color3.fromRGB(255, 120, 120))
+			getUIManager().notify("토템 보호가 활성화된 시설입니다. 유지비 만료 후 약탈 가능합니다.", Color3.fromRGB(255, 120, 120))
 		elseif code == "OUT_OF_RANGE" then
-			UIManager.notify("시설과 거리가 멉니다. 조금 더 가까이 이동하세요.", Color3.fromRGB(255, 170, 120))
+			getUIManager().notify("시설과 거리가 멉니다. 조금 더 가까이 이동하세요.", Color3.fromRGB(255, 170, 120))
 		else
-			UIManager.notify("시설 접근 실패: " .. code, Color3.fromRGB(255, 120, 120))
+			getUIManager().notify("시설 접근 실패: " .. code, Color3.fromRGB(255, 120, 120))
 			warn("[FacilityController] Failed to get facility info:", structureId, data)
 		end
 	end
@@ -63,8 +69,7 @@ function FacilityController.addFuel(invSlot: number)
 		-- 데이터 로컬 갱신 (StateChanged 이벤트로도 오지만 즉각 피드백)
 		currentFacilityData.currentFuel = data.currentFuel
 		currentFacilityData.state = data.state
-		local UIManager = require(script.Parent.Parent.UIManager)
-		UIManager.refreshFacility()
+		getUIManager().refreshFacility()
 	end
 end
 
@@ -92,8 +97,7 @@ function FacilityController.addInput(invSlot: number, count: number?)
 	if success then
 		currentFacilityData.inputSlot = data.inputSlot
 		currentFacilityData.state = data.state
-		local UIManager = require(script.Parent.Parent.UIManager)
-		UIManager.refreshFacility()
+		getUIManager().refreshFacility()
 	end
 end
 
@@ -132,8 +136,7 @@ function FacilityController.refreshInfo()
 	
 	if success and data then
 		currentFacilityData = data
-		local UIManager = require(script.Parent.Parent.UIManager)
-		UIManager.refreshFacility()
+		getUIManager().refreshFacility()
 	end
 end
 
@@ -153,8 +156,7 @@ local function onFacilityStateChanged(data)
 	if data.processProgress then currentFacilityData.processProgress = data.processProgress end
 	if data.lastUpdateAt then currentFacilityData.lastUpdateAt = data.lastUpdateAt end
 	
-	local UIManager = require(script.Parent.Parent.UIManager)
-	UIManager.refreshFacility()
+	getUIManager().refreshFacility()
 end
 
 local function onBuildChanged(data)
@@ -163,9 +165,9 @@ local function onBuildChanged(data)
 
 	if data.changes and data.changes.health ~= nil then
 		currentFacilityData.health = data.changes.health
-		local UIManager = require(script.Parent.Parent.UIManager)
-		if UIManager and UIManager.refreshFacility then
-			UIManager.refreshFacility()
+		local ui = getUIManager()
+		if ui and ui.refreshFacility then
+			ui.refreshFacility()
 		end
 	end
 end

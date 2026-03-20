@@ -3,6 +3,7 @@
 -- 플레이어 베이스 영역 설정 및 자동화 범위 관리
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Enums = require(Shared.Enums.Enums)
@@ -23,6 +24,8 @@ local BuildService = nil
 --========================================
 -- 베이스 영역 { [userId] = BaseClaim }
 local bases = {}
+local baseSpatialGrid = {} -- ["gx_gz"] = { [ownerId] = true }
+local BASE_GRID_SIZE = Balance.BASE_GRID_SIZE or math.max(64, (Balance.BASE_DEFAULT_RADIUS or 30) * 2)
 
 -- BaseClaim 구조
 -- {
@@ -37,6 +40,137 @@ local bases = {}
 --========================================
 -- Internal Functions
 --========================================
+
+local function makeGridKey(gx: number, gz: number): string
+	return string.format("%d_%d", gx, gz)
+end
+
+local function getGridKey(position: Vector3): (number, number)
+	return math.floor(position.X / BASE_GRID_SIZE), math.floor(position.Z / BASE_GRID_SIZE)
+end
+
+local function getGridRange(radius: number): number
+	return math.max(0, math.ceil(radius / BASE_GRID_SIZE))
+end
+
+local function unindexBase(baseClaim: any)
+	if not baseClaim or type(baseClaim._gridCells) ~= "table" then
+		return
+	end
+
+	for _, cellKey in ipairs(baseClaim._gridCells) do
+		local bucket = baseSpatialGrid[cellKey]
+		if bucket then
+			bucket[baseClaim.ownerId] = nil
+			if next(bucket) == nil then
+				baseSpatialGrid[cellKey] = nil
+			end
+		end
+	end
+
+	baseClaim._gridCells = nil
+end
+
+local function indexBase(baseClaim: any)
+	if not baseClaim or not baseClaim.centerPosition then
+		return
+	end
+
+	local gx, gz = getGridKey(baseClaim.centerPosition)
+	local radius = baseClaim.radius or (Balance.BASE_DEFAULT_RADIUS or 30)
+	local range = getGridRange(radius)
+	local cells = {}
+
+	for x = -range, range do
+		for z = -range, range do
+			local key = makeGridKey(gx + x, gz + z)
+			local bucket = baseSpatialGrid[key]
+			if not bucket then
+				bucket = {}
+				baseSpatialGrid[key] = bucket
+			end
+			bucket[baseClaim.ownerId] = true
+			table.insert(cells, key)
+		end
+	end
+
+	baseClaim._gridCells = cells
+end
+
+local function reindexBase(baseClaim: any)
+	unindexBase(baseClaim)
+	indexBase(baseClaim)
+end
+
+local function forEachNearbyBase(position: Vector3, radius: number, callback: (number, any) -> ()): boolean
+	local gx, gz = getGridKey(position)
+	local range = getGridRange(radius)
+	local visited = {}
+
+	for x = -range, range do
+		for z = -range, range do
+			local bucket = baseSpatialGrid[makeGridKey(gx + x, gz + z)]
+			if bucket then
+				for ownerId, _ in pairs(bucket) do
+					if not visited[ownerId] then
+						visited[ownerId] = true
+						local baseClaim = bases[ownerId]
+						if baseClaim then
+							local shouldStop = callback(ownerId, baseClaim)
+							if shouldStop then
+								return true
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+
+	return false
+end
+
+local function hasWildernessStructureConflict(centerPosition: Vector3, radius: number, ownerId: number): boolean
+	local facilitiesFolder = Workspace:FindFirstChild("Facilities")
+	if not facilitiesFolder then
+		return false
+	end
+
+	local overlapParams = OverlapParams.new()
+	overlapParams.FilterType = Enum.RaycastFilterType.Include
+	overlapParams.FilterDescendantsInstances = { facilitiesFolder }
+
+	local parts = Workspace:GetPartBoundsInRadius(centerPosition, radius, overlapParams)
+	local checkedStructures = {}
+
+	for _, part in ipairs(parts) do
+		local model = part:FindFirstAncestorWhichIsA("Model")
+		local container = model or part
+		if container then
+			local structureId = container:GetAttribute("StructureId") or container.Name
+			if structureId and not checkedStructures[structureId] then
+				checkedStructures[structureId] = true
+				local structOwnerId = container:GetAttribute("OwnerId")
+				if type(structOwnerId) == "number" and structOwnerId ~= ownerId then
+					local ownerBase = bases[structOwnerId]
+					local isInsideOwnerBase = false
+					local structPos = container:GetPivot().Position
+					if ownerBase then
+						local dx = structPos.X - ownerBase.centerPosition.X
+						local dz = structPos.Z - ownerBase.centerPosition.Z
+						isInsideOwnerBase = math.sqrt(dx * dx + dz * dz) <= ownerBase.radius
+					end
+
+					if not isInsideOwnerBase then
+						return true
+					end
+				end
+			end
+		end
+	end
+
+	return false
+end
 
 --- 고유 베이스 ID 생성
 local function generateBaseId(userId: number): string
@@ -60,6 +194,7 @@ local function loadBases()
 					baseData.centerPosition = Vector3.new(pos.X or pos.x or 0, pos.Y or pos.y or 0, pos.Z or pos.z or 0)
 				end
 				bases[baseData.ownerId] = baseData
+				indexBase(baseData)
 				
 				if not pData and SaveService.initPartition then
 					SaveService.initPartition(baseId, baseData.ownerId)
@@ -123,7 +258,10 @@ function BaseClaimService.create(userId: number, position: Vector3): (boolean, s
 	
 	-- 중첩 검사 (Overlap Protection: (NewRadius + OtherRadius) < Distance)
 	local newRadius = Balance.BASE_DEFAULT_RADIUS or 30
-	for _, otherBase in pairs(bases) do
+	local hasCollision = forEachNearbyBase(position, newRadius, function(otherOwnerId, otherBase)
+		if otherOwnerId == userId then
+			return false
+		end
 		local dx = position.X - otherBase.centerPosition.X
 		local dz = position.Z - otherBase.centerPosition.Z
 		local dist = math.sqrt(dx * dx + dz * dz)
@@ -132,8 +270,12 @@ function BaseClaimService.create(userId: number, position: Vector3): (boolean, s
 		local minSafeDist = newRadius + otherBase.radius
 		if dist < minSafeDist then
 			print(string.format("[BaseClaimService] Create failed: Overlap with player %d's base", otherBase.ownerId))
-			return false, Enums.ErrorCode.COLLISION, nil
+			return true
 		end
+		return false
+	end)
+	if hasCollision then
+		return false, Enums.ErrorCode.COLLISION, nil
 	end
 	
 	-- 베이스 생성
@@ -148,6 +290,7 @@ function BaseClaimService.create(userId: number, position: Vector3): (boolean, s
 	}
 	
 	bases[userId] = baseClaim
+	indexBase(baseClaim)
 	
 	-- 파티션 초기화 (SaveService)
 	if SaveService then
@@ -181,14 +324,21 @@ end
 
 --- 해당 위치를 소유한 베이스 주인 ID 반환
 function BaseClaimService.getOwnerAt(position: Vector3): number?
-	for userId, baseClaim in pairs(bases) do
+	local ownerIdAt = nil
+	forEachNearbyBase(position, 0, function(userId, baseClaim)
 		local dx = position.X - baseClaim.centerPosition.X
 		local dz = position.Z - baseClaim.centerPosition.Z
 		local dist = math.sqrt(dx * dx + dz * dz)
 		
 		if dist <= baseClaim.radius then
-			return userId
+			ownerIdAt = userId
+			return true
 		end
+		return false
+	end)
+
+	if ownerIdAt then
+		return ownerIdAt
 	end
 	return nil
 end
@@ -223,7 +373,7 @@ function BaseClaimService.expand(userId: number): (boolean, string?)
 
 	-- [보안/기획] 중첩 검사 (Overlap Protection)
 	-- 확장 시에도 타 유저의 베이스 영역을 침범하지 않도록 확인
-	for otherUserId, otherBase in pairs(bases) do
+	local hasCollision = forEachNearbyBase(baseClaim.centerPosition, requestedRadius, function(otherUserId, otherBase)
 		if otherUserId ~= userId then
 			local dx = baseClaim.centerPosition.X - otherBase.centerPosition.X
 			local dz = baseClaim.centerPosition.Z - otherBase.centerPosition.Z
@@ -232,13 +382,23 @@ function BaseClaimService.expand(userId: number): (boolean, string?)
 			local minSafeDist = requestedRadius + otherBase.radius
 			if dist < minSafeDist then
 				print(string.format("[BaseClaimService] Expand failed for player %d: Would overlap with player %d's base", userId, otherUserId))
-				return false, Enums.ErrorCode.COLLISION
+				return true
 			end
 		end
+		return false
+	end)
+	if hasCollision then
+		return false, Enums.ErrorCode.COLLISION
+	end
+
+	if hasWildernessStructureConflict(baseClaim.centerPosition, requestedRadius, userId) then
+		warn(string.format("[BaseClaimService] Expand blocked for player %d: foreign wilderness structure detected in target radius", userId))
+		return false, Enums.ErrorCode.COLLISION
 	end
 	
 	baseClaim.radius = requestedRadius
 	baseClaim.level = baseClaim.level + 1
+	reindexBase(baseClaim)
 	saveBase(baseClaim)
 	
 	-- 클라이언트 알림
@@ -263,19 +423,24 @@ function BaseClaimService.moveBaseCenter(userId: number, newPosition: Vector3): 
 		return false, Enums.ErrorCode.NOT_FOUND
 	end
 
-	for otherUserId, otherBase in pairs(bases) do
+	local hasCollision = forEachNearbyBase(newPosition, baseClaim.radius or (Balance.BASE_DEFAULT_RADIUS or 30), function(otherUserId, otherBase)
 		if otherUserId ~= userId then
 			local dx = newPosition.X - otherBase.centerPosition.X
 			local dz = newPosition.Z - otherBase.centerPosition.Z
 			local dist = math.sqrt(dx * dx + dz * dz)
 			local minSafeDist = (baseClaim.radius or (Balance.BASE_DEFAULT_RADIUS or 30)) + otherBase.radius
 			if dist < minSafeDist then
-				return false, Enums.ErrorCode.COLLISION
+				return true
 			end
 		end
+		return false
+	end)
+	if hasCollision then
+		return false, Enums.ErrorCode.COLLISION
 	end
 
 	baseClaim.centerPosition = newPosition
+	reindexBase(baseClaim)
 	saveBase(baseClaim)
 
 	if NetController then
@@ -338,6 +503,7 @@ function BaseClaimService.delete(userId: number): boolean
 	end
 	
 	-- 3. 메모리 정리
+	unindexBase(baseClaim)
 	bases[userId] = nil
 	
 	-- 클라이언트 알림 (동적으로 삭제되는 경우 대응)

@@ -86,18 +86,45 @@ local function getState(userId)
 	return state
 end
 
+-- 토템 캐시: ownerId → { totems = {}, updatedAt = tick() }
+local totemCache = {}
+local TOTEM_CACHE_TTL = 30 -- 30초 TTL
+
+local function invalidateTotemCache(ownerId)
+	if ownerId then
+		totemCache[ownerId] = nil
+	else
+		totemCache = {}
+	end
+end
+
 local function getOwnerTotems(ownerId)
-	if not BuildService or not BuildService.getAll then
+	if not BuildService then
 		return {}
 	end
 
+	-- 캐시 히트 확인
+	local cached = totemCache[ownerId]
+	if cached and (tick() - cached.updatedAt) < TOTEM_CACHE_TTL then
+		return cached.totems
+	end
+
+	-- BuildService.getStructuresByOwner로 해당 유저 건물만 조회 (O(owner) vs O(all))
+	local ownerStructures
+	if BuildService.getStructuresByOwner then
+		ownerStructures = BuildService.getStructuresByOwner(ownerId)
+	else
+		ownerStructures = BuildService.getAll and BuildService.getAll() or {}
+	end
+
 	local result = {}
-	local all = BuildService.getAll()
-	for _, structure in ipairs(all) do
-		if structure.ownerId == ownerId and structure.facilityId == "CAMP_TOTEM" then
+	for _, structure in ipairs(ownerStructures) do
+		if structure.facilityId == "CAMP_TOTEM" then
 			table.insert(result, structure)
 		end
 	end
+
+	totemCache[ownerId] = { totems = result, updatedAt = tick() }
 	return result
 end
 
@@ -196,6 +223,8 @@ local function notifyUpkeepExpired(ownerId, expiresAt)
 	end
 end
 
+local UPKEEP_WATCH_INTERVAL = 10 -- 유지비는 시간 단위이므로 1초→10초로 완화
+
 local function runUpkeepWatcher()
 	task.spawn(function()
 		while initialized do
@@ -219,7 +248,7 @@ local function runUpkeepWatcher()
 				end
 			end
 
-			task.wait(1)
+			task.wait(UPKEEP_WATCH_INTERVAL)
 		end
 	end)
 end
@@ -344,12 +373,17 @@ function TotemService.onTotemPlaced(ownerId)
 	if not ownerId then
 		return
 	end
+	invalidateTotemCache(ownerId)
 	local expiresAt = getExpiresAt(ownerId)
 	if expiresAt > os.time() then
 		return
 	end
 	local grace = Balance.TOTEM_INITIAL_GRACE_SECONDS or (Balance.TOTEM_UPKEEP_DAY_SECONDS or 86400)
 	updateExpiresAt(ownerId, os.time() + grace)
+end
+
+function TotemService.invalidateTotemCache(ownerId)
+	invalidateTotemCache(ownerId)
 end
 
 function TotemService.isBuildAllowed(userId, facilityId, position)

@@ -18,7 +18,7 @@ local TechUnlockData = {
 				"CRAFT_SPLIT_LOG_TO_PLANK", "CRAFT_FIRM_STONE_AXE", "CRAFT_FIRM_STONE_PICKAXE"
 			}, 
 			facilities = { 
-				"CAMPFIRE", "PRIMITIVE_WORKBENCH", "STORAGE_BOX",
+				"CAMPFIRE", "BASIC_WORKBENCH", "STORAGE_BOX",
 				"WOODEN_FOUNDATION", "WOODEN_WALL", "WOODEN_ROOF", "WOODEN_DOOR"
 			} 
 		},
@@ -61,6 +61,20 @@ local TechUnlockData = {
 		category = "WEAPONS",
 		description = "나무로 만든 활과 돌 화살로 멀리 떨어진 적을 제압합니다.",
 	},
+
+	--========================================
+	-- 🏚️ 2단계: 나무 건축 시대 (Wood Build)
+	--========================================
+	{
+		id = "TECH_WOOD_BUILD",
+		name = "나무 건축 숙련",
+		cost = { { itemId = "PLANK", amount = 20 }, { itemId = "FIBER", amount = 15 } },
+		prerequisites = { "TECH_SETTLEMENT" },
+		unlocks = { recipes = {}, facilities = {} },
+		category = "SETTLEMENT",
+		description = "나무 건축 기술을 숙련하여 더 발전된 시설을 건설할 수 있는 기반을 마련합니다.",
+	},
+
 	{
 		id = "TECH_FARMING",
 		name = "농경 기술",

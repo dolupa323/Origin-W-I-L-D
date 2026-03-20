@@ -144,6 +144,7 @@ Enums.ItemType = {
 	CONSUMABLE = "CONSUMABLE",
 	FOOD = "FOOD",
 	PLACEABLE = "PLACEABLE",
+	DNA = "DNA",
 	MISC = "MISC",
 }
 

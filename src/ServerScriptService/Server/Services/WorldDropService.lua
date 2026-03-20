@@ -36,10 +36,18 @@ local PlayerStatService = nil -- DNA 수집을 위해 추가
 -- drops[dropId] = { dropId, pos, itemId, count, spawnedAt, despawnAt, inactive }
 local drops = {}
 local dropCount = 0
+local mergeGrid = {} -- ["gx_gz"] = { [dropId] = true }
 
 -- Tick 누적
 local tickAccumulator = 0
 local TICK_INTERVAL = 1  -- 1초 주기
+
+-- Merge grid helper forward declarations (Lua local scope ordering)
+local GRID_SIZE = Balance.DROP_INACTIVE_DIST or 150
+local getGridKey
+local makeGridBucketKey
+local indexDropForMerge
+local unindexDropForMerge
 
 --========================================
 -- Internal: ID 생성
@@ -133,11 +141,24 @@ end
 -- Internal: 병합 대상 찾기
 --========================================
 local function findMergeTarget(pos: Vector3, itemId: string): any?
-	for _, drop in pairs(drops) do
-		if drop.itemId == itemId then
-			local dist = distanceBetween(pos, drop.pos)
-			if dist <= Balance.DROP_MERGE_RADIUS then
-				return drop
+	local radius = Balance.DROP_MERGE_RADIUS
+	local baseGx, baseGz = getGridKey(pos)
+	local gridRange = math.max(1, math.ceil(radius / GRID_SIZE))
+
+	for x = -gridRange, gridRange do
+		for z = -gridRange, gridRange do
+			local key = makeGridBucketKey(baseGx + x, baseGz + z)
+			local bucket = mergeGrid[key]
+			if bucket then
+				for dropId, _ in pairs(bucket) do
+					local drop = drops[dropId]
+					if drop and drop.itemId == itemId then
+						local dist = distanceBetween(pos, drop.pos)
+						if dist <= radius then
+							return drop
+						end
+					end
+				end
 			end
 		end
 	end
@@ -162,6 +183,7 @@ local function pruneOldestDrops()
 		
 		if oldest then
 			emitDespawned(oldest.dropId, "CAP_PRUNE")
+			unindexDropForMerge(oldest)
 			drops[oldest.dropId] = nil
 			dropCount = dropCount - 1
 		else
@@ -170,11 +192,44 @@ local function pruneOldestDrops()
 	end
 end
 
---================ : OPTIMIZATION : Spatial Grid ================
-local GRID_SIZE = Balance.DROP_INACTIVE_DIST or 150
 
-local function getGridKey(pos: Vector3)
+--================ : OPTIMIZATION : Spatial Grid ================
+function getGridKey(pos: Vector3)
 	return math.floor(pos.X / GRID_SIZE), math.floor(pos.Z / GRID_SIZE)
+end
+
+function makeGridBucketKey(gx: number, gz: number): string
+	return string.format("%d_%d", gx, gz)
+end
+
+function indexDropForMerge(drop: any)
+	local gx, gz = getGridKey(drop.pos)
+	local key = makeGridBucketKey(gx, gz)
+	if not mergeGrid[key] then
+		mergeGrid[key] = {}
+	end
+	mergeGrid[key][drop.dropId] = true
+	drop.gridKey = key
+end
+
+function unindexDropForMerge(drop: any)
+	if not drop then
+		return
+	end
+
+	local key = drop.gridKey
+	if not key then
+		local gx, gz = getGridKey(drop.pos)
+		key = makeGridBucketKey(gx, gz)
+	end
+
+	local bucket = mergeGrid[key]
+	if bucket then
+		bucket[drop.dropId] = nil
+		if next(bucket) == nil then
+			mergeGrid[key] = nil
+		end
+	end
 end
 
 --========================================
@@ -220,6 +275,7 @@ local function processTick()
 		local drop = drops[item.dropId]
 		if drop then
 			emitDespawned(item.dropId, item.reason)
+			unindexDropForMerge(drop)
 			drops[item.dropId] = nil
 			dropCount = dropCount - 1
 		end
@@ -291,6 +347,7 @@ function WorldDropService.spawnDrop(pos: Vector3, itemId: string, count: number,
 	
 	drops[drop.dropId] = drop
 	dropCount = dropCount + 1
+	indexDropForMerge(drop)
 	
 	-- Cap 초과 시 prune
 	if dropCount > Balance.DROP_CAP then
@@ -330,29 +387,40 @@ function WorldDropService.loot(player: Player, dropId: string): (boolean, string
 		return false, Enums.ErrorCode.OUT_OF_RANGE, nil
 	end
 	
-	-- [추가] HIDDEN_STACK 타입 처리 (DNA 등 도감 아이템)
+	-- DNA 타입 아이템: 인벤토리에 추가 + 특별 알림
 	local itemData = DataService.getItem(drop.itemId)
-	if itemData and itemData.type == "HIDDEN_STACK" then
-		-- DNA 아이템인 경우 PlayerStatService로 수집 처리
-		if PlayerStatService and (drop.itemId:find("DNA") or itemData.id:find("DNA")) then
-			local creatureId = drop.itemId:gsub("_DNA", "") -- COMPY_DNA -> COMPY
-			PlayerStatService.addCollectionDna(userId, creatureId, drop.count)
-			
-			-- 습득 효과음/이펙트 등을 위해 클라이언트에 별도 통보 가능 (현재는 loot 성공으로 충분)
-		else
-			warn("[WorldDropService] HIDDEN_STACK item detected but no handler found:", drop.itemId)
+	if itemData and itemData.type == "DNA" then
+		local added, remaining = InventoryService.addItem(userId, drop.itemId, drop.count, drop.durability)
+		if added <= 0 then
+			return false, Enums.ErrorCode.INV_FULL, nil
 		end
 		
-		-- 전량 습득 처리 (HIDDEN_STACK은 인벤토리에 들어가지 않으므로 한 번에 모두 사라짐)
-		emitDespawned(dropId, "LOOTED_HIDDEN")
-		drops[dropId] = nil
-		dropCount = dropCount - 1
+		-- DNA 획득 특별 알림 (클라이언트에서 대형 연출)
+		if NetController then
+			NetController.FireClient(player, "DNA.Obtained", {
+				itemId = drop.itemId,
+				creatureId = itemData.creatureId,
+				count = added,
+				rarity = itemData.rarity,
+			})
+		end
+		
+		if remaining > 0 then
+			drop.count = remaining
+			emitChanged(dropId, remaining)
+		else
+			emitDespawned(dropId, "LOOTED_OUT")
+			unindexDropForMerge(drop)
+			drops[dropId] = nil
+			dropCount = dropCount - 1
+		end
 		
 		return true, nil, {
 			dropId = dropId,
 			itemId = drop.itemId,
-			count = drop.count,
-			hidden = true,
+			count = added,
+			remaining = remaining or 0,
+			isDna = true,
 		}
 	end
 
@@ -370,6 +438,7 @@ function WorldDropService.loot(player: Player, dropId: string): (boolean, string
 	else
 		-- 전량 줍기: 드롭 제거
 		emitDespawned(dropId, "LOOTED_OUT")
+		unindexDropForMerge(drop)
 		drops[dropId] = nil
 		dropCount = dropCount - 1
 	end
@@ -389,6 +458,7 @@ function WorldDropService.clearAllDrops()
 	end
 	drops = {}
 	dropCount = 0
+	mergeGrid = {}
 end
 
 --- 현재 드롭 수

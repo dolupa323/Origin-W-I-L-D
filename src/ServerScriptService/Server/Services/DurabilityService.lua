@@ -28,11 +28,11 @@ function DurabilityService.Init(_NetController, _InventoryService, _DataService,
 	
 	-- 패시브 내구도 감소 루프 (예: 횃불)
 	local Players = game:GetService("Players")
-	local DataHelper = require(Shared.Util.DataHelper)
+	local PASSIVE_DRAIN_INTERVAL = 5 -- 5초 단위 배치 처리 (1초→5초)
 	
 	task.spawn(function()
 		while true do
-			task.wait(1) -- 매 1초마다 동기화 검사
+			task.wait(PASSIVE_DRAIN_INTERVAL)
 			for _, player in ipairs(Players:GetPlayers()) do
 				local userId = player.UserId
 				-- 장착 중인 아이템 가져오기
@@ -40,10 +40,10 @@ function DurabilityService.Init(_NetController, _InventoryService, _DataService,
 				if activeSlot then
 					local slotData = InventoryService.getSlot and InventoryService.getSlot(userId, activeSlot)
 					if slotData and slotData.itemId and slotData.durability then
-						local itemData = DataHelper.GetData("ItemData", slotData.itemId)
+						local itemData = DataService.getItem(slotData.itemId)
 						if itemData and itemData.passiveDurabilityDrain and itemData.passiveDurabilityDrain > 0 then
-							-- 1초마다 정해진 량만큼 내구도 자동 감소
-							DurabilityService.reduceDurability(player, activeSlot, itemData.passiveDurabilityDrain)
+							-- 누적량 일괄 감소 (drain × interval)
+							DurabilityService.reduceDurability(player, activeSlot, itemData.passiveDurabilityDrain * PASSIVE_DRAIN_INTERVAL)
 						end
 					end
 				end

@@ -108,7 +108,7 @@ end
 -- Public API
 --========================================
 
-function CombatService.Init(_NetController, _DataService, _CreatureService, _InventoryService, _DurabilityService, _DebuffService, _WorldDropService, _PlayerStatService)
+function CombatService.Init(_NetController, _DataService, _CreatureService, _InventoryService, _DurabilityService, _DebuffService, _WorldDropService, _PlayerStatService, _HungerService, _TechService)
 	NetController = _NetController
 	DataService = _DataService
 	CreatureService = _CreatureService
@@ -117,13 +117,8 @@ function CombatService.Init(_NetController, _DataService, _CreatureService, _Inv
 	DebuffService = _DebuffService
 	WorldDropService = _WorldDropService
 	PlayerStatService = _PlayerStatService
-	
-	-- HungerService 로드 및 캐싱 (성능 최적화)
-	local HSuccess, HService = pcall(function() return require(game:GetService("ServerScriptService").Server.Services.HungerService) end)
-	if HSuccess then HungerService = HService end
-
-	local TSuccess, TService = pcall(function() return require(game:GetService("ServerScriptService").Server.Services.TechService) end)
-	if TSuccess then TechService = TService end
+	HungerService = _HungerService
+	TechService = _TechService
 	
 	-- 플레이어 퇴장 시 데이터 정리
 	Players.PlayerRemoving:Connect(function(player)
@@ -196,7 +191,6 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 					bowMinAimTime = math.max(0.05, tonumber(itemData.minAimTime) or 0.2)
 					local maxRange = tonumber(itemData.maxRange or itemData.range) or 120
 					local minRange = math.max(8, tonumber(itemData.minRange) or math.floor(maxRange * 0.25))
-					bowMaxRange = maxRange
 					bowEffectiveRange = minRange + ((maxRange - minRange) * bowChargeRatio)
 
 					if type(rawAimOrigin) == "table" then

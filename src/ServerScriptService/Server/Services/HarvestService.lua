@@ -900,9 +900,9 @@ function HarvestService.registerNode(nodeId: string, position: Vector3, isAutoSp
 		nodeModel = nil, -- 노드 모델 참조 (숨김 복원용)
 	}
 	
-	-- 타입별 카운트 증가 (모든 노드 추적)
-	spawnedNodesByType[nodeId] = (spawnedNodesByType[nodeId] or 0) + 1
+	-- 타입별 카운트 증가 (자동 스폰 노드만 추적 — 수동 배치 노드는 Cap 잠식 방지)
 	if isAutoSpawned then
+		spawnedNodesByType[nodeId] = (spawnedNodesByType[nodeId] or 0) + 1
 		spawnedNodeCount = spawnedNodeCount + 1
 	end
 	
@@ -1108,7 +1108,11 @@ function HarvestService.damageNode(nodeUID: string, damage: number, efficiency: 
 				
 				-- [개선] 지면 인식 레이캐스트 (노드 자체를 제외하여 정확히 바닥 찾기)
 				local rayParams = RaycastParams.new()
-				rayParams.FilterDescendantsInstances = { model } -- 생성된 노드 모델 제외
+				local filterTargets = {}
+				if nodeState.nodeModel then
+					table.insert(filterTargets, nodeState.nodeModel)
+				end
+				rayParams.FilterDescendantsInstances = filterTargets
 				rayParams.FilterType = Enum.RaycastFilterType.Exclude
 				
 				local rayResult = workspace:Raycast(baseDropPos, Vector3.new(0, -30, 0), rayParams)

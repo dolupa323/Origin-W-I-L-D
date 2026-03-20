@@ -488,9 +488,9 @@ function PartyService._updateSummonedPalAI()
 					if not summon.lastAttackTime or (now - summon.lastAttackTime >= PAL_ATTACK_COOLDOWN) then
 						summon.lastAttackTime = now
 						local targetModel = closestEnemy.Parent
-						if targetModel and targetModel:GetAttribute("InstanceId") and CreatureService.applyDamage then
+						if targetModel and targetModel:GetAttribute("InstanceId") and CreatureService.processAttack then
 							local damage = summon.palData.stats.attack or 10
-							CreatureService.applyDamage(targetModel:GetAttribute("InstanceId"), damage, player)
+							CreatureService.processAttack(targetModel:GetAttribute("InstanceId"), damage, 0, player)
 						end
 					end
 				end
@@ -524,9 +524,9 @@ function PartyService._updateSummonedPalAI()
 					local targetModel = closestEnemy.Parent
 					if targetModel then
 						local targetId = targetModel:GetAttribute("InstanceId")
-						if targetId and CreatureService.applyDamage then
+						if targetId and CreatureService.processAttack then
 							local damage = summon.palData.stats.attack or 10
-							local killed = CreatureService.applyDamage(targetId, damage, player)
+							local killed = CreatureService.processAttack(targetId, damage, 0, player)
 							
 							print(string.format("[PartyService] Pal %s attacked %s for %d dmg (Killed: %s)", 
 								summon.palData.nickname, targetModel.Name, damage, tostring(killed)))

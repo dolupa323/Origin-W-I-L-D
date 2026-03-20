@@ -162,7 +162,6 @@ local EquipService = require(Services.EquipService)
 EquipService.Init(DataService, TechService)
 
 -- InventoryService 초기화 (SaveService, PlayerStatService, EquipService 주입)
-local InventoryService = require(Services.InventoryService)
 InventoryService.Init(NetController, DataService, SaveService, PlayerStatService, EquipService)
 
 -- StorageService (Init moved after BaseClaimService)
@@ -205,6 +204,7 @@ end
 
 -- BuildService에 FacilityService 주입 (양방향 연동)
 BuildService.SetFacilityService(FacilityService)
+BuildService.SetWorldDropService(WorldDropService)
 
 -- DebuffService 초기화 (Phase 4-4) - CreatureService보다 먼저 초기화
 local DebuffService = require(Services.DebuffService)
@@ -226,7 +226,7 @@ end
 
 -- CombatService 초기화 (Phase 3-3, + DebuffService 연동)
 local CombatService = require(Services.CombatService)
-CombatService.Init(NetController, DataService, CreatureService, InventoryService, DurabilityService, DebuffService, WorldDropService, PlayerStatService)
+CombatService.Init(NetController, DataService, CreatureService, InventoryService, DurabilityService, DebuffService, WorldDropService, PlayerStatService, HungerService, TechService)
 
 -- CombatService 핸들러 등록
 for command, handler in pairs(CombatService.GetHandlers()) do

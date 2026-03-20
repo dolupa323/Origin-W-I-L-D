@@ -23,6 +23,21 @@ local NetController
 -- [userId] = { current, max }
 local playerHunger = {}
 
+-- Sync throttle: 매 틱 패킷 대신 5초 주기 또는 단계 변화 시에만 전송
+local HUNGER_SYNC_INTERVAL = 5  -- seconds
+local lastSyncTime  = {}  -- [userId] = os.clock()
+local lastSyncStage = {}  -- [userId] = stageIdx (4=full … 0=starving)
+
+local function _getHungerStage(current: number, max: number): number
+	if max <= 0 then return 0 end
+	local ratio = current / max
+	if ratio > 0.80 then return 4 end  -- Full
+	if ratio > 0.50 then return 3 end  -- Hungry
+	if ratio > 0.25 then return 2 end  -- Low
+	if ratio > 0    then return 1 end  -- Critical
+	return 0                            -- Starving
+end
+
 --========================================
 -- Internal Helpers
 --========================================
@@ -45,6 +60,10 @@ local function syncHungerToClient(player: Player)
 		current = data.current,
 		max = data.max,
 	})
+	-- 동기화 추적 갱신 (throttle 판단 기준)
+	local uid = player.UserId
+	lastSyncTime[uid]  = os.clock()
+	lastSyncStage[uid] = _getHungerStage(data.current, data.max)
 end
 
 --========================================
@@ -77,7 +96,10 @@ function HungerService.Init(_NetController)
 	
 	-- 플레이어 퇴장 시 정리
 	Players.PlayerRemoving:Connect(function(player)
-		playerHunger[player.UserId] = nil
+		local uid = player.UserId
+		playerHunger[uid]   = nil
+		lastSyncTime[uid]   = nil
+		lastSyncStage[uid]  = nil
 	end)
 	
 	-- 배고픔 틱 루프 (1초마다)
@@ -107,11 +129,8 @@ function HungerService._tickLoop()
 		
 		-- 살아있는 경우에만 감소 (사망 시에는 멈춤)
 		if humanoid and humanoid.Health > 0 then
-			local changed = false
-			
 			if data.current > 0 then
 				data.current = math.max(0, data.current - Balance.HUNGER_DECREASE_RATE)
-				changed = true
 			end
 			
 			if data.current <= 0 then
@@ -119,7 +138,11 @@ function HungerService._tickLoop()
 				humanoid.Health = math.max(0, humanoid.Health - Balance.HUNGER_STARVATION_DAMAGE)
 			end
 			
-			if changed then
+			-- Throttled sync: 단계 변화 또는 5초 경과 시에만 전송
+			local stage = _getHungerStage(data.current, data.max)
+			local prevStage = lastSyncStage[userId]
+			local now = os.clock()
+			if stage ~= prevStage or (now - (lastSyncTime[userId] or 0)) >= HUNGER_SYNC_INTERVAL then
 				syncHungerToClient(player)
 			end
 		else

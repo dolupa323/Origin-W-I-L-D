@@ -27,8 +27,8 @@ local function indexAssets()
 	local assets = ReplicatedStorage:FindFirstChild("Assets")
 	if not assets then return end
 	
-	-- 1. 아이템 모델 인덱싱 (ItemModels, Models 폴더 및 하위 모든 모델)
-	local folders = {assets:FindFirstChild("ItemModels"), assets:FindFirstChild("Models"), assets}
+	-- 1. 아이템 모델 인덱싱 (ItemModels, LootModels, Models 폴더 및 하위 모든 모델)
+	local folders = {assets:FindFirstChild("ItemModels"), assets:FindFirstChild("LootModels"), assets:FindFirstChild("Models"), assets}
 	for _, folder in ipairs(folders) do
 		if not folder then continue end
 		for _, child in ipairs(folder:GetDescendants()) do -- GetDescendants()로 변경하여 하위 폴더 대응
@@ -200,6 +200,8 @@ function EquipService.equipItem(player: Player, itemId: string?)
 				targetSize = 1.5
 			elseif itemType == "CONSUMABLE" and itemData.optimalTool then
 				targetSize = 2.0 -- 소모품 등
+			elseif itemType == "DNA" then
+				targetSize = 0.8 -- DNA 샘플
 			elseif itemId == "LOG" or itemId == "WOOD" then
 				-- [UX 개선] 통나무와 나무는 자원이지만 적당히 큼직하게 (스틱 현상 방지)
 				targetSize = 3.5

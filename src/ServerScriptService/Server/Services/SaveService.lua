@@ -30,6 +30,13 @@ local PLAYER_LOAD_RETRY_WINDOW = RunService:IsStudio() and 25 or 45
 local PLAYER_LOAD_RETRY_INTERVAL = 2
 local SESSION_LOCK_FORCE_ACQUIRE_DELAY = RunService:IsStudio() and 4 or 10
 local ENABLE_SESSION_LOCK_FORCE_ACQUIRE = true
+local SESSION_LOCK_STABLE_RETRY_THRESHOLD = math.max(
+	3,
+	math.min(
+		math.ceil((AUTOSAVE_INTERVAL + PLAYER_LOAD_RETRY_INTERVAL) / PLAYER_LOAD_RETRY_INTERVAL),
+		math.max(3, math.floor((PLAYER_LOAD_RETRY_WINDOW / PLAYER_LOAD_RETRY_INTERVAL) - 2))
+	)
+)
 
 --========================================
 -- Private State
@@ -40,7 +47,6 @@ local worldState = nil    -- 월드 상태 (Global: Metadata, Time 등)
 local partitionStates = {} -- [partitionId] = partitionState (Local: Base-specific structures, storages)
 local lastSaveTime = 0
 local CURRENT_JOB_ID = game.JobId
-local SESSION_LOCK_TIMEOUT = 600 -- 10분 이상 업데이트 없으면 강제 잠금 해제
 
 -- NetController 참조
 local NetController = nil
@@ -267,6 +273,8 @@ end
 function SaveService.loadPlayer(userId: number, forceAcquire: boolean?): (boolean, any)
 	local key = DataStoreClient.GetPlayerKey(userId)
 	local shouldForceAcquire = forceAcquire == true
+	local lockOwnerJobId = nil
+	local lockTimestamp = nil
 	
 	local success, data = DataStoreClient.update(key, function(oldData)
 		if not oldData then 
@@ -278,14 +286,13 @@ function SaveService.loadPlayer(userId: number, forceAcquire: boolean?): (boolea
 		
 		-- 세션 잠금 확인
 		if oldData._session and oldData._session.jobId and oldData._session.jobId ~= CURRENT_JOB_ID then
-			local lastUpdate = oldData._session.timestamp or 0
-			if os.time() - lastUpdate < SESSION_LOCK_TIMEOUT then
-				if not shouldForceAcquire then
-					-- 아직 다른 서버가 사용 중 (로딩 거부)
-					return nil -- 이 값은 DataStoreClient.update에서 success=true, result=nil로 반환됨
-				end
-				warn(string.format("[SaveService] Force-acquiring session lock for user %d (from %s -> %s)", userId, tostring(oldData._session.jobId), CURRENT_JOB_ID))
+			lockOwnerJobId = oldData._session.jobId
+			lockTimestamp = oldData._session.timestamp
+			if not shouldForceAcquire then
+				-- 아직 다른 서버가 사용 중 (로딩 거부)
+				return nil -- 이 값은 DataStoreClient.update에서 success=true, result=nil로 반환됨
 			end
+			warn(string.format("[SaveService] Force-acquiring session lock for user %d (from %s -> %s)", userId, tostring(oldData._session.jobId), CURRENT_JOB_ID))
 		end
 		
 		-- 잠금 획득
@@ -302,8 +309,11 @@ function SaveService.loadPlayer(userId: number, forceAcquire: boolean?): (boolea
 	
 	if data == nil then
 		-- 세션이 잠겨있음
-		warn(string.format("[SaveService] Player %d is locked by another server (JobId: %s)", userId, data and data._session and data._session.jobId or "Unknown"))
-		return false, "SESSION_LOCKED"
+		warn(string.format("[SaveService] Player %d is locked by another server (JobId: %s)", userId, tostring(lockOwnerJobId or "Unknown")))
+		return false, "SESSION_LOCKED", {
+			jobId = lockOwnerJobId,
+			timestamp = lockTimestamp,
+		}
 	end
 	
 	-- 데이터 전처리
@@ -358,11 +368,8 @@ function SaveService.savePlayer(userId: number, snapshot: any?, isLogout: boolea
 	local success, result = DataStoreClient.update(key, function(oldData)
 		-- 세션 검증 (내 서버가 아닐 경우 덮어쓰기 금지)
 		if oldData and oldData._session and oldData._session.jobId and oldData._session.jobId ~= CURRENT_JOB_ID then
-			local lastUpdate = oldData._session.timestamp or 0
-			if os.time() - lastUpdate < SESSION_LOCK_TIMEOUT then
-				warn(string.format("[SaveService] Refusing to overwrite player %d: Session owned by %s", userId, oldData._session.jobId))
-				return nil 
-			end
+			warn(string.format("[SaveService] Refusing to overwrite player %d: Session owned by %s", userId, oldData._session.jobId))
+			return nil 
 		end
 		
 		-- 저장 전 데이터 직렬화
@@ -525,7 +532,10 @@ function SaveService.updatePartition(partitionId: string, updateFn: (any) -> any
 	local state = partitionStates[partitionId]
 	if state then
 		partitionStates[partitionId] = updateFn(state)
+		return true
 	end
+	warn(string.format("[SaveService] Partition '%s' not found for update", partitionId))
+	return false
 end
 
 --- 파티션 삭제
@@ -580,51 +590,64 @@ end
 
 --- PlayerAdded 이벤트
 local function onPlayerAdded(player: Player)
-	local userId = player.UserId
-	local deadline = os.clock() + PLAYER_LOAD_RETRY_WINDOW
-	local lastErr = nil
-	local lockSeenAt = nil
-	local forceTried = false
+	task.spawn(function()
+		local userId = player.UserId
+		local deadline = os.clock() + PLAYER_LOAD_RETRY_WINDOW
+		local lastErr = nil
+		local forceTried = false
+		local lastLockSignature = nil
+		local stableLockRetries = 0
 
-	while player.Parent and os.clock() < deadline do
-		local ok, stateOrErr = SaveService.loadPlayer(userId)
-		if ok then
-			return
-		end
-
-		lastErr = stateOrErr
-		if stateOrErr == "SESSION_LOCKED" then
-			if not lockSeenAt then
-				lockSeenAt = os.clock()
+		while player.Parent and os.clock() < deadline do
+			local ok, stateOrErr, lockMeta = SaveService.loadPlayer(userId)
+			if ok then
+				return
 			end
 
-			if ENABLE_SESSION_LOCK_FORCE_ACQUIRE and not forceTried and lockSeenAt and (os.clock() - lockSeenAt) >= SESSION_LOCK_FORCE_ACQUIRE_DELAY then
-				forceTried = true
-				warn(string.format("[SaveService] Trying force acquire for player %d after session-lock delay", userId))
-				local forceOk, forceStateOrErr = SaveService.loadPlayer(userId, true)
-				if forceOk then
-					return
+			lastErr = stateOrErr
+			if stateOrErr == "SESSION_LOCKED" then
+				local owner = lockMeta and lockMeta.jobId or "unknown"
+				local stamp = lockMeta and lockMeta.timestamp or "nil"
+				local signature = tostring(owner) .. ":" .. tostring(stamp)
+
+				if signature == lastLockSignature then
+					stableLockRetries += 1
+				else
+					lastLockSignature = signature
+					stableLockRetries = 1
 				end
-				lastErr = forceStateOrErr
+
+				local retriesReady = stableLockRetries >= SESSION_LOCK_STABLE_RETRY_THRESHOLD
+				local delayReady = (stableLockRetries * PLAYER_LOAD_RETRY_INTERVAL) >= SESSION_LOCK_FORCE_ACQUIRE_DELAY
+				if ENABLE_SESSION_LOCK_FORCE_ACQUIRE and not forceTried and retriesReady and delayReady then
+					forceTried = true
+					warn(string.format("[SaveService] Trying force acquire for player %d after stable lock observation (%d retries)", userId, stableLockRetries))
+					local forceOk, forceStateOrErr = SaveService.loadPlayer(userId, true)
+					if forceOk then
+						return
+					end
+					lastErr = forceStateOrErr
+				end
+
+				warn(string.format("[SaveService] Player %d still session-locked (owner=%s). Retrying...", userId, tostring(owner)))
+			else
+				lastLockSignature = nil
+				stableLockRetries = 0
+				warn(string.format("[SaveService] Retrying load for player %d (reason=%s)", userId, tostring(stateOrErr)))
 			end
 
-			warn(string.format("[SaveService] Player %d still session-locked. Retrying...", userId))
-		else
-			lockSeenAt = nil
-			warn(string.format("[SaveService] Retrying load for player %d (reason=%s)", userId, tostring(stateOrErr)))
+			task.wait(PLAYER_LOAD_RETRY_INTERVAL)
 		end
 
-		task.wait(PLAYER_LOAD_RETRY_INTERVAL)
-	end
-
-	if player.Parent then
-		warn(string.format("[SaveService] Failed to load player %d after retries. Last error: %s", userId, tostring(lastErr)))
-		if lastErr == "SESSION_LOCKED" then
-			player:Kick("이전 접속 세션이 아직 정리되지 않았습니다. 잠시 후 다시 접속해 주세요.")
-		else
-			player:Kick("데이터 로드에 실패했습니다. 잠시 후 다시 접속해 주세요.")
+		if player.Parent then
+			warn(string.format("[SaveService] Failed to load player %d after retries. Last error: %s", userId, tostring(lastErr)))
+			if lastErr == "SESSION_LOCKED" then
+				player:Kick("이전 접속 세션이 아직 정리되지 않았습니다. 잠시 후 다시 접속해 주세요.")
+			else
+				player:Kick("데이터 로드에 실패했습니다. 잠시 후 다시 접속해 주세요.")
+			end
 		end
-	end
+	end)
 end
 
 --- PlayerRemoving 이벤트

@@ -22,6 +22,7 @@ local Enums = require(Shared.Enums.Enums)
 --========================================
 local techDataMap = {}   -- [techId] = techData (Init에서 로드)
 local playerUnlocks = {} -- [userId] = { [techId] = true }
+local playerUnlockLoadInFlight = {} -- [userId] = true while loading from SaveService
 
 -- O(1) 룩업 테이블 (성능 최적화 캐시)
 local unlockedRecipes = {}    -- [userId] = { [recipeId] = true }
@@ -139,6 +140,23 @@ local function _initPlayerUnlocks(userId: number)
 	end
 end
 
+local function _ensurePlayerUnlocksAsync(userId: number)
+	if playerUnlocks[userId] or playerUnlockLoadInFlight[userId] then
+		return
+	end
+
+	playerUnlockLoadInFlight[userId] = true
+	task.spawn(function()
+		local ok, err = pcall(function()
+			_initPlayerUnlocks(userId)
+		end)
+		if not ok then
+			warn(string.format("[TechService] Failed to init unlock cache for %d: %s", userId, tostring(err)))
+		end
+		playerUnlockLoadInFlight[userId] = nil
+	end)
+end
+
 --- 플레이어 해금 상태 저장
 local function _savePlayerUnlocks(userId: number)
 	local unlocks = playerUnlocks[userId]
@@ -205,6 +223,7 @@ function TechService.unlock(userId: number, techId: string): (boolean, string?)
 	if not player then return false, Enums.ErrorCode.BAD_REQUEST end
 
 	if tech.cost and #tech.cost > 0 then
+		local consumedList = {}
 		for _, req in ipairs(tech.cost) do
 			if not InventoryService.hasItem(userId, req.itemId, req.amount) then
 				return false, Enums.ErrorCode.MISSING_REQUIREMENTS
@@ -214,7 +233,13 @@ function TechService.unlock(userId: number, techId: string): (boolean, string?)
 		-- 비용 차감
 		for _, req in ipairs(tech.cost) do
 			local removed = InventoryService.removeItem(userId, req.itemId, req.amount)
+			if removed > 0 then
+				table.insert(consumedList, { itemId = req.itemId, count = removed })
+			end
 			if removed < req.amount then
+				for _, consumed in ipairs(consumedList) do
+					InventoryService.addItem(userId, consumed.itemId, consumed.count)
+				end
 				return false, Enums.ErrorCode.MISSING_REQUIREMENTS
 			end
 		end
@@ -250,8 +275,12 @@ end
 --- @param techId string
 --- @return boolean
 function TechService.isUnlocked(userId: number, techId: string): boolean
-	_initPlayerUnlocks(userId)
-	return playerUnlocks[userId][techId] == true
+	local unlocks = playerUnlocks[userId]
+	if not unlocks then
+		_ensurePlayerUnlocksAsync(userId)
+		return false
+	end
+	return unlocks[techId] == true
 end
 
 --- 기술 초기화 및 포인트 환급 (Relinquish)
@@ -302,8 +331,12 @@ end
 --- @param userId number
 --- @return table { techId → true }
 function TechService.getUnlockedTech(userId: number): { [string]: boolean }
-	_initPlayerUnlocks(userId)
-	return playerUnlocks[userId] or {}
+	local unlocks = playerUnlocks[userId]
+	if not unlocks then
+		_ensurePlayerUnlocksAsync(userId)
+		return {}
+	end
+	return unlocks
 end
 
 --- 해금 가능한 기술 목록 조회 (선행 기술 충족, 미해금)
@@ -354,7 +387,10 @@ function TechService.isRecipeUnlocked(userId: number, recipeId: string): boolean
 	-- 기술 트리에 아예 없는 레시피는 기본적으로 허용
 	if not restrictedRecipes[recipeId] then return true end
 
-	_initPlayerUnlocks(userId)
+	if not unlockedRecipes[userId] then
+		_ensurePlayerUnlocksAsync(userId)
+		return false
+	end
 	local recipes = unlockedRecipes[userId]
 	return recipes and recipes[recipeId] == true or false
 end
@@ -367,7 +403,10 @@ function TechService.isFacilityUnlocked(userId: number, facilityId: string): boo
 	-- 기술 트리에 아예 없는 시설은 기본적으로 허용 (예: 원시 캠프파이어 등)
 	if not restrictedFacilities[facilityId] then return true end
 
-	_initPlayerUnlocks(userId)
+	if not unlockedFacilities[userId] then
+		_ensurePlayerUnlocksAsync(userId)
+		return false
+	end
 	local facilities = unlockedFacilities[userId]
 	return facilities and facilities[facilityId] == true or false
 end
@@ -377,7 +416,10 @@ end
 --- @param featureId string
 --- @return boolean
 function TechService.isFeatureUnlocked(userId: number, featureId: string): boolean
-	_initPlayerUnlocks(userId)
+	if not unlockedFeatures[userId] then
+		_ensurePlayerUnlocksAsync(userId)
+		return false
+	end
 	local features = unlockedFeatures[userId]
 	return features and features[featureId] == true or false
 end
@@ -462,7 +504,7 @@ function TechService.Init(netController, dataService, playerStatService, saveSer
 	
 	-- Player 접속 시 해금 상태 초기화
 	game:GetService("Players").PlayerAdded:Connect(function(player)
-		_initPlayerUnlocks(player.UserId)
+		_ensurePlayerUnlocksAsync(player.UserId)
 	end)
 	
 	-- Player 퇴장 시 정리
@@ -477,7 +519,7 @@ function TechService.Init(netController, dataService, playerStatService, saveSer
 	
 	-- 이미 접속한 플레이어 처리
 	for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
-		_initPlayerUnlocks(player.UserId)
+		_ensurePlayerUnlocksAsync(player.UserId)
 	end
 	
 	print("[TechService] Initialized")
