@@ -28,6 +28,20 @@ local hoverHighlight = nil    -- 대상 강조 프레임
 -- Private: 시각 효과 관리
 --========================================
 
+local function isMouseOverSlot(mousePos, slotFrame)
+	if not slotFrame or not slotFrame.Visible then
+		return false
+	end
+	local absPos = slotFrame.AbsolutePosition
+	local absSize = slotFrame.AbsoluteSize
+	
+	-- 슬롯 영역을 상하 대칭으로 30% 확장 (위아래 동일하게)
+	local expandY = absSize.Y * 0.3
+	
+	return mousePos.X >= absPos.X and mousePos.X <= absPos.X + absSize.X
+		and mousePos.Y >= absPos.Y - expandY and mousePos.Y <= absPos.Y + absSize.Y + expandY
+end
+
 local function setHoverHighlight(slotFrame)
 	if hoveredSlotFrame == slotFrame then return end
 	
@@ -183,29 +197,56 @@ function DragDropController.handleDragUpdate()
 	-- dragDummy의 Position을 마우스 좌표 / scale로 설정하여 정확히 커서 밑에 오도록 함
 	dragDummy.Position = UDim2.new(0, mousePos.X / scale - 30, 0, mousePos.Y / scale - 30)
 
-	-- 대상 슬롯 감지 (호버 하이라이트)
+	-- 대상 슬롯 감지 (호버 하이라이트) — 마우스에 가장 가까운 슬롯 선택
 	local foundSlotFrame = nil
-	local guiObjects = player.PlayerGui:GetGuiObjectsAtPosition(mousePos.X, mousePos.Y)
-	for _, obj in ipairs(guiObjects) do
-		if obj == dragDummy or obj:IsDescendantOf(dragDummy) then continue end
-		
-		-- 인벤토리/핫바/장비 슬롯인지 확인
-		if UIManager.isWindowOpen("INV") then
-			for _, s in pairs(UIManager.getInvSlots()) do
-				if s.frame == obj or obj:IsDescendantOf(s.frame) then
-					foundSlotFrame = s.frame; break
+	local minDistance = math.huge
+	-- GetMouseLocation()은 GuiInset 포함 좌표 → IgnoreGuiInset=true의 AbsolutePosition과 맞추려면 인셋 차감
+	local rawMouse = UserInputService:GetMouseLocation()
+	local insetTop = GuiService:GetGuiInset()
+	local mousePos = Vector2.new(rawMouse.X, rawMouse.Y - insetTop.Y)
+	
+	-- 1. 인벤토리 슬롯 확인
+	if UIManager.isWindowOpen("INV") then
+		for _, s in pairs(UIManager.getInvSlots()) do
+			if isMouseOverSlot(mousePos, s.frame) then
+				-- 마우스와 슬롯 중심 사이의 2D 거리 계산
+				local absPos = s.frame.AbsolutePosition
+				local absSize = s.frame.AbsoluteSize
+				local slotCenterX = absPos.X + absSize.X * 0.5
+				local slotCenterY = absPos.Y + absSize.Y * 0.5
+				local distX = mousePos.X - slotCenterX
+				local distY = mousePos.Y - slotCenterY
+				local distance = math.sqrt(distX * distX + distY * distY)
+				
+				if distance < minDistance then
+					minDistance = distance
+					foundSlotFrame = s.frame
 				end
 			end
 		end
-		if not foundSlotFrame then
-			for _, s in pairs(UIManager.getHotbarSlots()) do
-				if s.frame == obj or obj:IsDescendantOf(s.frame) then
-					foundSlotFrame = s.frame; break
-				end
-			end
-		end
-		if foundSlotFrame then break end
 	end
+	
+	-- 2. 핫바 슬롯 확인
+	if UIManager.isWindowOpen("INV") or true then  -- 핫바는 항상 확인
+		for _, s in pairs(UIManager.getHotbarSlots()) do
+			if isMouseOverSlot(mousePos, s.frame) then
+				-- 마우스와 슬롯 중심 사이의 2D 거리 계산
+				local absPos = s.frame.AbsolutePosition
+				local absSize = s.frame.AbsoluteSize
+				local slotCenterX = absPos.X + absSize.X * 0.5
+				local slotCenterY = absPos.Y + absSize.Y * 0.5
+				local distX = mousePos.X - slotCenterX
+				local distY = mousePos.Y - slotCenterY
+				local distance = math.sqrt(distX * distX + distY * distY)
+				
+				if distance < minDistance then
+					minDistance = distance
+					foundSlotFrame = s.frame
+				end
+			end
+		end
+	end
+	
 	setHoverHighlight(foundSlotFrame)
 end
 
@@ -224,39 +265,78 @@ function DragDropController.handleDragEnd()
 		dragDummy = nil
 	end
 
-	local mousePos = UserInputService:GetMouseLocation()
+	-- GetMouseLocation()은 GuiInset 포함 좌표 → IgnoreGuiInset=true의 AbsolutePosition과 맞추려면 인셋 차감
+	local rawMouse = UserInputService:GetMouseLocation()
+	local insetTop = GuiService:GetGuiInset()
+	local mousePos = Vector2.new(rawMouse.X, rawMouse.Y - insetTop.Y)
 	local foundSlot = nil
 	local foundType = nil
+	local minDistance = math.huge
 	
-	local guiObjects = player.PlayerGui:GetGuiObjectsAtPosition(mousePos.X, mousePos.Y)
-	for _, obj in ipairs(guiObjects) do
-		-- 1. 인벤토리
-		if UIManager.isWindowOpen("INV") then
-			for i, s in pairs(UIManager.getInvSlots()) do
-				if s.frame == obj or obj:IsDescendantOf(s.frame) then
-					foundSlot = i; foundType = "bag"; break
+	-- 1. 인벤토리 확인
+	if UIManager.isWindowOpen("INV") then
+		for i, s in pairs(UIManager.getInvSlots()) do
+			if isMouseOverSlot(mousePos, s.frame) then
+				-- 마우스와 슬롯 중심 사이의 2D 거리 계산
+				local absPos = s.frame.AbsolutePosition
+				local absSize = s.frame.AbsoluteSize
+				local slotCenterX = absPos.X + absSize.X * 0.5
+				local slotCenterY = absPos.Y + absSize.Y * 0.5
+				local distX = mousePos.X - slotCenterX
+				local distY = mousePos.Y - slotCenterY
+				local distance = math.sqrt(distX * distX + distY * distY)
+				
+				if distance < minDistance then
+					minDistance = distance
+					foundSlot = i
+					foundType = "bag"
 				end
 			end
 		end
-		if foundSlot then break end
-		
-		-- 2. 핫바
+	end
+	
+	-- 2. 핫바 확인
+	if UIManager.isWindowOpen("INV") or true then  -- 핫바는 항상 확인
 		for i, s in pairs(UIManager.getHotbarSlots()) do
-			if s.frame == obj or obj:IsDescendantOf(s.frame) then
-				foundSlot = i; foundType = "hotbar"; break
-			end
-		end
-		if foundSlot then break end
-
-		-- 3. 장비
-		if UIManager.isWindowOpen("EQUIP") then
-			for slotName, s in pairs(UIManager.getEquipSlots()) do
-				if s.frame == obj or obj:IsDescendantOf(s.frame) then
-					foundSlot = slotName; foundType = "equip"; break
+			if isMouseOverSlot(mousePos, s.frame) then
+				-- 마우스와 슬롯 중심 사이의 2D 거리 계산
+				local absPos = s.frame.AbsolutePosition
+				local absSize = s.frame.AbsoluteSize
+				local slotCenterX = absPos.X + absSize.X * 0.5
+				local slotCenterY = absPos.Y + absSize.Y * 0.5
+				local distX = mousePos.X - slotCenterX
+				local distY = mousePos.Y - slotCenterY
+				local distance = math.sqrt(distX * distX + distY * distY)
+				
+				if distance < minDistance then
+					minDistance = distance
+					foundSlot = i
+					foundType = "hotbar"
 				end
 			end
 		end
-		if foundSlot then break end
+	end
+
+	-- 3. 장비 확인
+	if UIManager.isWindowOpen("EQUIP") then
+		for slotName, s in pairs(UIManager.getEquipSlots()) do
+			if isMouseOverSlot(mousePos, s.frame) then
+				-- 마우스와 슬롯 중심 사이의 2D 거리 계산
+				local absPos = s.frame.AbsolutePosition
+				local absSize = s.frame.AbsoluteSize
+				local slotCenterX = absPos.X + absSize.X * 0.5
+				local slotCenterY = absPos.Y + absSize.Y * 0.5
+				local distX = mousePos.X - slotCenterX
+				local distY = mousePos.Y - slotCenterY
+				local distance = math.sqrt(distX * distX + distY * distY)
+				
+				if distance < minDistance then
+					minDistance = distance
+					foundSlot = slotName
+					foundType = "equip"
+				end
+			end
+		end
 	end
 
 	if foundSlot then

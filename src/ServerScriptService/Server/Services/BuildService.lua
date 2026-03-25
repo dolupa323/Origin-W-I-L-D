@@ -802,8 +802,8 @@ function BuildService.removeStructure(structureId: string, reason: string)
 		table.remove(orderedIds, idx)
 	end
 	
-	-- 5. 자원 반환 (Refund)
-	if reason == "PLAYER_REMOVE" or reason == "DESTRUCTION" then
+	-- 5. 자원 반환 (Refund): 플레이어가 직접 철거한 경우만
+	if reason == "PLAYER_REMOVE" then
 		local facilityData = DataService.getFacility(structure.facilityId)
 		if facilityData and facilityData.requirements then
 			local ownerId = structure.ownerId
@@ -815,25 +815,13 @@ function BuildService.removeStructure(structureId: string, reason: string)
 				local itemId = req.itemId
 				local amount = req.amount or 1
 
-				if reason == "PLAYER_REMOVE" then
-					-- 해체는 항상 월드에 재료를 배출한다.
-					if dropService then
-						dropIndex += 1
-						dropService.spawnDrop(scatterDropPosition(structure.position, dropIndex), itemId, amount)
-					elseif player then
-						-- 드롭 서비스 이상 시 최소한 자원 유실은 막는다.
-						InventoryService.addItem(ownerId, itemId, amount)
-					end
-				else
-					local added, remaining = 0, amount
-					if player then
-						added, remaining = InventoryService.addItem(ownerId, itemId, amount)
-					end
-
-					if remaining > 0 and dropService then
-						dropIndex += 1
-						dropService.spawnDrop(scatterDropPosition(structure.position, dropIndex), itemId, remaining)
-					end
+				-- 직접 철거는 항상 월드에 재료를 배출한다.
+				if dropService then
+					dropIndex += 1
+					dropService.spawnDrop(scatterDropPosition(structure.position, dropIndex), itemId, amount)
+				elseif player then
+					-- 드롭 서비스 이상 시 최소한 자원 유실은 막는다.
+					InventoryService.addItem(ownerId, itemId, amount)
 				end
 			end
 		end

@@ -33,11 +33,11 @@ local playerNameCache = {}            -- [userId] = displayName
 local PREVIEW_REFRESH_INTERVAL = 0.35
 local INFO_CACHE_TTL = 5
 local OWN_INFO_CACHE_TTL = 30
-local PREVIEW_COLOR_ACTIVE = Color3.fromRGB(255, 245, 170)
-local PREVIEW_COLOR_INACTIVE = Color3.fromRGB(245, 232, 160)
-local OWN_PREVIEW_COLOR_ACTIVE = Color3.fromRGB(255, 230, 110)
-local OWN_PREVIEW_COLOR_INACTIVE = Color3.fromRGB(230, 215, 130)
-local STARTER_PREVIEW_COLOR = Color3.fromRGB(190, 228, 255)
+local PREVIEW_COLOR_ACTIVE = Color3.fromRGB(255, 200, 50)
+local PREVIEW_COLOR_INACTIVE = Color3.fromRGB(200, 160, 60)
+local OWN_PREVIEW_COLOR_ACTIVE = Color3.fromRGB(255, 180, 30)
+local OWN_PREVIEW_COLOR_INACTIVE = Color3.fromRGB(200, 155, 50)
+local STARTER_PREVIEW_COLOR = Color3.fromRGB(100, 180, 255)
 local PREVIEW_BORDER_WIDTH = 1.2
 
 local function destroyPreviewParts()
@@ -286,8 +286,10 @@ local function renderPreviewRing(centerPos: Vector3, radius: number, color: Colo
 	local rayParams = RaycastParams.new()
 	rayParams.FilterType = Enum.RaycastFilterType.Exclude
 	local excludeList = {}
-	if excludeModel then
-		table.insert(excludeList, excludeModel)
+	-- Facilities 전체 제외 (토템, 작업대 등 모든 건축물 위에 레이가 멈추지 않도록)
+	local facilitiesFolder = workspace:FindFirstChild("Facilities")
+	if facilitiesFolder then
+		table.insert(excludeList, facilitiesFolder)
 	end
 	local localCharacter = Players.LocalPlayer and Players.LocalPlayer.Character
 	if localCharacter then
@@ -307,10 +309,11 @@ local function renderPreviewRing(centerPos: Vector3, radius: number, color: Colo
 
 	local fill, _ = ensurePreviewParts()
 	local fillRadius = math.max(1, radius - PREVIEW_BORDER_WIDTH)
-	local baseCFrame = CFrame.new(centerX, terrainY + (thickness * 0.5) + 0.03, centerZ) * CFrame.Angles(0, 0, math.rad(90))
+	-- 실린더 중심을 지면에서 thickness/2만큼 내려서 윗면이 지면과 일치하도록 배치
+	local baseCFrame = CFrame.new(centerX, terrainY - (thickness * 0.5) + 0.05, centerZ) * CFrame.Angles(0, 0, math.rad(90))
 
 	fill.Size = Vector3.new(thickness, fillRadius * 2, fillRadius * 2)
-	fill.CFrame = baseCFrame + Vector3.new(0, 0.002, 0)
+	fill.CFrame = baseCFrame
 	fill.Transparency = transparency
 	fill.Color = color
 end
@@ -353,7 +356,7 @@ local function refreshNearbyPreview()
 			ownInfo.centerPosition,
 			ownRadius,
 			ownActive and OWN_PREVIEW_COLOR_ACTIVE or OWN_PREVIEW_COLOR_INACTIVE,
-			ownActive and 0.88 or 0.85,
+			ownActive and 0.55 or 0.5,
 			nil
 		)
 		return
@@ -373,7 +376,7 @@ local function refreshNearbyPreview()
 			return
 		end
 
-		renderPreviewRing(starterZone.centerPosition, starterZone.radius, STARTER_PREVIEW_COLOR, 0.96, nil)
+		renderPreviewRing(starterZone.centerPosition, starterZone.radius, STARTER_PREVIEW_COLOR, 0.6, nil)
 		return
 	end
 
@@ -394,7 +397,7 @@ local function refreshNearbyPreview()
 	local radius = (info and tonumber(info.radius)) or (Balance.BASE_DEFAULT_RADIUS or 30)
 	local active = info and info.upkeep and info.upkeep.active
 	local centerPos = (info and info.centerPosition) or pp.Position
-	renderPreviewRing(centerPos, radius, active and PREVIEW_COLOR_ACTIVE or PREVIEW_COLOR_INACTIVE, active and 0.965 or 0.93, totemModel)
+	renderPreviewRing(centerPos, radius, active and PREVIEW_COLOR_ACTIVE or PREVIEW_COLOR_INACTIVE, active and 0.6 or 0.5, totemModel)
 end
 
 function TotemController.getCurrentStructureId()
