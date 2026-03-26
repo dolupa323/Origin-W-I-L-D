@@ -8,6 +8,9 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Enums = require(Shared.Enums.Enums)
 local Balance = require(Shared.Config.Balance)
 
+local Data = ReplicatedStorage:WaitForChild("Data")
+local MaterialAttributeData = require(Data.MaterialAttributeData)
+
 local CombatService = {}
 
 -- Dependencies
@@ -484,18 +487,12 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 		targetType = "CREATURE"
 	end
 	
-	-- 3.2 건축물 체크 (크리처가 아닐 경우)
-	local BuildService
+	-- 3.2 건축물 체크 — 일반 공격으로는 건축물에 피해를 줄 수 없음
 	if targetType == "NONE" then
-		BuildService = require(game:GetService("ServerScriptService").Server.Services.BuildService)
-		local structure = BuildService.get(targetId)
+		local BuildServiceCheck = require(game:GetService("ServerScriptService").Server.Services.BuildService)
+		local structure = BuildServiceCheck.get(targetId)
 		if structure then
-			targetType = "STRUCTURE"
-			-- 건축물은 rootPart가 없으므로 Workspace 모델의 PrimaryPart 또는 Position 사용
-			local model = workspace.Facilities:FindFirstChild(targetId)
-			if model then
-				targetObject = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
-			end
+			return false, Enums.ErrorCode.INVALID_TARGET
 		end
 	end
 	
@@ -550,10 +547,34 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 		totalDamage = totalDamage * chargeMult
 	end
 
+	-- ★ 무기 속성 효과 적용 (다중 속성 합산)
+	local attrCritChance = 0
+	local attrCritDamageMult = 0
+	if toolItem and toolItem.attributes then
+		for attrId, level in pairs(toolItem.attributes) do
+			local fx = MaterialAttributeData.getEffectValues(attrId, level)
+			if fx then
+				if fx.damageMult ~= 0 then
+					totalDamage = totalDamage * (1 + fx.damageMult)
+				end
+				attrCritChance = attrCritChance + (fx.critChance or 0)
+				attrCritDamageMult = attrCritDamageMult + (fx.critDamageMult or 0)
+			end
+		end
+	end
+
 	-- ★ 데미지 등락폭 적용 (±VARIANCE)
 	local variance = Balance.DAMAGE_VARIANCE or 0.15
 	local varianceMult = 1 + (math.random() * 2 - 1) * variance
 	totalDamage = math.max(1, totalDamage * varianceMult)
+
+	-- ★ 치명타 판정 (속성 기반 확률)
+	local isCritical = false
+	if attrCritChance > 0 and math.random() < attrCritChance then
+		isCritical = true
+		local critMultiplier = 1.5 + attrCritDamageMult  -- 기본 치명타 150% + 속성 보너스
+		totalDamage = totalDamage * critMultiplier
+	end
 
 	-- 4. 데미지 및 기절 수치 적용
 	local hpDamage = totalDamage
@@ -608,11 +629,6 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 				})
 			end
 		end
-	elseif targetType == "STRUCTURE" then
-		-- 건축물 데미지 적용
-		local destroyed, _ = BuildService.takeDamage(targetId, hpDamage, player)
-		killed = destroyed
-		if killed then dropPos = targetPos end
 	end
 	
 	-- 4. 도구 내구도 감소
@@ -654,7 +670,8 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 						local rayResult = workspace:Raycast(baseSpawnPos, Vector3.new(0, -30, 0), rayParams)
 						local finalSpawnPos = rayResult and rayResult.Position or (dropPos + Vector3.new(math.cos(angle) * radius, 0, math.sin(angle) * radius))
 						
-						WorldDropService.spawnDrop(finalSpawnPos, entry.itemId, count)
+						local creatureLevel = creature.data and creature.data.level or 1
+						WorldDropService.spawnDrop(finalSpawnPos, entry.itemId, count, nil, creatureLevel)
 					end
 				end
 			end
@@ -675,6 +692,7 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 			targetId = targetId,
 			bowShot = isBowShot,
 			chargeRatio = bowChargeRatio,
+			isCritical = isCritical,
 		})
 	end
 	

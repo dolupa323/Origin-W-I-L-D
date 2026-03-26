@@ -1345,13 +1345,12 @@ local function findTarget()
 		reach = math.max(reach, 120)
 	end
 
-	-- 1. 캐릭터 주변 엔티티 탐색 (Sphere)
+	-- 1. 캐릭터 주변 엔티티 탐색 (Sphere) — 건축물(Facilities)은 공격 대상에서 제외
 	local overlap = OverlapParams.new()
 	overlap.FilterType = Enum.RaycastFilterType.Include
 	local filterInstances = {}
 	if creaturesFolder then table.insert(filterInstances, creaturesFolder) end
 	if nodesFolder then table.insert(filterInstances, nodesFolder) end
-	if facilitiesFolder then table.insert(filterInstances, facilitiesFolder) end
 	overlap.FilterDescendantsInstances = filterInstances
 	
 	-- 판정 반경은 리치보다 넉넉하게 (각도/정밀 사거리 판정 전 단계)
@@ -1388,7 +1387,7 @@ local function findTarget()
 	local mousePart = InputManager.getMouseTarget()
 	if mousePart then
 		local mModel, mId, mType = checkModel(mousePart)
-		if mId then
+		if mId and mType ~= "structure" then
 			local mPos = mousePart.Position
 			local mDist = (mPos - char.PrimaryPart.Position).Magnitude
 			

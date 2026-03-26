@@ -59,6 +59,7 @@ local BuildUI = require(UI.BuildUI)
 local EquipmentUI = require(UI.EquipmentUI)
 local StorageUI = require(UI.StorageUI)
 local FacilityUI = require(UI.FacilityUI)
+local MaterialSelectUI = require(UI.MaterialSelectUI)
 local CollectionUI = require(UI.CollectionUI)
 local PromptUI = require(UI.PromptUI)
 local TotemUI = require(UI.TotemUI)
@@ -1682,20 +1683,25 @@ function UIManager._onStartFacilityCraft(recipe, count)
 	if not currentFacilityStructureId then return end
 	local batchCount = tonumber(count) or 1
 	batchCount = math.max(1, math.floor(batchCount))
-	
-	task.spawn(function()
-		local success, response = NetClient.Request("Craft.Start.Request", {
-			recipeId = recipe.id,
-			structureId = currentFacilityStructureId,
-			count = batchCount,
-		})
-		
-		if success then
-			UIManager.notify(string.format("제작 의뢰 완료! x%d", batchCount), C.GOLD)
-			UIManager.refreshFacility() -- Refresh to show in queue
-		else
-			UIManager.notify("제작 실패: " .. (response or "알 수 없는 오류"), C.RED)
-		end
+	local structureId = currentFacilityStructureId
+
+	-- 재료 선택 모달 열기
+	MaterialSelectUI.Open(recipe, batchCount, function(materialSlots)
+		task.spawn(function()
+			local success, response = NetClient.Request("Craft.Start.Request", {
+				recipeId = recipe.id,
+				structureId = structureId,
+				count = batchCount,
+				materialSlots = materialSlots,
+			})
+
+			if success then
+				UIManager.notify(string.format("제작 의뢰 완료! x%d", batchCount), C.GOLD)
+				UIManager.refreshFacility()
+			else
+				UIManager.notify("제작 실패: " .. (response or "알 수 없는 오류"), C.RED)
+			end
+		end)
 	end)
 end
 
@@ -2408,6 +2414,7 @@ function UIManager.Init()
 	BuildUI.Init(mainGui, UIManager, isMobile)
 	StorageUI.Init(mainGui, UIManager, isMobile)
 	FacilityUI.Init(mainGui, UIManager, isMobile)
+	MaterialSelectUI.Init(mainGui, UIManager)
 	CollectionUI.Init(mainGui, UIManager)
 	TotemUI.Init(mainGui, UIManager, isMobile)
 	PortalUI.Init(mainGui, UIManager, isMobile)

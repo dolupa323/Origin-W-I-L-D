@@ -13,6 +13,9 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Enums = require(Shared.Enums.Enums)
 local Balance = require(Shared.Config.Balance)
 
+local Data = ReplicatedStorage:WaitForChild("Data")
+local MaterialAttributeData = require(Data.MaterialAttributeData)
+
 local HarvestService = {}
 
 --========================================
@@ -1029,6 +1032,20 @@ function HarvestService.hit(player: Player, nodeUID: string, toolSlot: number?, 
 		local workSpeedStat = (stats and stats.statInvested and stats.statInvested[Enums.StatId.WORK_SPEED]) or 0
 		power = power + workSpeedStat
 	end
+
+	-- ★ 도구 속성 효과 적용 (다중 속성 합산)
+	if toolSlot and InventoryService then
+		local slotData = InventoryService.getSlot(userId, toolSlot)
+		if slotData and slotData.attributes then
+			for attrId, level in pairs(slotData.attributes) do
+				local fx = MaterialAttributeData.getEffectValues(attrId, level)
+				if fx and fx.damageMult ~= 0 then
+					power = power * (1 + fx.damageMult)
+				end
+			end
+		end
+	end
+	power = math.max(1, power)
 	
 	-- 8. 실제 데미지 적용
 	-- 효율 0(예: 무기로 도구필수 노드 타격)일 때는 실제 데미지를 0으로 고정.
@@ -1118,7 +1135,7 @@ function HarvestService.damageNode(nodeUID: string, damage: number, efficiency: 
 				local rayResult = workspace:Raycast(baseDropPos, Vector3.new(0, -30, 0), rayParams)
 				local finalDropPos = rayResult and rayResult.Position or (nodeState.position + Vector3.new(math.cos(angle) * radius, 0, math.sin(angle) * radius))
 				
-				WorldDropService.spawnDrop(finalDropPos, drop.itemId, drop.count)
+				WorldDropService.spawnDrop(finalDropPos, drop.itemId, drop.count, nil, nodeData.level)
 			end
 		end
 		

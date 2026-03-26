@@ -11,6 +11,9 @@ local T = Theme.Transp
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Balance = require(Shared.Config.Balance)
 
+local Data = game:GetService("ReplicatedStorage"):WaitForChild("Data")
+local MaterialAttributeData = require(Data.MaterialAttributeData)
+
 local InventoryUI = {}
 
 InventoryUI.Refs = {
@@ -229,7 +232,7 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	local detailSize = isSmall and 280 or 320
 	local detail = Utils.mkFrame({
 		name="Detail", 
-		size = isSmall and UDim2.new(1, -20, 0, 320) or UDim2.new(0, detailSize, 1, -16),
+		size = isSmall and UDim2.new(1, -20, 0.78, 0) or UDim2.new(0, detailSize, 1, -16),
 		pos = isSmall and UDim2.new(0.5, 0, 0.5, 0) or UDim2.new(1, -detailSize - 12, 0, 8),
 		anchor = isSmall and Vector2.new(0.5, 0.5) or Vector2.new(0, 0),
 		bg = C.BG_PANEL, bgT = T.PANEL, r = 6, stroke = false,
@@ -245,31 +248,56 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 		parent=detail
 	})
 	
+	-- 스크롤 가능한 콘텐츠 영역 (헤더와 푸터 사이)
+	local detailScroll = Instance.new("ScrollingFrame")
+	detailScroll.Name = "DetailScroll"
+	detailScroll.Size = UDim2.new(1, 0, 1, -150)
+	detailScroll.Position = UDim2.new(0, 0, 0, 45)
+	detailScroll.BackgroundTransparency = 1
+	detailScroll.BorderSizePixel = 0
+	detailScroll.ScrollBarThickness = 3
+	detailScroll.ScrollBarImageColor3 = C.GOLD
+	detailScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	detailScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	detailScroll.Parent = detail
+	
 	InventoryUI.Refs.Detail.Name = Utils.mkLabel({
-		text="SELECT ITEM", size=UDim2.new(1,-30,0,40), pos=UDim2.new(0,15,0,55),
-		color=C.WHITE, ts=22, font=F.TITLE, ax=Enum.TextXAlignment.Left, parent=detail
+		text="SELECT ITEM", size=UDim2.new(1,-30,0,40), pos=UDim2.new(0,15,0,10),
+		color=C.WHITE, ts=22, font=F.TITLE, ax=Enum.TextXAlignment.Left, parent=detailScroll
 	})
 	
 	InventoryUI.Refs.Detail.Icon = Instance.new("ImageLabel")
-	InventoryUI.Refs.Detail.Icon.Size = UDim2.new(0, 90, 0, 90); InventoryUI.Refs.Detail.Icon.Position = UDim2.new(0,15,0,105)
-	InventoryUI.Refs.Detail.Icon.BackgroundTransparency = 1; InventoryUI.Refs.Detail.Icon.Parent = detail
+	InventoryUI.Refs.Detail.Icon.Size = UDim2.new(0, 90, 0, 90); InventoryUI.Refs.Detail.Icon.Position = UDim2.new(0,15,0,60)
+	InventoryUI.Refs.Detail.Icon.BackgroundTransparency = 1; InventoryUI.Refs.Detail.Icon.Parent = detailScroll
 	InventoryUI.Refs.Detail.PreviewIcon = InventoryUI.Refs.Detail.Icon
 	
 	InventoryUI.Refs.Detail.Desc = Utils.mkLabel({
-		text="Description", size=UDim2.new(1,-120,0,110), pos=UDim2.new(0,115,0,105),
+		text="Description", size=UDim2.new(1,-120,0,110), pos=UDim2.new(0,115,0,60),
 		color=C.GRAY, ts=15, wrap=true,
-		ax=Enum.TextXAlignment.Left, ay=Enum.TextYAlignment.Top, parent=detail
+		ax=Enum.TextXAlignment.Left, ay=Enum.TextYAlignment.Top, parent=detailScroll
 	})
 	
 	InventoryUI.Refs.Detail.Stats = Utils.mkLabel({
-		text="", size=UDim2.new(1,-30,0,180), pos=UDim2.new(0,15,0,240),
-		color=C.WHITE, ts=16, ax=Enum.TextXAlignment.Left, ay=Enum.TextYAlignment.Top, wrap=true, rich=true, parent=detail
+		text="", size=UDim2.new(1,-30,0,180), pos=UDim2.new(0,15,0,195),
+		color=C.WHITE, ts=16, ax=Enum.TextXAlignment.Left, ay=Enum.TextYAlignment.Top, wrap=true, rich=true, parent=detailScroll
 	})
 	InventoryUI.Refs.Detail.Mats = InventoryUI.Refs.Detail.Stats -- Alias for crafting
 	InventoryUI.Refs.Detail.Weight = InventoryUI.Refs.Detail.Stats
 
+	-- Stats Grid (무기/도구/방어구 2칼럼 스펙 표시)
+	local statsGrid = Utils.mkFrame({
+		name="StatsGrid", size=UDim2.new(1,-30,0,0), pos=UDim2.new(0,15,0,195),
+		bgT=1, vis=false, parent=detailScroll
+	})
+	statsGrid.AutomaticSize = Enum.AutomaticSize.Y
+	local gridLayout = Instance.new("UIListLayout")
+	gridLayout.Padding = UDim.new(0, 4)
+	gridLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	gridLayout.Parent = statsGrid
+	InventoryUI.Refs.Detail.StatsGrid = statsGrid
+
 	-- Durability Bar (Detail Panel)
-	local durWrap = Utils.mkFrame({name="DurWrap", size=UDim2.new(1, -30, 0, 15), pos=UDim2.new(0, 15, 0, 195), bgT=1, vis=false, parent=detail})
+	local durWrap = Utils.mkFrame({name="DurWrap", size=UDim2.new(1, -30, 0, 15), pos=UDim2.new(0, 15, 0, 150), bgT=1, vis=false, parent=detailScroll})
 	local durBarBack = Utils.mkFrame({name="Back", size=UDim2.new(1, 0, 1, 0), bg=C.BG_SLOT, r=3, parent=durWrap})
 	local durBarFill = Utils.mkFrame({name="Fill", size=UDim2.new(1, 0, 1, 0), bg=C.GOLD, r=3, parent=durBarBack})
 	local durText = Utils.mkLabel({text="100/100", size=UDim2.new(1, 0, 1, 0), ts=10, bold=true, color=C.WHITE, parent=durBarBack})
@@ -278,8 +306,14 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	InventoryUI.Refs.Detail.DurFill = durBarFill
 	InventoryUI.Refs.Detail.DurText = durText
 
+	-- Attribute Badge (재료 속성 표시)
+	InventoryUI.Refs.Detail.AttrBadge = Utils.mkLabel({
+		text="", size=UDim2.new(1,-30,0,20), pos=UDim2.new(0,15,0,170),
+		color=C.GOLD, ts=13, font=F.TITLE, ax=Enum.TextXAlignment.Left, rich=true, vis=false, parent=detailScroll
+	})
+
 	-- [제작 진행표시] 로딩 스피너 및 프로그레스바 추가
-	local progWrap = Utils.mkFrame({name="ProgWrap", size=UDim2.new(0, 80, 0, 80), pos=UDim2.new(0,15,0,95), bgT=1, vis=false, parent=detail})
+	local progWrap = Utils.mkFrame({name="ProgWrap", size=UDim2.new(0, 80, 0, 80), pos=UDim2.new(0,15,0,50), bgT=1, vis=false, parent=detailScroll})
 	InventoryUI.Refs.Detail.ProgWrap = progWrap
 	
 	local spinner = Instance.new("ImageLabel")
@@ -287,7 +321,7 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	spinner.BackgroundTransparency = 1; spinner.Image = "rbxassetid://6034445544"; spinner.ImageColor3 = C.GOLD; spinner.ZIndex = 15; spinner.Parent = progWrap
 	InventoryUI.Refs.Detail.Spinner = spinner
 
-	local barBack = Utils.mkFrame({name="BarBack", size=UDim2.new(1, -24, 0, 6), pos=UDim2.new(0.5, 0, 0, 185), anchor=Vector2.new(0.5, 0), bg=C.BG_SLOT, r=3, vis=false, parent=detail})
+	local barBack = Utils.mkFrame({name="BarBack", size=UDim2.new(1, -24, 0, 6), pos=UDim2.new(0.5, 0, 0, 140), anchor=Vector2.new(0.5, 0), bg=C.BG_SLOT, r=3, vis=false, parent=detailScroll})
 	local barFill = Utils.mkFrame({name="Fill", size=UDim2.new(0, 0, 1, 0), bg=C.GOLD, r=3, parent=barBack})
 	InventoryUI.Refs.Detail.ProgBar = barBack
 	InventoryUI.Refs.Detail.ProgFill = barFill
@@ -432,6 +466,8 @@ function InventoryUI.SetTab(tabId)
 		d.Icon.Image = ""
 		d.Icon.Visible = false
 		d.Stats.Text = ""
+		d.StatsGrid.Visible = false
+		clearStatsGrid(d.StatsGrid)
 		d.Desc.Text = ""
 		d.Mats.Text = ""
 		d.BtnMain.Visible = false
@@ -521,6 +557,42 @@ function InventoryUI.UpdateCurrency(amount)
 	end
 end
 
+local function clearStatsGrid(grid)
+	for _, child in ipairs(grid:GetChildren()) do
+		if child:IsA("Frame") then child:Destroy() end
+	end
+end
+
+local function createStatRow(parent, label, value, hexColor, order)
+	local row = Instance.new("Frame")
+	row.Name = "StatRow_" .. order
+	row.Size = UDim2.new(1, 0, 0, 22)
+	row.BackgroundTransparency = 1
+	row.LayoutOrder = order
+	row.Parent = parent
+
+	local nameL = Instance.new("TextLabel")
+	nameL.Size = UDim2.new(0.55, 0, 1, 0)
+	nameL.BackgroundTransparency = 1
+	nameL.Text = label
+	nameL.TextColor3 = Color3.fromHex("#AAAAAA")
+	nameL.TextSize = 15
+	nameL.Font = F.NORMAL
+	nameL.TextXAlignment = Enum.TextXAlignment.Left
+	nameL.Parent = row
+
+	local valL = Instance.new("TextLabel")
+	valL.Size = UDim2.new(0.45, 0, 1, 0)
+	valL.Position = UDim2.new(0.55, 0, 0, 0)
+	valL.BackgroundTransparency = 1
+	valL.Text = value
+	valL.TextColor3 = Color3.fromHex(hexColor)
+	valL.TextSize = 15
+	valL.Font = F.TITLE
+	valL.TextXAlignment = Enum.TextXAlignment.Left
+	valL.Parent = row
+end
+
 function InventoryUI.UpdateDetail(data, getItemIcon, Enums, DataHelper, itemCounts, isLocked)
 	local d = InventoryUI.Refs.Detail
 	if not d.Frame then return end
@@ -545,6 +617,126 @@ function InventoryUI.UpdateDetail(data, getItemIcon, Enums, DataHelper, itemCoun
 		
 		local weightStr = string.format("수량: %d", (data.count or 1))
 		d.Stats.Text = UILocalizer.Localize(weightStr)
+		d.Stats.Visible = true
+		d.StatsGrid.Visible = false
+		clearStatsGrid(d.StatsGrid)
+		
+		-- 무기/도구/방어구 스펙 표시 (속성 효과 반영, 2칼럼 정렬)
+		if itemData and not (data.inputs or data.requirements) then
+			local iType = itemData.type
+			if iType == "WEAPON" or iType == "TOOL" then
+				-- 속성 효과 합산
+				local bonusDmg, bonusCrit, bonusCritDmg, bonusDur = 0, 0, 0, 0
+				if data.attributes then
+					for attrId, level in pairs(data.attributes) do
+						local fx = MaterialAttributeData.getEffectValues(attrId, level)
+						if fx then
+							bonusDmg = bonusDmg + (fx.damageMult or 0)
+							bonusCrit = bonusCrit + (fx.critChance or 0)
+							bonusCritDmg = bonusCritDmg + (fx.critDamageMult or 0)
+							bonusDur = bonusDur + (fx.durabilityMult or 0)
+						end
+					end
+				end
+				
+				local baseDmg = itemData.damage or 0
+				local finalDmg = math.floor(baseDmg * (1 + bonusDmg) + 0.5)
+				local finalCrit = math.floor(bonusCrit * 100 + 0.5)
+				local finalCritDmg = math.floor((1.5 + bonusCritDmg) * 100 + 0.5)
+				local baseDur = itemData.durability or 0
+				local curDur = data.durability or baseDur
+				local maxDur = math.floor(baseDur * (1 + bonusDur) + 0.5)
+				
+				local dmgColor = bonusDmg > 0 and "#8CDC64" or "#FFFFFF"
+				local critColor = bonusCrit > 0 and "#8CDC64" or "#FFFFFF"
+				local critDmgColor = bonusCritDmg > 0 and "#8CDC64" or "#FFFFFF"
+				local durColor = bonusDur > 0 and "#8CDC64" or "#FFFFFF"
+				
+				d.Stats.Visible = false
+				d.StatsGrid.Visible = true
+				createStatRow(d.StatsGrid, "공격력", tostring(finalDmg), dmgColor, 1)
+				createStatRow(d.StatsGrid, "치명타 확률", finalCrit .. "%", critColor, 2)
+				createStatRow(d.StatsGrid, "치명타 피해량", finalCritDmg .. "%", critDmgColor, 3)
+				createStatRow(d.StatsGrid, "내구도", math.floor(curDur) .. " / " .. maxDur, durColor, 4)
+				
+			elseif iType == "ARMOR" then
+				-- 방어구 속성 효과 합산
+				local bonusDef, bonusHp, bonusDur = 0, 0, 0
+				local bonusHeat, bonusCold, bonusHumid = 0, 0, 0
+				if data.attributes then
+					for attrId, level in pairs(data.attributes) do
+						local fx = MaterialAttributeData.getEffectValues(attrId, level)
+						if fx then
+							bonusDef = bonusDef + (fx.defenseMult or 0)
+							bonusHp = bonusHp + (fx.maxHealthMult or 0)
+							bonusDur = bonusDur + (fx.durabilityMult or 0)
+							bonusHeat = bonusHeat + (fx.heatResist or 0)
+							bonusCold = bonusCold + (fx.coldResist or 0)
+							bonusHumid = bonusHumid + (fx.humidResist or 0)
+						end
+					end
+				end
+				
+				local baseDef = itemData.defense or 0
+				local finalDef = math.floor(baseDef * (1 + bonusDef) + 0.5)
+				local finalHp = math.floor(bonusHp * 100 + 0.5)
+				local baseDur = itemData.durability or 0
+				local curDur = data.durability or baseDur
+				local maxDur = math.floor(baseDur * (1 + bonusDur) + 0.5)
+				
+				local defColor = bonusDef > 0 and "#8CDC64" or "#FFFFFF"
+				local hpColor = bonusHp > 0 and "#8CDC64" or "#FFFFFF"
+				local durColor = bonusDur > 0 and "#8CDC64" or "#FFFFFF"
+				
+				d.Stats.Visible = false
+				d.StatsGrid.Visible = true
+				local order = 0
+				order = order + 1; createStatRow(d.StatsGrid, "방어력", tostring(finalDef), defColor, order)
+				order = order + 1; createStatRow(d.StatsGrid, "추가 체력", "+" .. finalHp .. "%", hpColor, order)
+				order = order + 1; createStatRow(d.StatsGrid, "내구도", math.floor(curDur) .. " / " .. maxDur, durColor, order)
+				
+				local heatPct = math.floor(bonusHeat * 100 + 0.5)
+				local coldPct = math.floor(bonusCold * 100 + 0.5)
+				local humidPct = math.floor(bonusHumid * 100 + 0.5)
+				if heatPct ~= 0 then
+					order = order + 1; createStatRow(d.StatsGrid, "더위 내성", "+" .. heatPct .. "%", "#8CDC64", order)
+				end
+				if coldPct ~= 0 then
+					order = order + 1; createStatRow(d.StatsGrid, "추위 내성", "+" .. coldPct .. "%", "#8CDC64", order)
+				end
+				if humidPct ~= 0 then
+					order = order + 1; createStatRow(d.StatsGrid, "습기 내성", "+" .. humidPct .. "%", "#8CDC64", order)
+				end
+			end
+		end
+		
+		-- 속성/효과 뱃지 표시 (재료=속성명, 도구·무기·방어구=효과 설명)
+		if d.AttrBadge then
+			if data.attributes and next(data.attributes) then
+				local isProduct = itemData and (itemData.type == "TOOL" or itemData.type == "WEAPON" or itemData.type == "ARMOR")
+				local parts = {}
+				for attrId, level in pairs(data.attributes) do
+					local attrInfo = MaterialAttributeData.getAttribute(attrId)
+					if attrInfo then
+						local color = attrInfo.positive and "#8CDC64" or "#E63232"
+						local symbol = attrInfo.positive and "▲" or "▼"
+						local displayName = isProduct and attrInfo.effect or attrInfo.name
+						table.insert(parts, string.format(
+							'<font color="%s">%s %s Lv.%d</font>',
+							color, symbol, displayName, level
+						))
+					end
+				end
+				if #parts > 0 then
+					d.AttrBadge.Text = table.concat(parts, "  ")
+					d.AttrBadge.Visible = true
+				else
+					d.AttrBadge.Visible = false
+				end
+			else
+				d.AttrBadge.Visible = false
+			end
+		end
 		
 		if itemData and itemData.description then
 			d.Desc.Text = UILocalizer.LocalizeDataText("ItemData", tostring(displayItemId), "description", itemData.description)
@@ -628,10 +820,13 @@ function InventoryUI.UpdateDetail(data, getItemIcon, Enums, DataHelper, itemCoun
 		d.Icon.Image = ""
 		d.Icon.Visible = false
 		d.Stats.Text = ""
+		d.StatsGrid.Visible = false
+		clearStatsGrid(d.StatsGrid)
 		d.Desc.Text = ""
 		d.Mats.Text = ""
 		d.BtnMain.Visible = false
 		d.BtnDrop.Visible = false
+		if d.AttrBadge then d.AttrBadge.Visible = false end
 	end
 end
 

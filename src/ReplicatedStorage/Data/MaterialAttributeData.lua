@@ -2,6 +2,7 @@
 -- 재료 속성 시스템 데이터 정의
 -- 모든 루팅 가능한 재료에 0~1개의 랜덤 속성을 부여
 -- 부정 속성이 더 높은 확률로 등장
+-- 속성 레벨: 드랍 대상(채집노드/크리처)의 level이 최대치
 
 local MaterialAttributeData = {}
 
@@ -11,39 +12,40 @@ local MaterialAttributeData = {}
 -- positive = true: 긍정 속성 (낮은 확률)
 -- positive = false: 부정 속성 (높은 확률)
 -- weight: 가중치 (높을수록 자주 등장)
+-- effect: 속성이 부여하는 효과 설명
 
 MaterialAttributeData.Attributes = {
-	-- 날 (Blade) 카테고리: 돌, 광석, 주괴 등
+	-- 날 (Blade) 카테고리: 돌, 금속 재료
 	BLADE = {
-		{ id = "SHARP",        name = "날카로운",   positive = true,  weight = 8  },
-		{ id = "ROUNDED",      name = "둥근단면",   positive = false, weight = 15 },
-		{ id = "POINTED",      name = "뾰족함",     positive = true,  weight = 8  },
-		{ id = "BLUNT",        name = "뭉특함",     positive = false, weight = 15 },
-		{ id = "SOLID",        name = "속이꽉참",   positive = true,  weight = 8  },
-		{ id = "HOLLOW",       name = "속이빔",     positive = false, weight = 15 },
+		{ id = "SHARP",        name = "날카로운",   positive = true,  weight = 8,  effect = "치명타 확률 증가" },
+		{ id = "ROUNDED",      name = "둥근단면",   positive = false, weight = 15, effect = "치명타 확률 감소" },
+		{ id = "POINTED",      name = "뾰족함",     positive = true,  weight = 8,  effect = "공격력 증가" },
+		{ id = "BLUNT",        name = "뭉특함",     positive = false, weight = 15, effect = "공격력 감소" },
+		{ id = "SOLID",        name = "속이 꽉참",  positive = true,  weight = 8,  effect = "내구도 증가" },
+		{ id = "HOLLOW",       name = "속이 빔",    positive = false, weight = 15, effect = "내구도 감소" },
 	},
 
-	-- 자루 (Handle) 카테고리: 나뭇가지, 통나무, 판자, 뼈 등
+	-- 자루 (Handle) 카테고리: 뼈, 나무, 이빨 재료
 	HANDLE = {
-		{ id = "LIGHT",        name = "가벼움",     positive = true,  weight = 8  },
-		{ id = "STURDY",       name = "단단함",     positive = true,  weight = 8  },
-		{ id = "DENSE",        name = "치밀함",     positive = true,  weight = 8  },
-		{ id = "HIGH_DENSITY", name = "높은밀도",   positive = false, weight = 15 },
-		{ id = "SOFT",         name = "무름",       positive = false, weight = 15 },
-		{ id = "LOW_DENSITY",  name = "낮은밀도",   positive = false, weight = 15 },
+		{ id = "LIGHT",        name = "가벼움",     positive = true,  weight = 8,  effect = "치명타 확률 증가" },
+		{ id = "STURDY",       name = "단단함",     positive = true,  weight = 8,  effect = "공격력 증가" },
+		{ id = "DENSE_H",      name = "치밀함",     positive = true,  weight = 8,  effect = "치명타 피해량 증가" },
+		{ id = "HIGH_DENSITY", name = "높은 밀도",  positive = true,  weight = 8,  effect = "내구도 증가" },
+		{ id = "SOFT",         name = "무름",       positive = false, weight = 15, effect = "공격력 감소" },
+		{ id = "LOW_DENSITY",  name = "낮은 밀도",  positive = false, weight = 15, effect = "내구도 감소" },
 	},
 
-	-- 가죽 (Leather) 카테고리: 가죽, 깃털 등
+	-- 가죽 (Leather) 카테고리: 가죽, 깃털 류 (방어구용)
 	LEATHER = {
-		{ id = "L_HIGH_DENSITY", name = "높은밀도", positive = true,  weight = 6  },
-		{ id = "L_LOW_DENSITY",  name = "낮은밀도", positive = false, weight = 12 },
-		{ id = "COOL",           name = "시원함",   positive = true,  weight = 6  },
-		{ id = "BREATHABLE",     name = "통기성",   positive = true,  weight = 6  },
-		{ id = "FLUFFY",         name = "푹신함",   positive = true,  weight = 6  },
-		{ id = "THICK",          name = "두꺼움",   positive = false, weight = 12 },
-		{ id = "THIN",           name = "얇음",     positive = false, weight = 12 },
-		{ id = "TIGHT_WEAVE",    name = "촘촘함",   positive = true,  weight = 6  },
-		{ id = "LOOSE_WEAVE",    name = "엉성함",   positive = false, weight = 12 },
+		{ id = "L_HIGH_DENSITY", name = "높은밀도", positive = true,  weight = 6,  effect = "내구도 증가" },
+		{ id = "L_LOW_DENSITY",  name = "낮은밀도", positive = false, weight = 12, effect = "내구도 감소" },
+		{ id = "COOL",           name = "시원함",   positive = true,  weight = 6,  effect = "더위 내성" },
+		{ id = "BREATHABLE",     name = "통기성",   positive = true,  weight = 6,  effect = "습기 내성" },
+		{ id = "FLUFFY",         name = "푹신함",   positive = true,  weight = 6,  effect = "추위 내성" },
+		{ id = "THICK",          name = "두꺼움",   positive = true,  weight = 6,  effect = "체력 증가" },
+		{ id = "THIN",           name = "얇음",     positive = false, weight = 12, effect = "체력 감소" },
+		{ id = "TIGHT_WEAVE",    name = "촘촘함",   positive = true,  weight = 6,  effect = "방어력 증가" },
+		{ id = "LOOSE_WEAVE",    name = "엉성함",   positive = false, weight = 12, effect = "방어력 감소" },
 	},
 }
 
@@ -119,8 +121,9 @@ end
 
 --- 아이템에 속성 롤링
 --- @param itemId string 아이템 ID
---- @return string? 속성 ID (nil이면 무속성), number? 레벨 (1~3)
-function MaterialAttributeData.rollAttribute(itemId: string): (string?, number?)
+--- @param maxLevel number? 부여 가능한 최대 레벨 (드랍 대상의 level, 기본 1)
+--- @return string? 속성 ID (nil이면 무속성), number? 레벨
+function MaterialAttributeData.rollAttribute(itemId: string, maxLevel: number?): (string?, number?)
 	local category = MaterialAttributeData.ItemCategory[itemId]
 	if not category then
 		return nil, nil
@@ -140,7 +143,9 @@ function MaterialAttributeData.rollAttribute(itemId: string): (string?, number?)
 	local selected = weightedRandom(pool)
 	if not selected then return nil, nil end
 
-	return selected.id, 1
+	-- 레벨 롤링: 1 ~ maxLevel 범위
+	local level = math.random(1, math.max(1, maxLevel or 1))
+	return selected.id, level
 end
 
 --- 속성 ID로 속성 정보 조회
@@ -155,6 +160,7 @@ function MaterialAttributeData.getAttribute(attributeId: string): any?
 					name = attr.name,
 					positive = attr.positive,
 					weight = attr.weight,
+					effect = attr.effect,
 					category = category,
 				}
 			end
@@ -168,6 +174,76 @@ end
 --- @return string? 카테고리 ("BLADE" | "HANDLE" | "LEATHER" | nil)
 function MaterialAttributeData.getCategory(itemId: string): string?
 	return MaterialAttributeData.ItemCategory[itemId]
+end
+
+--========================================
+-- 속성 효과 수치 계산
+--========================================
+-- 각 속성이 레벨에 비례하여 부여하는 수치 보너스
+-- 반환값: { damageMult, critChance, critDamageMult, durabilityMult, harvestMult, maxHealthMult, defenseMult, heatResist, coldResist, humidResist }
+-- 모든 값은 0이 기본 (보너스 없음), 양수=버프, 음수=디버프
+
+local EFFECT_PER_LEVEL = {
+	-- BLADE 카테고리
+	SHARP        = { critChance = 0.03 },        -- 레벨당 치명타 확률 +3%
+	ROUNDED      = { critChance = -0.02 },        -- 레벨당 치명타 확률 -2%
+	POINTED      = { damageMult = 0.04 },         -- 레벨당 공격력 +4%
+	BLUNT        = { damageMult = -0.03 },        -- 레벨당 공격력 -3%
+	SOLID        = { durabilityMult = 0.05 },     -- 레벨당 내구도 +5%
+	HOLLOW       = { durabilityMult = -0.04 },    -- 레벨당 내구도 -4%
+
+	-- HANDLE 카테고리
+	LIGHT        = { critChance = 0.03 },         -- 레벨당 치명타 확률 +3%
+	STURDY       = { damageMult = 0.04 },         -- 레벨당 공격력 +4%
+	DENSE_H      = { critDamageMult = 0.06 },     -- 레벨당 치명타 피해량 +6%
+	HIGH_DENSITY = { durabilityMult = 0.05 },     -- 레벨당 내구도 +5%
+	SOFT         = { damageMult = -0.03 },        -- 레벨당 공격력 -3%
+	LOW_DENSITY  = { durabilityMult = -0.04 },    -- 레벨당 내구도 -4%
+
+	-- LEATHER 카테고리
+	L_HIGH_DENSITY = { durabilityMult = 0.05 },   -- 레벨당 내구도 +5%
+	L_LOW_DENSITY  = { durabilityMult = -0.04 },  -- 레벨당 내구도 -4%
+	COOL           = { heatResist = 0.05 },       -- 레벨당 더위 내성 +5%
+	BREATHABLE     = { humidResist = 0.05 },      -- 레벨당 습기 내성 +5%
+	FLUFFY         = { coldResist = 0.05 },       -- 레벨당 추위 내성 +5%
+	THICK          = { maxHealthMult = 0.03 },    -- 레벨당 체력 +3%
+	THIN           = { maxHealthMult = -0.02 },   -- 레벨당 체력 -2%
+	TIGHT_WEAVE    = { defenseMult = 0.04 },      -- 레벨당 방어력 +4%
+	LOOSE_WEAVE    = { defenseMult = -0.03 },     -- 레벨당 방어력 -3%
+}
+
+--- 속성 효과 수치를 레벨에 비례하여 계산
+--- @param attributeId string 속성 ID (예: "SHARP", "LIGHT")
+--- @param level number 속성 레벨 (1~)
+--- @return table { damageMult, critChance, critDamageMult, durabilityMult, harvestMult, maxHealthMult, defenseMult, heatResist, coldResist, humidResist }
+function MaterialAttributeData.getEffectValues(attributeId: string, level: number): any
+	local result = {
+		damageMult = 0,
+		critChance = 0,
+		critDamageMult = 0,
+		durabilityMult = 0,
+		harvestMult = 0,
+		maxHealthMult = 0,
+		defenseMult = 0,
+		heatResist = 0,
+		coldResist = 0,
+		humidResist = 0,
+	}
+
+	if not attributeId or not level or level <= 0 then
+		return result
+	end
+
+	local perLevel = EFFECT_PER_LEVEL[attributeId]
+	if not perLevel then
+		return result
+	end
+
+	for key, value in pairs(perLevel) do
+		result[key] = value * level
+	end
+
+	return result
 end
 
 return MaterialAttributeData

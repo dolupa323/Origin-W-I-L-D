@@ -209,6 +209,7 @@ local function onInventoryChanged(data)
 					itemId = item.itemId,
 					count = item.count,
 					durability = item.durability,
+					attributes = item.attributes,
 				}
 			end
 		end
@@ -223,6 +224,7 @@ local function onInventoryChanged(data)
 					itemId = change.itemId,
 					count = change.count,
 					durability = change.durability,
+					attributes = change.attributes,
 				}
 			end
 		end
@@ -313,6 +315,7 @@ function InventoryController.Init()
 					itemId = item.itemId,
 					count = item.count,
 					durability = item.durability,
+					attributes = item.attributes,
 				}
 			end
 			if fetchedData.equipment then equipmentCache = fetchedData.equipment end

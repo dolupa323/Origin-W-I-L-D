@@ -178,7 +178,7 @@ end
 local function _makeChange(storage: any, slot: number): any
 	local slotData = storage.slots[slot]
 	if slotData then
-		return { slot = slot, itemId = slotData.itemId, count = slotData.count }
+		return { slot = slot, itemId = slotData.itemId, count = slotData.count, durability = slotData.durability, attributes = slotData.attributes }
 	else
 		return { slot = slot, empty = true }
 	end

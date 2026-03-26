@@ -12,6 +12,9 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Balance = require(Shared.Config.Balance)
 local Enums = require(Shared.Enums.Enums)
 
+local Data = ReplicatedStorage:WaitForChild("Data")
+local MaterialAttributeData = require(Data.MaterialAttributeData)
+
 local CraftingService = {}
 
 --========================================
@@ -180,6 +183,114 @@ local function scaleInputs(inputs: { any }, multiplier: number): { any }
 	return out
 end
 
+--========================================
+-- Internal: 슬롯 지정 재료 차감 (재료 선택 UI용)
+--========================================
+local function consumeMaterialsBySlots(userId: number, materialSlots: { any }, recipe: any, craftCount: number): boolean
+	-- 0. 중복 슬롯 검출 (클라이언트 조작 방지)
+	local seenSlots = {}
+	for _, entry in ipairs(materialSlots) do
+		local slot = tonumber(entry.slot)
+		if not slot then return false end
+		if seenSlots[slot] then
+			warn(string.format("[CraftingService] Duplicate slot %d in materialSlots", slot))
+			return false
+		end
+		seenSlots[slot] = true
+	end
+	
+	-- 1. 선택된 슬롯들이 올바른 itemId를 가지고 있는지 검증 + 속성 정보 기록
+	local slotItemMap = {} -- [itemId] = { slot1, slot2, ... }
+	for _, entry in ipairs(materialSlots) do
+		local slot = tonumber(entry.slot)
+		local itemId = entry.itemId
+		if not slot or not itemId then
+			warn("[CraftingService] Invalid materialSlot entry")
+			return false
+		end
+		-- InventoryService를 통해 슬롯에 실제로 해당 아이템이 있는지 확인
+		local slotData = InventoryService.getSlot(userId, slot)
+		if not slotData or slotData.itemId ~= itemId then
+			warn(string.format("[CraftingService] Slot %d does not contain %s", slot, itemId))
+			return false
+		end
+		-- 속성 정보를 엔트리에 기록 (extractInheritedAttributes에서 사용)
+		entry.attributes = slotData.attributes
+		if not slotItemMap[itemId] then slotItemMap[itemId] = {} end
+		table.insert(slotItemMap[itemId], slot)
+	end
+	
+	-- 2. 레시피 요구량 대비 슬롯 수 검증
+	local scaledInputs = scaleInputs(recipe.inputs, craftCount)
+	for _, input in ipairs(scaledInputs) do
+		local selected = slotItemMap[input.itemId]
+		if not selected or #selected < input.count then
+			warn(string.format("[CraftingService] Not enough selected slots for %s: need %d, got %d",
+				input.itemId, input.count, selected and #selected or 0))
+			return false
+		end
+	end
+	
+	-- 3. 슬롯별 소비 (롤백 지원)
+	local consumedSlots = {} -- 롤백용
+	for _, entry in ipairs(materialSlots) do
+		local slot = tonumber(entry.slot)
+		local removed = InventoryService.removeItemFromSlot(userId, slot, 1)
+		if removed > 0 then
+			table.insert(consumedSlots, { slot = slot, itemId = entry.itemId, count = removed })
+		else
+			warn(string.format("[CraftingService] Failed to remove from slot %d (Rollback triggered)", slot))
+			-- 롤백
+			for _, prev in ipairs(consumedSlots) do
+				InventoryService.addItem(userId, prev.itemId, prev.count)
+			end
+			return false
+		end
+	end
+	
+	return true
+end
+
+--========================================
+-- Internal: 속성 상속 — materialSlots에서 결과물에 전달할 속성 추출 (다중 속성)
+-- 같은 속성 ID는 레벨 합산, 서로 다른 속성은 모두 보존
+--========================================
+local function extractInheritedAttributes(userId: number, materialSlots: {any}?, outputItemId: string): any?
+	if not materialSlots or #materialSlots == 0 then return nil end
+	
+	local outputCategory = MaterialAttributeData.getCategory(outputItemId)
+	
+	-- 같은 속성 ID끼리 레벨을 합산 (중첩 시스템)
+	-- 예: 가벼움 Lv1 + 가벼움 Lv1 → 가벼움 Lv2
+	-- 예: 가벼움 Lv1 + 날카로운 Lv2 → { LIGHT=1, SHARP=2 }
+	local attrSum = {} -- [attributeId] = 합산 레벨
+	
+	for _, entry in ipairs(materialSlots) do
+		if entry.attributes then
+			for attrId, level in pairs(entry.attributes) do
+				local include = false
+				if outputCategory then
+					local entryCategory = MaterialAttributeData.getCategory(entry.itemId)
+					if entryCategory == outputCategory then
+						include = true
+					end
+				else
+					-- 무기/도구는 모든 재료 속성 합산
+					include = true
+				end
+				if include then
+					attrSum[attrId] = (attrSum[attrId] or 0) + level
+				end
+			end
+		end
+	end
+	
+	if next(attrSum) then
+		return attrSum
+	end
+	return nil
+end
+
 local function getBatchCount(entry: any): number
 	return math.max(1, tonumber(entry and entry.batchCount) or 1)
 end
@@ -314,7 +425,7 @@ end
 --========================================
 -- Public API: 제작 시작
 --========================================
-function CraftingService.start(player: Player, recipeId: string, structureId: string?, count: number?)
+function CraftingService.start(player: Player, recipeId: string, structureId: string?, count: number?, materialSlots: {any}?)
 	local userId = player.UserId
 	local craftCount = math.max(1, math.floor(tonumber(count) or 1))
 	
@@ -377,16 +488,52 @@ function CraftingService.start(player: Player, recipeId: string, structureId: st
 	
 	-- === 실행 단계 ===
 	
-	-- 6. 재료 차감
-	local consumed = consumeMaterials(userId, requiredInputs)
+	-- 6. 재료 차감 (슬롯 지정 vs 기존 방식)
+	local consumed
+	if materialSlots and type(materialSlots) == "table" and #materialSlots > 0 then
+		consumed = consumeMaterialsBySlots(userId, materialSlots, recipe, craftCount)
+	else
+		consumed = consumeMaterials(userId, requiredInputs)
+	end
 	if not consumed then
 		return false, Enums.ErrorCode.INTERNAL_ERROR, nil
+	end
+	
+	-- 6a. 속성 상속 정보 추출 (소비 전에 materialSlots에 기록됨)
+	local inheritedAttributes = {} -- [outputItemId] = attributes table { [attrId] = level }
+	if materialSlots and type(materialSlots) == "table" and #materialSlots > 0 then
+		for _, output in ipairs(recipe.outputs) do
+			local attrs = extractInheritedAttributes(userId, materialSlots, output.itemId)
+			if attrs then
+				inheritedAttributes[output.itemId] = attrs
+			end
+		end
 	end
 	
 	-- 7. 즉시 제작
 	if realCraftTime <= 0 then -- Changed from == 0 to <= 0
 		for _, output in ipairs(recipe.outputs) do
-			InventoryService.addItem(userId, output.itemId, output.count * craftCount)
+			local outAttrs = inheritedAttributes[output.itemId]
+			-- 내구도 속성(durabilityMult) 적용: 모든 속성의 내구도 효과 합산
+			local outDurability = nil
+			if outAttrs then
+				local totalDurMult = 0
+				for attrId, level in pairs(outAttrs) do
+					local fx = MaterialAttributeData.getEffectValues(attrId, level)
+					if fx and fx.durabilityMult ~= 0 then
+						totalDurMult = totalDurMult + fx.durabilityMult
+					end
+				end
+				if totalDurMult ~= 0 then
+					local baseItemData = DataService.getItem(output.itemId)
+					if baseItemData and baseItemData.durability then
+						outDurability = math.max(1, math.floor(baseItemData.durability * (1 + totalDurMult)))
+					end
+				end
+			end
+			for _ = 1, output.count * craftCount do
+				InventoryService.addItem(userId, output.itemId, 1, outDurability, outAttrs)
+			end
 		end
 		
 		-- Phase 6: XP 보상
@@ -430,6 +577,7 @@ function CraftingService.start(player: Player, recipeId: string, structureId: st
 		unitDuration = math.max(1, perUnitDuration),
 		totalDuration = realCraftTime,
 		state = Enums.CraftState.CRAFTING,
+		inheritedAttributes = next(inheritedAttributes) and inheritedAttributes or nil,
 	}
 	
 	local queue = getQueue(userId)
@@ -558,10 +706,34 @@ function CraftingService.collect(player: Player, craftId: string, count: number?
 		end
 	end
 	
-	-- 결과물 추가
+	-- 결과물 추가 (속성 상속 포함)
 	for _, output in ipairs(recipe.outputs) do
 		local totalOut = output.count * collectCount
-		InventoryService.addItem(userId, output.itemId, totalOut)
+		local outAttrs = entry.inheritedAttributes and entry.inheritedAttributes[output.itemId]
+		-- 내구도 속성(durabilityMult) 적용: 모든 속성의 내구도 효과 합산
+		local outDurability = nil
+		if outAttrs then
+			local totalDurMult = 0
+			for attrId, level in pairs(outAttrs) do
+				local fx = MaterialAttributeData.getEffectValues(attrId, level)
+				if fx and fx.durabilityMult ~= 0 then
+					totalDurMult = totalDurMult + fx.durabilityMult
+				end
+			end
+			if totalDurMult ~= 0 then
+				local baseItemData = DataService.getItem(output.itemId)
+				if baseItemData and baseItemData.durability then
+					outDurability = math.max(1, math.floor(baseItemData.durability * (1 + totalDurMult)))
+				end
+			end
+		end
+		if outAttrs then
+			for _ = 1, totalOut do
+				InventoryService.addItem(userId, output.itemId, 1, outDurability, outAttrs)
+			end
+		else
+			InventoryService.addItem(userId, output.itemId, totalOut)
+		end
 	end
 	
 	-- 3a. 경험치 보상 (Phase 6)
@@ -806,12 +978,25 @@ function CraftingService.GetHandlers()
 			local recipeId = payload.recipeId
 			local structureId = payload.structureId  -- optional
 			local count = payload.count
+			local materialSlots = payload.materialSlots -- optional: [{slot, itemId}]
 			
 			if not recipeId or type(recipeId) ~= "string" then
 				return { success = false, errorCode = Enums.ErrorCode.BAD_REQUEST }
 			end
 			
-			local success, errorCode, data = CraftingService.start(player, recipeId, structureId, count)
+			-- materialSlots 데이터 검증
+			if materialSlots ~= nil then
+				if type(materialSlots) ~= "table" then
+					return { success = false, errorCode = Enums.ErrorCode.BAD_REQUEST }
+				end
+				for _, entry in ipairs(materialSlots) do
+					if type(entry) ~= "table" or not entry.slot or not entry.itemId then
+						return { success = false, errorCode = Enums.ErrorCode.BAD_REQUEST }
+					end
+				end
+			end
+			
+			local success, errorCode, data = CraftingService.start(player, recipeId, structureId, count, materialSlots)
 			if not success then
 				return { success = false, errorCode = errorCode }
 			end

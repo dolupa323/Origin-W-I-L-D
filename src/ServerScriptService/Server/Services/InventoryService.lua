@@ -210,7 +210,7 @@ end
 --========================================
 
 --- ?�롯 ?�정 (?��???
-local function _setSlot(inv: any, slot: number, itemId: string?, count: number?, durability: number?)
+local function _setSlot(inv: any, slot: number, itemId: string?, count: number?, durability: number?, attributes: any?)
 	if itemId == nil or count == nil or count <= 0 then
 		inv.slots[slot] = nil
 	else
@@ -218,6 +218,7 @@ local function _setSlot(inv: any, slot: number, itemId: string?, count: number?,
 			itemId = itemId,
 			count = count,
 			durability = durability,
+			attributes = attributes,
 		}
 	end
 end
@@ -236,7 +237,7 @@ local function _decreaseSlot(inv: any, slot: number, count: number)
 end
 
 --- ?�롯???�량 증�? (?�는 ?�로 ?�성)
-local function _increaseSlot(inv: any, slot: number, itemId: string, count: number, durability: number?)
+local function _increaseSlot(inv: any, slot: number, itemId: string, count: number, durability: number?, attributes: any?)
 	local slotData = inv.slots[slot]
 	if slotData then
 		slotData.count = slotData.count + count
@@ -245,6 +246,7 @@ local function _increaseSlot(inv: any, slot: number, itemId: string, count: numb
 			itemId = itemId,
 			count = count,
 			durability = durability,
+			attributes = attributes,
 		}
 	end
 end
@@ -305,7 +307,7 @@ end
 local function _makeChange(inv: any, slot: number): {slot: number, itemId: string?, count: number?, empty: boolean?, durability: number?}
 	local slotData = inv.slots[slot]
 	if slotData then
-		return { slot = slot, itemId = slotData.itemId, count = slotData.count, durability = slotData.durability }
+		return { slot = slot, itemId = slotData.itemId, count = slotData.count, durability = slotData.durability, attributes = slotData.attributes }
 	else
 		return { slot = slot, empty = true }
 	end
@@ -543,6 +545,7 @@ function InventoryService.getOrCreateInventory(userId: number): any
 					itemId = node.itemId,
 					count = node.count or 1,
 					durability = node.durability,
+					attributes = (node.attributes) or (node.attribute and node.attributeLevel and { [node.attribute] = node.attributeLevel }) or nil,
 				}
 			end
 		end
@@ -594,6 +597,7 @@ function InventoryService.getOrCreateInventory(userId: number): any
 						itemId = node.itemId,
 						extra = node.count - 1,
 						durability = node.durability,
+						attributes = node.attributes,
 					})
 					node.count = 1
 				end
@@ -608,6 +612,7 @@ function InventoryService.getOrCreateInventory(userId: number): any
 							itemId = expand.itemId,
 							count = 1,
 							durability = expand.durability,
+							attributes = expand.attributes,
 						}
 						placed = true
 						break
@@ -722,7 +727,7 @@ function InventoryService.move(player: Player, fromSlot: number, toSlot: number,
 	
 	if toData == nil then
 		-- ?�???�롯??비어?�으�? ?�순 ?�동
-		_increaseSlot(inv, toSlot, fromData.itemId, moveCount, fromData.durability)
+		_increaseSlot(inv, toSlot, fromData.itemId, moveCount, fromData.durability, fromData.attributes)
 		_decreaseSlot(inv, fromSlot, moveCount)
 		
 		table.insert(changes, _makeChange(inv, fromSlot))
@@ -736,7 +741,7 @@ function InventoryService.move(player: Player, fromSlot: number, toSlot: number,
 			local actualMove = math.min(moveCount, canAdd)
 			
 			if actualMove > 0 then
-				_increaseSlot(inv, toSlot, fromData.itemId, actualMove, fromData.durability)
+				_increaseSlot(inv, toSlot, fromData.itemId, actualMove, fromData.durability, fromData.attributes)
 				_decreaseSlot(inv, fromSlot, actualMove)
 				
 				table.insert(changes, _makeChange(inv, fromSlot))
@@ -825,7 +830,7 @@ function InventoryService.split(player: Player, fromSlot: number, toSlot: number
 	local fromData = inv.slots[fromSlot]
 	
 	-- 분할 ?�용
-	_setSlot(inv, toSlot, fromData.itemId, count, fromData.durability)
+	_setSlot(inv, toSlot, fromData.itemId, count, fromData.durability, fromData.attributes)
 	_decreaseSlot(inv, fromSlot, count)
 	
 	local changes = {
@@ -997,7 +1002,7 @@ function InventoryService.MoveInternal(
 	
 	if targetData == nil then
 		-- ?��??�롯??비어?�으�? ?�순 ?�동
-		_increaseSlot(targetContainer, targetSlot, sourceData.itemId, moveCount, sourceData.durability)
+		_increaseSlot(targetContainer, targetSlot, sourceData.itemId, moveCount, sourceData.durability, sourceData.attributes)
 		_decreaseSlot(sourceContainer, sourceSlot, moveCount)
 		
 		table.insert(sourceChanges, _makeChange(sourceContainer, sourceSlot))
@@ -1011,7 +1016,7 @@ function InventoryService.MoveInternal(
 			local actualMove = math.min(moveCount, canAdd)
 			
 			if actualMove > 0 then
-				_increaseSlot(targetContainer, targetSlot, sourceData.itemId, actualMove, sourceData.durability)
+				_increaseSlot(targetContainer, targetSlot, sourceData.itemId, actualMove, sourceData.durability, sourceData.attributes)
 				_decreaseSlot(sourceContainer, sourceSlot, actualMove)
 				
 				table.insert(sourceChanges, _makeChange(sourceContainer, sourceSlot))
@@ -1065,7 +1070,7 @@ end
 
 --- ?�이??추�? (�??�롯 ?�는 기존 ?�택??
 --- 반환: 추�????�량, ?��? ?�량
-function InventoryService.addItem(userId: number, itemId: string, count: number, durability: number?): (number, number)
+function InventoryService.addItem(userId: number, itemId: string, count: number, durability: number?, attributes: any?): (number, number)
 	local inv = playerInventories[userId]
 	if not inv then
 		return 0, count
@@ -1141,6 +1146,7 @@ function InventoryService.addItem(userId: number, itemId: string, count: number,
 				itemId = itemId,
 				count = canAdd,
 				durability = maxDurability,
+				attributes = attributes,
 			}
 			remaining = remaining - canAdd
 			added = added + canAdd
@@ -1207,6 +1213,7 @@ function InventoryService.sort(userId: number)
 					itemId = item.itemId,
 					count = 1,
 					durability = item.durability,
+					attributes = item.attributes,
 				})
 			end
 		elseif remaining > 0 then
@@ -1214,6 +1221,7 @@ function InventoryService.sort(userId: number)
 				itemId = item.itemId,
 				count = remaining,
 				durability = item.durability,
+				attributes = item.attributes,
 			})
 		end
 	end
@@ -1227,6 +1235,7 @@ function InventoryService.sort(userId: number)
 			itemId = item.itemId,
 			count = item.count,
 			durability = item.durability,
+			attributes = item.attributes,
 		}
 	end
 	
@@ -1388,6 +1397,7 @@ function InventoryService.getFullInventory(userId: number): {{slot: number, item
 				itemId = slotData.itemId,
 				count = slotData.count,
 				durability = slotData.durability,
+				attributes = slotData.attributes,
 			})
 		end
 	end

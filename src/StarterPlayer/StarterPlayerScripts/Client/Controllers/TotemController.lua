@@ -284,24 +284,9 @@ local function renderPreviewRing(centerPos: Vector3, radius: number, color: Colo
 
 	local terrainY = centerY
 	local rayParams = RaycastParams.new()
-	rayParams.FilterType = Enum.RaycastFilterType.Exclude
-	local excludeList = {}
-	-- Facilities 전체 제외 (토템, 작업대 등 모든 건축물 위에 레이가 멈추지 않도록)
-	local facilitiesFolder = workspace:FindFirstChild("Facilities")
-	if facilitiesFolder then
-		table.insert(excludeList, facilitiesFolder)
-	end
-	local localCharacter = Players.LocalPlayer and Players.LocalPlayer.Character
-	if localCharacter then
-		table.insert(excludeList, localCharacter)
-	end
-	if previewFillPart then
-		table.insert(excludeList, previewFillPart)
-	end
-	if previewBorderPart then
-		table.insert(excludeList, previewBorderPart)
-	end
-	rayParams.FilterDescendantsInstances = excludeList
+	-- 지형(Terrain)만 감지하여 나무/풀/건물 등 위에 영역이 뜨지 않도록 함
+	rayParams.FilterType = Enum.RaycastFilterType.Include
+	rayParams.FilterDescendantsInstances = { workspace.Terrain }
 	local rayResult = workspace:Raycast(Vector3.new(centerX, centerY + 180, centerZ), Vector3.new(0, -500, 0), rayParams)
 	if rayResult then
 		terrainY = rayResult.Position.Y

@@ -15,6 +15,9 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Balance = require(Shared.Config.Balance)
 local Enums = require(Shared.Enums.Enums)
 
+local Data = ReplicatedStorage:WaitForChild("Data")
+local MaterialAttributeData = require(Data.MaterialAttributeData)
+
 local Server = ServerScriptService:WaitForChild("Server")
 local Services = Server:WaitForChild("Services")
 
@@ -305,7 +308,7 @@ end
 
 --- 드롭 생성
 --- 반환: (success, errorCode?, data?)
-function WorldDropService.spawnDrop(pos: Vector3, itemId: string, count: number, durability: number?): (boolean, string?, any?)
+function WorldDropService.spawnDrop(pos: Vector3, itemId: string, count: number, durability: number?, sourceLevel: number?): (boolean, string?, any?)
 	-- 아이템 존재 검증
 	local itemData = DataService.getItem(itemId)
 	if not itemData then
@@ -330,6 +333,71 @@ function WorldDropService.spawnDrop(pos: Vector3, itemId: string, count: number,
 		return true, nil, { merged = true, dropId = mergeTarget.dropId, count = mergeTarget.count }
 	end
 	
+	-- 재료 속성 롤링 (sourceLevel 기반) — 개별 아이템별로 속성 롤링
+	local canHaveAttr = sourceLevel and sourceLevel > 0 and MaterialAttributeData.ItemCategory[itemId]
+	
+	if canHaveAttr and count > 1 then
+		-- count > 1: 개별 롤링 후 동일 속성끼리 그룹화
+		local groups = {} -- key = attrId or "__NONE__", value = { attrs = {..} or nil, count = n }
+		for _ = 1, count do
+			local attr, attrLv = MaterialAttributeData.rollAttribute(itemId, sourceLevel)
+			if attr and attrLv then
+				local key = attr .. "_" .. tostring(attrLv)
+				if groups[key] then
+					groups[key].count = groups[key].count + 1
+				else
+					groups[key] = { attrs = { [attr] = attrLv }, count = 1 }
+				end
+			else
+				if groups["__NONE__"] then
+					groups["__NONE__"].count = groups["__NONE__"].count + 1
+				else
+					groups["__NONE__"] = { attrs = nil, count = 1 }
+				end
+			end
+		end
+		
+		-- 그룹별 드롭 생성
+		local firstResult = nil
+		local now = tick()
+		local despawnSeconds = getDespawnSeconds(itemId)
+		for _, group in pairs(groups) do
+			local drop = {
+				dropId = generateDropId(),
+				pos = pos,
+				itemId = itemId,
+				count = group.count,
+				durability = durability,
+				attributes = group.attrs,
+				spawnedAt = now,
+				despawnAt = now + despawnSeconds,
+				inactive = false,
+			}
+			drops[drop.dropId] = drop
+			dropCount = dropCount + 1
+			indexDropForMerge(drop)
+			emitSpawned(drop)
+			if not firstResult then
+				firstResult = { merged = false, dropId = drop.dropId, count = drop.count }
+			end
+		end
+		
+		if dropCount > Balance.DROP_CAP then
+			pruneOldestDrops()
+		end
+		
+		return true, nil, firstResult
+	end
+	
+	-- count == 1 또는 속성 없는 아이템: 기존 방식
+	local attributes = nil
+	if canHaveAttr then
+		local attr, attrLv = MaterialAttributeData.rollAttribute(itemId, sourceLevel)
+		if attr and attrLv then
+			attributes = { [attr] = attrLv }
+		end
+	end
+	
 	-- 새 드롭 생성
 	local now = tick()
 	local despawnSeconds = getDespawnSeconds(itemId)
@@ -339,7 +407,8 @@ function WorldDropService.spawnDrop(pos: Vector3, itemId: string, count: number,
 		pos = pos,
 		itemId = itemId,
 		count = count,
-		durability = durability, -- 내구도 보존
+		durability = durability,
+		attributes = attributes,
 		spawnedAt = now,
 		despawnAt = now + despawnSeconds,
 		inactive = false,
@@ -390,7 +459,8 @@ function WorldDropService.loot(player: Player, dropId: string): (boolean, string
 	-- DNA 타입 아이템: 인벤토리에 추가 + 특별 알림
 	local itemData = DataService.getItem(drop.itemId)
 	if itemData and itemData.type == "DNA" then
-		local added, remaining = InventoryService.addItem(userId, drop.itemId, drop.count, drop.durability)
+		local dropAttrs = (drop.attribute and drop.attributeLevel) and { [drop.attribute] = drop.attributeLevel } or drop.attributes
+		local added, remaining = InventoryService.addItem(userId, drop.itemId, drop.count, drop.durability, dropAttrs)
 		if added <= 0 then
 			return false, Enums.ErrorCode.INV_FULL, nil
 		end
@@ -425,7 +495,8 @@ function WorldDropService.loot(player: Player, dropId: string): (boolean, string
 	end
 
 	-- 일반 아이템: 인벤토리에 추가
-	local added, remaining = InventoryService.addItem(userId, drop.itemId, drop.count, drop.durability)
+	local dropAttrs2 = (drop.attribute and drop.attributeLevel) and { [drop.attribute] = drop.attributeLevel } or drop.attributes
+	local added, remaining = InventoryService.addItem(userId, drop.itemId, drop.count, drop.durability, dropAttrs2)
 	
 	if added <= 0 then
 		return false, Enums.ErrorCode.INV_FULL, nil

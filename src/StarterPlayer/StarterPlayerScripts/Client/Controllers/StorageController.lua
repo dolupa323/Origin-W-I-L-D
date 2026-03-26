@@ -104,6 +104,8 @@ local function onStorageChanged(data)
 					if si.slot == change.slot then
 						si.itemId = change.itemId
 						si.count = change.count
+						si.durability = change.durability
+						si.attributes = change.attributes
 						found = true
 						break
 					end
@@ -112,7 +114,9 @@ local function onStorageChanged(data)
 					table.insert(storageData.slots, {
 						slot = change.slot,
 						itemId = change.itemId,
-						count = change.count
+						count = change.count,
+						durability = change.durability,
+						attributes = change.attributes,
 					})
 				end
 			end

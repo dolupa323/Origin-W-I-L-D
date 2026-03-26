@@ -10,6 +10,7 @@ local RunService = game:GetService("RunService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local CollectionService = game:GetService("CollectionService")
 local NetClient = require(script.Parent.Parent.NetClient)
+local DataHelper = require(ReplicatedStorage.Shared.Util.DataHelper)
 
 local ResourceUIController = {}
 
@@ -94,11 +95,21 @@ local function createHPBar(nodeModel, nodeUID, maxHits)
 	cornerMain.CornerRadius = UDim.new(0, 4)
 	cornerMain.Parent = mainFrame
 	
-	-- 이름 텍스트
+	-- 이름 텍스트 (레벨 포함)
+	local nodeId = nodeModel:GetAttribute("NodeId") or ""
+	local nodeData = DataHelper.GetData("ResourceNodeData", nodeId)
+	local displayName = nodeModel.Name
+	if nodeData then
+		displayName = (nodeData.name or nodeModel.Name)
+		if nodeData.level then
+			displayName = "Lv." .. nodeData.level .. " " .. displayName
+		end
+	end
+	
 	local label = Instance.new("TextLabel")
 	label.Size = UDim2.new(1, 0, 0.4, 0)
 	label.BackgroundTransparency = 1
-	label.Text = nodeModel.Name
+	label.Text = displayName
 	label.TextColor3 = Color3.fromRGB(255, 255, 255)
 	label.TextTransparency = 0.5
 	label.TextSize = 8 -- 글씨 아주 작게 축소 (10 -> 8)

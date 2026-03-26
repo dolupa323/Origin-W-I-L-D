@@ -498,12 +498,16 @@ function CreatureService.spawn(creatureId, position)
 	cornerMain.CornerRadius = UDim.new(0, 4)
 	cornerMain.Parent = mainFrame
 	
-	-- 이름 텍스트
+	-- 이름 텍스트 (레벨 포함)
 	local nameLabel = Instance.new("TextLabel")
 	nameLabel.Name = "NameLabel"
 	nameLabel.Size = UDim2.new(1, 0, 0.4, 0)
 	nameLabel.BackgroundTransparency = 1
-	nameLabel.Text = data.name or creatureId
+	local creatureName = data.name or creatureId
+	if data.level then
+		creatureName = "Lv." .. data.level .. " " .. creatureName
+	end
+	nameLabel.Text = creatureName
 	nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 	nameLabel.TextTransparency = 0.5
 	nameLabel.TextStrokeTransparency = 1 -- 텍스트 외곽선 제거

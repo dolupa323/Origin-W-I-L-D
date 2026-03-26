@@ -9,6 +9,7 @@ local ResourceNodeData = {
 	{
 		id = "GROUND_BRANCH",
 		name = "나뭇가지",
+		level = 1,
 		modelName = "Twig",
 		nodeType = "TREE",
 		optimalTool = nil,
@@ -23,6 +24,7 @@ local ResourceNodeData = {
 	{
 		id = "GROUND_STONE",
 		name = "잔돌",
+		level = 1,
 		modelName = "SmallStone",
 		nodeType = "ROCK",
 		optimalTool = nil,
@@ -37,6 +39,7 @@ local ResourceNodeData = {
 	{
 		id = "GROUND_FIBER",
 		name = "섬유",
+		level = 1,
 		modelName = "Grass", -- 기존 Grass 모델 사용
 		nodeType = "FIBER",
 		optimalTool = nil,
@@ -55,6 +58,7 @@ local ResourceNodeData = {
 	{
 		id = "BUSH_BERRY",
 		name = "열매 덤불",
+		level = 2,
 		modelName = "BerryBush",
 		nodeType = "BUSH",
 		optimalTool = nil,
@@ -75,6 +79,7 @@ local ResourceNodeData = {
 	{
 		id = "TREE_THIN",
 		name = "가는 나무",
+		level = 3,
 		modelName = "TREE_THIN",
 		nodeType = "TREE",
 		optimalTool = "AXE",
@@ -89,6 +94,7 @@ local ResourceNodeData = {
 	{
 		id = "ROCK_SOFT",
 		name = "무른 바위",
+		level = 3,
 		modelName = "SoftRock",
 		nodeType = "ROCK",
 		optimalTool = "PICKAXE",
@@ -107,6 +113,7 @@ local ResourceNodeData = {
 	{
 		id = "TREE_OAK",
 		name = "참나무",
+		level = 5,
 		modelName = "OakTree",
 		nodeType = "TREE",
 		optimalTool = "AXE",
@@ -121,6 +128,7 @@ local ResourceNodeData = {
 	{
 		id = "ROCK_NORMAL",
 		name = "바위",
+		level = 5,
 		modelName = "Rock",
 		nodeType = "ROCK",
 		optimalTool = "PICKAXE",
@@ -139,6 +147,7 @@ local ResourceNodeData = {
 	{
 		id = "ORE_COPPER",
 		name = "구리 광맥",
+		level = 7,
 		modelName = "CopperOre",
 		nodeType = "ORE",
 		optimalTool = "PICKAXE",
@@ -153,6 +162,7 @@ local ResourceNodeData = {
 	{
 		id = "ORE_TIN",
 		name = "주석 광맥",
+		level = 7,
 		modelName = "TinOre",
 		nodeType = "ORE",
 		optimalTool = "PICKAXE",
@@ -167,6 +177,7 @@ local ResourceNodeData = {
 	{
 		id = "ORE_IRON",
 		name = "철 광맥",
+		level = 10,
 		modelName = "IronOre",
 		nodeType = "ORE",
 		optimalTool = "PICKAXE",
@@ -181,6 +192,7 @@ local ResourceNodeData = {
 	{
 		id = "ORE_COAL",
 		name = "석탄 광맥",
+		level = 8,
 		modelName = "CoalOre",
 		nodeType = "ORE",
 		optimalTool = "PICKAXE",
