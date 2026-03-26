@@ -394,7 +394,8 @@ function InventoryService.equipItem(player: Player, inventorySlot: number, equip
 	local oldEquip = inv.equipment[targetSlot]
 	inv.equipment[targetSlot] = {
 		itemId = slotData.itemId,
-		durability = slotData.durability
+		durability = slotData.durability,
+		attributes = slotData.attributes,
 	}
 	
 	-- ?�벤?�리?�서 ?�거 (1개만)
@@ -406,7 +407,7 @@ function InventoryService.equipItem(player: Player, inventorySlot: number, equip
 	
 	-- 기존 ?�비가 ?�었?�면 ?�벤?�리�?복구
 	if oldEquip then
-		InventoryService.addItem(userId, oldEquip.itemId, 1, oldEquip.durability)
+		InventoryService.addItem(userId, oldEquip.itemId, 1, oldEquip.durability, oldEquip.attributes)
 	end
 	
 	-- ?�태 ?�???�청
@@ -442,7 +443,7 @@ function InventoryService.unequipItem(player: Player, equipmentSlotName: string)
 	if not oldEquip then return false, Enums.ErrorCode.SLOT_EMPTY end
 	
 	-- ?�벤?�리??공간 ?�는지 체크
-	local added, remaining = InventoryService.addItem(userId, oldEquip.itemId, 1, oldEquip.durability)
+	local added, remaining = InventoryService.addItem(userId, oldEquip.itemId, 1, oldEquip.durability, oldEquip.attributes)
 	if added == 0 then
 		return false, Enums.ErrorCode.INV_FULL
 	end

@@ -8,6 +8,9 @@ local C = Theme.Colors
 local F = Theme.Fonts
 local T = Theme.Transp
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local MaterialAttributeData = require(ReplicatedStorage:WaitForChild("Data").MaterialAttributeData)
+
 local EquipmentUI = {}
 
 EquipmentUI.Refs = {
@@ -26,6 +29,9 @@ local _UIManager = nil -- UIManager 참조 저장용
 function EquipmentUI.SetVisible(visible)
 	if EquipmentUI.Refs.Frame then
 		EquipmentUI.Refs.Frame.Visible = visible
+	end
+	if not visible and EquipmentUI.Refs.Tooltip then
+		EquipmentUI.Refs.Tooltip.Visible = false
 	end
 end
 
@@ -109,7 +115,15 @@ function EquipmentUI.Init(parent, UIManager, Enums, isMobile)
 		})
 		
 		slot.click.MouseButton1Click:Connect(function()
-			if _UIManager.onEquipmentSlotClick then _UIManager.onEquipmentSlotClick(conf.id) end
+			local now = tick()
+			if slot._lastClickTime and (now - slot._lastClickTime) < 0.4 then
+				-- 더블클릭 → 장비 해제
+				if _UIManager.onEquipmentSlotRightClick then _UIManager.onEquipmentSlotRightClick(conf.id) end
+				slot._lastClickTime = nil
+			else
+				slot._lastClickTime = now
+				if _UIManager.onEquipmentSlotClick then _UIManager.onEquipmentSlotClick(conf.id) end
+			end
 		end)
 		slot.click.MouseButton2Click:Connect(function()
 			if _UIManager.onEquipmentSlotRightClick then _UIManager.onEquipmentSlotRightClick(conf.id) end
@@ -192,21 +206,41 @@ function EquipmentUI.Init(parent, UIManager, Enums, isMobile)
 	Utils.mkBtn({text=UILocalizer.Localize("초기화"), size=UDim2.new(0.45,0,0.8,0), bg=C.BTN, font=F.TITLE, fn=function() UIManager.cancelPendingStats() end, parent=actionFrame})
 	
 	-- [New] Tooltip Frame (Initially Hidden)
+	local TT_W = 280
 	EquipmentUI.Refs.Tooltip = Utils.mkFrame({
 		name = "Tooltip",
-		size = UDim2.new(0, 220, 0, 160),
+		size = UDim2.new(0, TT_W, 0, 40),
 		bg = C.BG_DARK,
-		bgT = 0.15,
+		bgT = 0.08,
 		r = 6, stroke = 1.5, strokeC = C.GOLD,
 		vis = false,
-		parent = parent -- ScreenGui parent to show above everything
+		parent = parent
 	})
 	EquipmentUI.Refs.Tooltip.ZIndex = 100
+	EquipmentUI.Refs.Tooltip.AutomaticSize = Enum.AutomaticSize.Y
 	
 	local tt = EquipmentUI.Refs.Tooltip
-	EquipmentUI.Refs.TooltipName = Utils.mkLabel({text=UILocalizer.Localize("아이템 이름"), size=UDim2.new(1,-20,0,30), pos=UDim2.new(0,10,0,5), ts=16, font=F.TITLE, color=C.GOLD, ax=Enum.TextXAlignment.Left, parent=tt})
-	EquipmentUI.Refs.TooltipInfo = Utils.mkLabel({text=UILocalizer.Localize("정보"), size=UDim2.new(1,-20,1,-70), pos=UDim2.new(0,10,0,35), ts=14, color=C.WHITE, ax=Enum.TextXAlignment.Left, ay=Enum.TextYAlignment.Top, wrap=true, rich=true, parent=tt})
-	EquipmentUI.Refs.TooltipSet = Utils.mkLabel({text=UILocalizer.Localize("[ 세트 효과 ]"), size=UDim2.new(1,-20,0,30), pos=UDim2.new(0,10,1,-5), anchor=Vector2.new(0,1), ts=13, color=Color3.fromRGB(120, 200, 80), ax=Enum.TextXAlignment.Left, wrap=true, rich=true, parent=tt})
+	
+	-- 내부 레이아웃 컨테이너
+	local ttContent = Instance.new("Frame")
+	ttContent.Name = "Content"
+	ttContent.Size = UDim2.new(1, -16, 0, 0)
+	ttContent.Position = UDim2.new(0, 8, 0, 8)
+	ttContent.BackgroundTransparency = 1
+	ttContent.AutomaticSize = Enum.AutomaticSize.Y
+	ttContent.Parent = tt
+	
+	-- 하단 패딩용
+	local ttPadding = Instance.new("UIPadding")
+	ttPadding.PaddingBottom = UDim.new(0, 10)
+	ttPadding.Parent = tt
+	
+	local ttLayout = Instance.new("UIListLayout")
+	ttLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	ttLayout.Padding = UDim.new(0, 3)
+	ttLayout.Parent = ttContent
+	EquipmentUI.Refs.TooltipContent = ttContent
+	EquipmentUI.Refs.TooltipLayout = ttLayout
 
 	if tooltipMoveConn then
 		tooltipMoveConn:Disconnect()
@@ -226,9 +260,16 @@ function EquipmentUI.Refresh(cachedStats, totalPending, equipmentData, getItemIc
 	
 	-- 장비 아이콘 업데이트 및 호버 이벤트
 	if equipmentData then
-		local ReplicatedStorage = game:GetService("ReplicatedStorage")
 		local ArmorSetData = require(ReplicatedStorage:WaitForChild("Data").ArmorSetData)
 		local DataHelper = require(ReplicatedStorage:WaitForChild("Shared").Util.DataHelper)
+		
+		-- 현재 장착 중인 아이템 ID 목록 (세트효과 판정용)
+		local equippedItemIds = {}
+		for _, eqItem in pairs(equipmentData) do
+			if eqItem and eqItem.itemId then
+				equippedItemIds[eqItem.itemId] = true
+			end
+		end
 		
 		for name, slot in pairs(refs.Slots) do
 			if slot._hoverConnEnter then
@@ -238,6 +279,11 @@ function EquipmentUI.Refresh(cachedStats, totalPending, equipmentData, getItemIc
 			if slot._hoverConnLeave then
 				slot._hoverConnLeave:Disconnect()
 				slot._hoverConnLeave = nil
+			end
+
+			if slot._hoverConnLeave2 then
+				slot._hoverConnLeave2:Disconnect()
+				slot._hoverConnLeave2 = nil
 			end
 
 			local item = equipmentData[name]
@@ -261,43 +307,271 @@ function EquipmentUI.Refresh(cachedStats, totalPending, equipmentData, getItemIc
 				
 				-- 툴팁 이벤트 연결
 				slot._hoverConnEnter = slot.click.MouseEnter:Connect(function()
-					if not EquipmentUI.Refs.Tooltip then return end
-					EquipmentUI.Refs.Tooltip.Visible = true
-					EquipmentUI.Refs.TooltipName.Text = UILocalizer.Localize(itemData.name)
-
-					local info = string.format("%s: %s", UILocalizer.Localize("등급"), itemData.rarity or "COMMON")
-					if itemData.type == "ARMOR" then
-						info = info .. string.format("\n%s: %d", UILocalizer.Localize("방어력"), itemData.defense or 0)
-					elseif itemData.type == "TOOL" or itemData.type == "WEAPON" then
-						info = info .. string.format("\n%s: %d", UILocalizer.Localize("공격력"), itemData.damage or 0)
-					end
-
-					if itemData.durability then
-						info = info .. string.format("\n%s: %d/%d", UILocalizer.Localize("내구도"), item.durability or 0, itemData.durability or 0)
-					end
-
-					if itemData.description and itemData.description ~= "" then
-						info = info .. string.format("\n\n%s", UILocalizer.Localize(itemData.description))
-					end
-
-					EquipmentUI.Refs.TooltipInfo.Text = UILocalizer.Localize(info)
+					local ttRef = EquipmentUI.Refs.Tooltip
+					local ttCont = EquipmentUI.Refs.TooltipContent
+					if not ttRef or not ttCont then return end
 					
+					-- 기존 행 정리
+					for _, child in ipairs(ttCont:GetChildren()) do
+						if child:IsA("Frame") or child:IsA("TextLabel") then child:Destroy() end
+					end
+					
+					local order = 0
+					local TT_TS = 13 -- 툴팁 텍스트 사이즈
+					
+					-- 헬퍼: 제목 라벨
+					local function addTitle(text, color, fontSize)
+						order = order + 1
+						local lbl = Instance.new("TextLabel")
+						lbl.Name = "TT_" .. order
+						lbl.Size = UDim2.new(1, 0, 0, fontSize + 6)
+						lbl.BackgroundTransparency = 1
+						lbl.Text = text
+						lbl.TextColor3 = color
+						lbl.TextSize = fontSize
+						lbl.Font = F.TITLE
+						lbl.TextXAlignment = Enum.TextXAlignment.Left
+						lbl.LayoutOrder = order
+						lbl.Parent = ttCont
+					end
+					
+					-- 헬퍼: 스탯 행 (라벨 + 값)
+					local function addStatRow(label, value, hexColor)
+						order = order + 1
+						local row = Instance.new("Frame")
+						row.Name = "Row_" .. order
+						row.Size = UDim2.new(1, 0, 0, TT_TS + 4)
+						row.BackgroundTransparency = 1
+						row.LayoutOrder = order
+						row.Parent = ttCont
+						
+						local nameL = Instance.new("TextLabel")
+						nameL.Size = UDim2.new(0.55, 0, 1, 0)
+						nameL.BackgroundTransparency = 1
+						nameL.Text = label
+						nameL.TextColor3 = Color3.fromHex("#AAAAAA")
+						nameL.TextSize = TT_TS
+						nameL.Font = F.NORMAL
+						nameL.TextXAlignment = Enum.TextXAlignment.Left
+						nameL.Parent = row
+						
+						local valL = Instance.new("TextLabel")
+						valL.Size = UDim2.new(0.45, 0, 1, 0)
+						valL.Position = UDim2.new(0.55, 0, 0, 0)
+						valL.BackgroundTransparency = 1
+						valL.Text = value
+						valL.TextColor3 = Color3.fromHex(hexColor)
+						valL.TextSize = TT_TS
+						valL.Font = F.TITLE
+						valL.TextXAlignment = Enum.TextXAlignment.Left
+						valL.Parent = row
+					end
+					
+					-- 헬퍼: 구분선
+					local function addSep()
+						order = order + 1
+						local sep = Instance.new("Frame")
+						sep.Name = "Sep_" .. order
+						sep.Size = UDim2.new(1, 0, 0, 1)
+						sep.BackgroundColor3 = Color3.fromHex("#555555")
+						sep.BackgroundTransparency = 0.5
+						sep.BorderSizePixel = 0
+						sep.LayoutOrder = order
+						sep.Parent = ttCont
+					end
+					
+					local iType = itemData.type
+					
+					-- 아이템 이름
+					addTitle(itemData.name, C.GOLD, 15)
+					
+					-- 등급
+					addStatRow("등급", itemData.rarity or "COMMON", "#CCCCCC")
+					addSep()
+					
+					-- =====================
+					-- 무기/도구 스탯
+					-- =====================
+					if iType == "WEAPON" or iType == "TOOL" then
+						local bonusDmg, bonusCrit, bonusCritDmg, bonusDur = 0, 0, 0, 0
+						if item.attributes then
+							for attrId, level in pairs(item.attributes) do
+								local fx = MaterialAttributeData.getEffectValues(attrId, level)
+								if fx then
+									bonusDmg = bonusDmg + (fx.damageMult or 0)
+									bonusCrit = bonusCrit + (fx.critChance or 0)
+									bonusCritDmg = bonusCritDmg + (fx.critDamageMult or 0)
+									bonusDur = bonusDur + (fx.durabilityMult or 0)
+								end
+							end
+						end
+						
+						local baseDmg = itemData.damage or 0
+						local finalDmg = math.floor(baseDmg * (1 + bonusDmg) + 0.5)
+						local finalCrit = math.floor(bonusCrit * 100 + 0.5)
+						local finalCritDmg = math.floor((1.5 + bonusCritDmg) * 100 + 0.5)
+						local baseDur = itemData.durability or 0
+						local curDur = item.durability or baseDur
+						local maxDur = math.floor(baseDur * (1 + bonusDur) + 0.5)
+						
+						addStatRow("공격력", tostring(finalDmg), bonusDmg > 0 and "#8CDC64" or "#FFFFFF")
+						addStatRow("치명타 확률", finalCrit .. "%", bonusCrit > 0 and "#8CDC64" or "#FFFFFF")
+						addStatRow("치명타 피해량", finalCritDmg .. "%", bonusCritDmg > 0 and "#8CDC64" or "#FFFFFF")
+						addStatRow("내구도", math.floor(curDur) .. " / " .. maxDur, bonusDur > 0 and "#8CDC64" or "#FFFFFF")
+						
+					-- =====================
+					-- 방어구 스탯
+					-- =====================
+					elseif iType == "ARMOR" then
+						local bonusDef, bonusHp, bonusDur = 0, 0, 0
+						local bonusHeat, bonusCold, bonusHumid = 0, 0, 0
+						if item.attributes then
+							for attrId, level in pairs(item.attributes) do
+								local fx = MaterialAttributeData.getEffectValues(attrId, level)
+								if fx then
+									bonusDef = bonusDef + (fx.defenseMult or 0)
+									bonusHp = bonusHp + (fx.maxHealthMult or 0)
+									bonusDur = bonusDur + (fx.durabilityMult or 0)
+									bonusHeat = bonusHeat + (fx.heatResist or 0)
+									bonusCold = bonusCold + (fx.coldResist or 0)
+									bonusHumid = bonusHumid + (fx.humidResist or 0)
+								end
+							end
+						end
+						
+						local baseDef = itemData.defense or 0
+						local finalDef = math.floor(baseDef * (1 + bonusDef) + 0.5)
+						local finalHp = math.floor(bonusHp * 100 + 0.5)
+						local baseDur = itemData.durability or 0
+						local curDur = item.durability or baseDur
+						local maxDur = math.floor(baseDur * (1 + bonusDur) + 0.5)
+						
+						addStatRow("방어력", tostring(finalDef), bonusDef > 0 and "#8CDC64" or "#FFFFFF")
+						addStatRow("추가 체력", "+" .. finalHp .. "%", bonusHp > 0 and "#8CDC64" or "#FFFFFF")
+						addStatRow("내구도", math.floor(curDur) .. " / " .. maxDur, bonusDur > 0 and "#8CDC64" or "#FFFFFF")
+						
+						local heatPct = math.floor(bonusHeat * 100 + 0.5)
+						local coldPct = math.floor(bonusCold * 100 + 0.5)
+						local humidPct = math.floor(bonusHumid * 100 + 0.5)
+						if heatPct ~= 0 then
+							addStatRow("더위 내성", "+" .. heatPct .. "%", "#8CDC64")
+						end
+						if coldPct ~= 0 then
+							addStatRow("추위 내성", "+" .. coldPct .. "%", "#8CDC64")
+						end
+						if humidPct ~= 0 then
+							addStatRow("습기 내성", "+" .. humidPct .. "%", "#8CDC64")
+						end
+					else
+						-- 기타 타입
+						if itemData.durability then
+							addStatRow("내구도", math.floor(item.durability or 0) .. " / " .. (itemData.durability or 0), "#FFFFFF")
+						end
+					end
+					
+					-- =====================
+					-- 부여된 속성 효과 뱃지
+					-- =====================
+					if item.attributes and next(item.attributes) then
+						addSep()
+						local isProduct = (iType == "TOOL" or iType == "WEAPON" or iType == "ARMOR")
+						for attrId, level in pairs(item.attributes) do
+							local attrInfo = MaterialAttributeData.getAttribute(attrId)
+							if attrInfo then
+								local symbol = attrInfo.positive and "▲" or "▼"
+								local displayName = isProduct and attrInfo.effect or attrInfo.name
+								local hexC = attrInfo.positive and "#8CDC64" or "#E63232"
+								addStatRow(symbol .. " " .. displayName, "Lv." .. level, hexC)
+							end
+						end
+					end
+					
+					-- =====================
+					-- 세트 효과
+					-- =====================
 					if itemData.armorSet then
 						local setData = ArmorSetData[itemData.armorSet]
 						if setData then
-							EquipmentUI.Refs.TooltipSet.Text = string.format("<b>[%s]</b>\n%s", UILocalizer.Localize(setData.name), UILocalizer.Localize(setData.bonusText))
-							EquipmentUI.Refs.TooltipSet.Visible = true
-						else
-							EquipmentUI.Refs.TooltipSet.Visible = false
+							addSep()
+							
+							-- 장착 현황 계산
+							local totalPieces = #setData.items
+							local equippedCount = 0
+							for _, setItemId in ipairs(setData.items) do
+								if equippedItemIds[setItemId] then
+									equippedCount = equippedCount + 1
+								end
+							end
+							
+							local setActive = (equippedCount >= totalPieces)
+							local setColor = setActive and Color3.fromRGB(120, 200, 80) or Color3.fromHex("#888888")
+							
+							-- 세트 이름 + 장착 현황
+							order = order + 1
+							local setTitle = Instance.new("TextLabel")
+							setTitle.Name = "SetTitle"
+							setTitle.Size = UDim2.new(1, 0, 0, TT_TS + 6)
+							setTitle.BackgroundTransparency = 1
+							setTitle.RichText = true
+							setTitle.Text = string.format(
+								"<b>세트: %s</b>  <font color='%s'>(%d/%d)</font>",
+								setData.name,
+								setActive and "#78C850" or "#888888",
+								equippedCount, totalPieces
+							)
+							setTitle.TextColor3 = setColor
+							setTitle.TextSize = TT_TS
+							setTitle.Font = F.TITLE
+							setTitle.TextXAlignment = Enum.TextXAlignment.Left
+							setTitle.LayoutOrder = order
+							setTitle.Parent = ttCont
+							
+							-- 세트 구성품 목록
+							for _, setItemId in ipairs(setData.items) do
+								local setPieceData = DataHelper.GetData("ItemData", setItemId)
+								local pieceName = setPieceData and setPieceData.name or setItemId
+								local isEquipped = equippedItemIds[setItemId]
+								order = order + 1
+								local pieceL = Instance.new("TextLabel")
+								pieceL.Name = "Piece_" .. order
+								pieceL.Size = UDim2.new(1, 0, 0, TT_TS + 2)
+								pieceL.BackgroundTransparency = 1
+								pieceL.Text = (isEquipped and "  ✓ " or "  ✗ ") .. pieceName
+								pieceL.TextColor3 = isEquipped and Color3.fromRGB(120, 200, 80) or Color3.fromHex("#666666")
+								pieceL.TextSize = TT_TS - 1
+								pieceL.Font = F.NORMAL
+								pieceL.TextXAlignment = Enum.TextXAlignment.Left
+								pieceL.LayoutOrder = order
+								pieceL.Parent = ttCont
+							end
+							
+							-- 세트 보너스 설명
+							order = order + 1
+							local bonusL = Instance.new("TextLabel")
+							bonusL.Name = "SetBonus"
+							bonusL.Size = UDim2.new(1, 0, 0, TT_TS + 4)
+							bonusL.BackgroundTransparency = 1
+							bonusL.Text = (setActive and "★ " or "  ") .. setData.bonusText
+							bonusL.TextColor3 = setActive and Color3.fromRGB(255, 220, 80) or Color3.fromHex("#666666")
+							bonusL.TextSize = TT_TS
+							bonusL.Font = setActive and F.TITLE or F.NORMAL
+							bonusL.TextXAlignment = Enum.TextXAlignment.Left
+							bonusL.LayoutOrder = order
+							bonusL.Parent = ttCont
 						end
-					else
-						EquipmentUI.Refs.TooltipSet.Visible = false
 					end
+					
+					-- 툴팁 높이 자동 계산 (AutomaticSize.Y 사용)
+					
+					ttRef.Visible = true
 				end)
 				
-				slot._hoverConnLeave = slot.click.MouseLeave:Connect(function()
+				local function hideTooltip()
 					if EquipmentUI.Refs.Tooltip then EquipmentUI.Refs.Tooltip.Visible = false end
-				end)
+				end
+				slot._hoverConnLeave = slot.click.MouseLeave:Connect(hideTooltip)
+				-- 프레임 MouseLeave도 연결 (안전장치)
+				slot._hoverConnLeave2 = slot.frame.MouseLeave:Connect(hideTooltip)
 			else
 				slot.icon.Image = ""
 				slot.icon.Visible = false
