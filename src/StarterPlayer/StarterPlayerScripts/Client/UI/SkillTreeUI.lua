@@ -912,6 +912,40 @@ function SkillTreeUI.Init(parent, UIManager, isMobile)
 		parent = header,
 	})
 
+	-- [DEV] SP 초기화 버튼
+	Utils.mkBtn({
+		name = "ResetBtn",
+		text = "SP 초기화",
+		size = UDim2.new(0, isSmall and 80 or 100, 0, isSmall and 30 or 34),
+		pos = UDim2.new(1, -(isSmall and 135 or 160), 0.5, 0),
+		anchor = Vector2.new(0, 0.5),
+		bg = Color3.fromRGB(140, 50, 50),
+		bgT = 0.3,
+		ts = isSmall and 12 or 14,
+		font = F.TITLE,
+		color = Color3.fromRGB(255, 200, 200),
+		r = 6,
+		fn = function()
+			if skillController and skillController.requestReset then
+				if currentUIManager and currentUIManager.notify then
+					currentUIManager.notify("SP 초기화 요청 중...", Color3.fromRGB(255, 255, 150))
+				end
+				skillController.requestReset(function(ok)
+					if currentUIManager and currentUIManager.notify then
+						if ok then
+							currentUIManager.notify("SP 초기화 완료!", Color3.fromRGB(100, 255, 100))
+						else
+							currentUIManager.notify("SP 초기화 실패 (서버 오류)", Color3.fromRGB(255, 100, 100))
+						end
+					end
+				end)
+			else
+				warn("[SkillTreeUI] ResetBtn: skillController missing", skillController ~= nil)
+			end
+		end,
+		parent = header,
+	})
+
 	-- 닫기 버튼
 	Utils.mkBtn({
 		name = "CloseBtn",

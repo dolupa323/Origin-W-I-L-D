@@ -10,6 +10,7 @@ local Balance = require(Shared.Config.Balance)
 
 local Data = ReplicatedStorage:WaitForChild("Data")
 local SkillTreeData = require(Data.SkillTreeData)
+local MaterialAttributeData = require(Data.MaterialAttributeData)
 
 local ActiveSkillService = {}
 
@@ -99,8 +100,51 @@ local function findCreaturesInRadius(center: Vector3, radius: number, excludeId:
 	return results
 end
 
+--- 치명타 확률/배율 계산 (무기 속성 + 스킬 패시브 반영)
+local function getCritInfo(player: Player, itemData: any?): (number, number)
+	local userId = player.UserId
+	local critChance = 0
+	local critDamageMult = 0
+	
+	-- 무기 속성 효과
+	if InventoryService then
+		local toolSlot = InventoryService.getActiveSlot(userId) or 1
+		local slotData = InventoryService.getSlot(userId, toolSlot)
+		if slotData and slotData.attributes then
+			for attrId, level in pairs(slotData.attributes) do
+				local fx = MaterialAttributeData.getEffectValues(attrId, level)
+				if fx then
+					critChance = critChance + (fx.critChance or 0)
+					critDamageMult = critDamageMult + (fx.critDamageMult or 0)
+				end
+			end
+		end
+	end
+	
+	-- 스킬 패시브 보너스
+	local weaponTreeId = getWeaponTreeId(itemData)
+	if SkillService and weaponTreeId then
+		local bonuses = SkillService.getPassiveBonuses(userId, weaponTreeId)
+		if bonuses then
+			critChance = critChance + (bonuses.CRIT_CHANCE or 0)
+			critDamageMult = critDamageMult + (bonuses.CRIT_DAMAGE_MULT or 0)
+		end
+	end
+	
+	return critChance, critDamageMult
+end
+
+--- 치명타 판정 및 데미지 적용
+local function rollCritical(damage: number, critChance: number, critDamageMult: number): (number, boolean)
+	if critChance > 0 and math.random() < critChance then
+		local multiplier = 1.5 + critDamageMult  -- 기본 150% + 속성 보너스
+		return damage * multiplier, true
+	end
+	return damage, false
+end
+
 --- 단일 타겟에 스킬 데미지 적용 (lastKnownPos: 크리처 사망 후에도 데미지 표시를 위한 마지막 위치)
-local function applySkillDamage(player: Player, targetInstanceId: string, damage: number, isBlunt: boolean?, lastKnownPos: Vector3?)
+local function applySkillDamage(player: Player, targetInstanceId: string, damage: number, isBlunt: boolean?, lastKnownPos: Vector3?, isCritical: boolean?)
 	if not CreatureService then return false, false end
 	
 	local userId = player.UserId
@@ -167,6 +211,7 @@ local function applySkillDamage(player: Player, targetInstanceId: string, damage
 			killed = killed,
 			targetId = targetInstanceId,
 			isSkill = true,
+			isCritical = isCritical or false,
 			hitPosition = hitPosData,
 		})
 	end
@@ -268,8 +313,13 @@ local function executeSingleTarget(player, skill, targetId, baseDamage, itemData
 	local variance = Balance.DAMAGE_VARIANCE or 0.15
 	totalDamage = math.max(1, totalDamage * (1 + (math.random() * 2 - 1) * variance))
 	
+	-- 치명타 판정
+	local critChance, critDamageMult = getCritInfo(player, itemData)
+	local isCritical
+	totalDamage, isCritical = rollCritical(totalDamage, critChance, critDamageMult)
+	
 	local isBlunt = itemData and itemData.isBlunt
-	local killed = applySkillDamage(player, targetId, totalDamage, isBlunt)
+	local killed = applySkillDamage(player, targetId, totalDamage, isBlunt, nil, isCritical)
 	
 	-- 디버프 적용
 	if not killed then
@@ -300,6 +350,11 @@ local function executeAOE(player, skill, targetId, baseDamage, itemData)
 	local variance = Balance.DAMAGE_VARIANCE or 0.15
 	totalDamage = math.max(1, totalDamage * (1 + (math.random() * 2 - 1) * variance))
 	
+	-- 치명타 판정 (AOE 전체에 동일 적용)
+	local critChance, critDamageMult = getCritInfo(player, itemData)
+	local isCritical
+	totalDamage, isCritical = rollCritical(totalDamage, critChance, critDamageMult)
+	
 	local char = player.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	if not hrp then return false, { errorCode = "INTERNAL_ERROR" } end
@@ -313,7 +368,7 @@ local function executeAOE(player, skill, targetId, baseDamage, itemData)
 	local hitCount = 0
 	
 	for _, target in ipairs(targets) do
-		local killed = applySkillDamage(player, target.instanceId, totalDamage, isBlunt)
+		local killed = applySkillDamage(player, target.instanceId, totalDamage, isBlunt, nil, isCritical)
 		hitCount = hitCount + 1
 		if killed then totalKills = totalKills + 1 end
 		if not killed then
@@ -330,7 +385,7 @@ local function executeAOE(player, skill, targetId, baseDamage, itemData)
 		if not alreadyHit then
 			local creature = CreatureService.getCreatureRuntime(targetId)
 			if creature and creature.rootPart then
-				local killed = applySkillDamage(player, targetId, totalDamage, isBlunt)
+				local killed = applySkillDamage(player, targetId, totalDamage, isBlunt, nil, isCritical)
 				hitCount = hitCount + 1
 				if killed then totalKills = totalKills + 1 end
 				if not killed then
@@ -364,6 +419,7 @@ local function executeMultiHit(player, skill, targetId, baseDamage, itemData)
 	local calculated = PlayerStatService.GetCalculatedStats(player.UserId)
 	local attackMult = calculated.attackMult or 1.0
 	local isBlunt = itemData and itemData.isBlunt
+	local critChance, critDamageMult = getCritInfo(player, itemData)
 	
 	-- 첫 타 즉시, 나머지 딜레이 (크리처 사망 후에도 남은 타수 데미지 전부 표시)
 	task.spawn(function()
@@ -394,6 +450,10 @@ local function executeMultiHit(player, skill, targetId, baseDamage, itemData)
 			local variance = Balance.DAMAGE_VARIANCE or 0.15
 			local hitDamage = math.max(1, baseDamage * hitMult * attackMult * (1 + (math.random() * 2 - 1) * variance))
 			
+			-- 히트별 치명타 판정
+			local isCritical
+			hitDamage, isCritical = rollCritical(hitDamage, critChance, critDamageMult)
+			
 			-- AOE가 있으면 범위 공격 (도끼 폭풍)
 			if aoeRadius > 0 then
 				local char = player.Character
@@ -401,7 +461,7 @@ local function executeMultiHit(player, skill, targetId, baseDamage, itemData)
 				if hrp then
 					local targets = findCreaturesInRadius(hrp.Position, aoeRadius)
 					for _, t in ipairs(targets) do
-						applySkillDamage(player, t.instanceId, hitDamage, isBlunt, lastKnownPos)
+						applySkillDamage(player, t.instanceId, hitDamage, isBlunt, lastKnownPos, isCritical)
 					end
 					-- 메인 타겟
 					local alreadyHit = false
@@ -409,11 +469,11 @@ local function executeMultiHit(player, skill, targetId, baseDamage, itemData)
 						if t.instanceId == targetId then alreadyHit = true break end
 					end
 					if not alreadyHit then
-						applySkillDamage(player, targetId, hitDamage, isBlunt, lastKnownPos)
+						applySkillDamage(player, targetId, hitDamage, isBlunt, lastKnownPos, isCritical)
 					end
 				end
 			else
-				applySkillDamage(player, targetId, hitDamage, isBlunt, lastKnownPos)
+				applySkillDamage(player, targetId, hitDamage, isBlunt, lastKnownPos, isCritical)
 			end
 			
 			-- 마지막 히트에 디버프 적용

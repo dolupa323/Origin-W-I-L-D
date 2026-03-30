@@ -162,6 +162,7 @@ Protocol.Commands = {
 	["Skill.GetData.Request"] = true,
 	["Skill.SetSlot.Request"] = true,
 	["Skill.Use.Request"] = true,
+	["Skill.Reset.Request"] = true,          -- [DEV] SP 초기화
 
 	-- Portal 명령어 (고대 포탈 시스템)
 	["Portal.GetStatus.Request"] = true,

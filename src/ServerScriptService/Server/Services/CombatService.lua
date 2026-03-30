@@ -405,6 +405,11 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 	local bowOrigin = nil
 	local rawAimDir = attackMeta.aimDirection
 	local rawAimOrigin = attackMeta.aimOrigin
+
+	local char = player.Character
+	if not char then return false, Enums.ErrorCode.INTERNAL_ERROR end
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return false, Enums.ErrorCode.INTERNAL_ERROR end
 	
 	if InventoryService then
 		local slotData = InventoryService.getSlot(userId, toolSlot)
@@ -461,12 +466,6 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 		return false, Enums.ErrorCode.COOLDOWN
 	end
 	playerAttackCooldowns[userId] = now + dynamicCooldown
-
-	local char = player.Character
-	if not char then return false, Enums.ErrorCode.INTERNAL_ERROR end
-	
-	local hrp = char:FindFirstChild("HumanoidRootPart")
-	if not hrp then return false, Enums.ErrorCode.INTERNAL_ERROR end
 	
 	if isBowShot and (not targetId or targetId == "") then
 		local aimDir = nil

@@ -316,6 +316,33 @@ local function handleSetSlot(player: Player, payload: any)
 	}
 end
 
+--- [DEV] SP 초기화 요청 처리
+local function handleResetSkills(player: Player, _payload: any)
+	local userId = player.UserId
+	_initPlayerSkills(userId)
+	local cache = playerSkillCache[userId]
+
+	cache.unlockedSkills = {}
+	cache.combatTreeId = nil
+	cache.skillPointsSpent = 0
+	cache.activeSkillSlots = { nil, nil, nil }
+	_syncToSave(userId)
+
+	print(string.format("[SkillService] %s RESET all skills (SP refunded)", player.Name))
+
+	return {
+		success = true,
+		data = {
+			unlockedSkills = cache.unlockedSkills,
+			combatTreeId = cache.combatTreeId,
+			spAvailable = _getAvailableSP(userId),
+			spSpent = cache.skillPointsSpent,
+			activeSkillSlots = cache.activeSkillSlots,
+			level = PlayerStatService.getLevel(userId) or 1,
+		},
+	}
+end
+
 --========================================
 -- Init / GetHandlers
 --========================================
@@ -325,6 +352,7 @@ function SkillService.GetHandlers()
 		["Skill.Unlock.Request"] = handleUnlockSkill,
 		["Skill.GetData.Request"] = handleGetData,
 		["Skill.SetSlot.Request"] = handleSetSlot,
+		["Skill.Reset.Request"] = handleResetSkills,
 	}
 end
 

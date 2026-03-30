@@ -257,6 +257,28 @@ function SkillController.onCooldownUpdated(callback: () -> ())
 end
 
 --========================================
+-- [DEV] SP 초기화
+--========================================
+
+function SkillController.requestReset(callback: ((boolean) -> ())?)
+	task.spawn(function()
+		print("[SkillController] Requesting SP reset...")
+		local ok, data = NetClient.Request("Skill.Reset.Request", {})
+		print("[SkillController] Reset response:", ok, data)
+		if ok and data then
+			unlockedSkills = data.unlockedSkills or {}
+			combatTreeId = data.combatTreeId
+			spAvailable = data.spAvailable or 0
+			spSpent = data.spSpent or 0
+			activeSkillSlots = data.activeSkillSlots or { nil, nil, nil }
+			playerLevel = data.level or 1
+			_fireListeners()
+		end
+		if callback then callback(ok) end
+	end)
+end
+
+--========================================
 -- Init
 --========================================
 

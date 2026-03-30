@@ -24,6 +24,13 @@ local SkillEffectController = {}
 local VFX_CAST_LIFETIME = 3.5    -- 시전 VFX 지속 시간
 local VFX_HIT_LIFETIME = 2.5     -- 피격 VFX 지속 시간
 
+-- 스트라이크/돌진 전용 짧은 VFX 지속 시간
+local SHORT_VFX_SKILLS = { SWORD_A1 = true, SWORD_A2 = true }
+local VFX_CAST_LIFETIME_SHORT = 1.5
+local VFX_HIT_LIFETIME_SHORT = 1.2
+local VFX_CAST_LIFETIME_FLURRY = 1.2   -- 난무 Cast VFX 지속 시간
+local VFX_HIT_LIFETIME_FLURRY = 1.5    -- 난무 Hit VFX 지속 시간
+
 -- 돌진 스킬 설정
 local CHARGE_DISTANCE = 16       -- 돌진 거리 (스터드)
 local CHARGE_DURATION = 0.25     -- 돌진 소요 시간 (초)
@@ -251,42 +258,39 @@ local function executeSkillEffects(userId: number, skillId: string, targetId: st
 			end
 		end
 
-		-- 2. Cast VFX 광역 출력 (캐릭터 전방 범위에 여러 지점)
+		-- 2. Cast VFX 출력 (캐릭터 전방 한 지점에 여러 VFX 중첩)
 		if castVFXFolder and assetName then
 			local castTemplates = findVFXTemplates(castVFXFolder, assetName .. "_Cast")
 			if #castTemplates > 0 then
-				local center = hrp.Position + hrp.CFrame.LookVector * 8
-				local aoeRadius = 14
-				local castCount = 8
+				local spawnPos = hrp.Position + hrp.CFrame.LookVector * 10
+				local castCount = 12
+				local baseCF = CFrame.lookAt(spawnPos, spawnPos + hrp.CFrame.LookVector)
+
+				-- 고정 앵커 하나 생성
+				local anchor = Instance.new("Part")
+				anchor.Size = Vector3.new(1, 1, 1)
+				anchor.Transparency = 1
+				anchor.Anchored = true
+				anchor.CanCollide = false
+				anchor.CanQuery = false
+				anchor.CanTouch = false
+				anchor.CFrame = baseCF
+				anchor.Parent = workspace
 
 				for i = 1, castCount do
-					task.delay((i - 1) * 0.08, function()
-						if not hrp or not hrp.Parent then return end
-
+					task.delay((i - 1) * 0.04, function()
+						if not anchor or not anchor.Parent then return end
 						local tmpl = castTemplates[math.random(1, #castTemplates)]
-
-						local offsetX = (math.random() - 0.5) * 2 * aoeRadius
-						local offsetZ = (math.random() - 0.5) * 2 * aoeRadius
-						local spawnPos = center + Vector3.new(offsetX, 0, offsetZ)
-
-						local anchor = Instance.new("Part")
-						anchor.Size = Vector3.new(1, 1, 1)
-						anchor.Transparency = 1
-						anchor.Anchored = true
-						anchor.CanCollide = false
-						anchor.CanQuery = false
-						anchor.CanTouch = false
-						anchor.CFrame = CFrame.new(spawnPos) * CFrame.Angles(
-							math.rad(90 + math.random(-35, 35)),
-							math.rad(math.random(0, 360)),
-							math.rad(math.random(-35, 35))
+						-- 각 VFX마다 약간의 회전 변화만 줘서 중첩 시 풍성한 느낌
+						anchor.CFrame = baseCF * CFrame.Angles(
+							math.rad(math.random(-20, 20)),
+							math.rad(math.random(-20, 20)),
+							math.rad(math.random(0, 360))
 						)
-						anchor.Parent = workspace
-
-						spawnVFX(tmpl, anchor, VFX_CAST_LIFETIME)
-						Debris:AddItem(anchor, VFX_CAST_LIFETIME + 0.1)
+						spawnVFX(tmpl, anchor, VFX_CAST_LIFETIME_FLURRY)
 					end)
 				end
+				Debris:AddItem(anchor, VFX_CAST_LIFETIME_FLURRY + 0.5)
 			end
 		end
 
@@ -310,43 +314,37 @@ local function executeSkillEffects(userId: number, skillId: string, targetId: st
 				end
 			end
 
-			-- ★ 광역 Hit VFX: 캐릭터 전방 범위에 칼비처럼 여러 지점에 출력
-			if hitVFXFolder and assetName then
+			-- ★ Hit VFX: 타겟이 있을 때만 출력 (캐릭터 전방 한 지점에 여러 VFX 중첩)
+			if targetId and hitVFXFolder and assetName then
 				local hitTemplates = findVFXTemplates(hitVFXFolder, assetName .. "_Hit")
 				if #hitTemplates > 0 then
-					local center = hrp.Position + hrp.CFrame.LookVector * 8
-					local aoeRadius = 14
-					local hitCount = 8
+					local spawnPos = hrp.Position + hrp.CFrame.LookVector * 10
+					local hitCount = 12
+					local baseCF = CFrame.lookAt(spawnPos, spawnPos + hrp.CFrame.LookVector)
+
+					local anchor = Instance.new("Part")
+					anchor.Size = Vector3.new(1, 1, 1)
+					anchor.Transparency = 1
+					anchor.Anchored = true
+					anchor.CanCollide = false
+					anchor.CanQuery = false
+					anchor.CanTouch = false
+					anchor.CFrame = baseCF
+					anchor.Parent = workspace
 
 					for i = 1, hitCount do
-						task.delay((i - 1) * 0.1, function()
-							if not hrp or not hrp.Parent then return end
-
+						task.delay((i - 1) * 0.04, function()
+							if not anchor or not anchor.Parent then return end
 							local tmpl = hitTemplates[math.random(1, #hitTemplates)]
-
-							-- 범위 내 랜덤 위치에 앵커드 파트 생성 후 VFX 부착
-							local offsetX = (math.random() - 0.5) * 2 * aoeRadius
-							local offsetZ = (math.random() - 0.5) * 2 * aoeRadius
-							local spawnPos = center + Vector3.new(offsetX, 0, offsetZ)
-
-							local anchor = Instance.new("Part")
-							anchor.Size = Vector3.new(1, 1, 1)
-							anchor.Transparency = 1
-							anchor.Anchored = true
-							anchor.CanCollide = false
-							anchor.CanQuery = false
-							anchor.CanTouch = false
-							anchor.CFrame = CFrame.new(spawnPos) * CFrame.Angles(
-								math.rad(90 + math.random(-35, 35)),
-								math.rad(math.random(0, 360)),
-								math.rad(math.random(-35, 35))
+							anchor.CFrame = baseCF * CFrame.Angles(
+								math.rad(math.random(-20, 20)),
+								math.rad(math.random(-20, 20)),
+								math.rad(math.random(0, 360))
 							)
-							anchor.Parent = workspace
-
-							spawnVFX(tmpl, anchor, VFX_HIT_LIFETIME)
-							Debris:AddItem(anchor, VFX_HIT_LIFETIME + 0.1)
+							spawnVFX(tmpl, anchor, VFX_HIT_LIFETIME_FLURRY)
 						end)
 					end
+					Debris:AddItem(anchor, VFX_HIT_LIFETIME_FLURRY + 0.5)
 				end
 			end
 		end)
@@ -359,11 +357,15 @@ local function executeSkillEffects(userId: number, skillId: string, targetId: st
 	--========================================
 
 	-- 1. 시전 VFX 먼저 출력 (애니메이션보다 살짝 빠르게)
+	local isShortVFX = SHORT_VFX_SKILLS[skillId]
+	local castLife = isShortVFX and VFX_CAST_LIFETIME_SHORT or VFX_CAST_LIFETIME
+	local hitLife = isShortVFX and VFX_HIT_LIFETIME_SHORT or VFX_HIT_LIFETIME
+	
 	if castVFXFolder and assetName then
 		local castTemplates = findVFXTemplates(castVFXFolder, assetName .. "_Cast")
 		if #castTemplates > 0 then
 			local bladePart = getWeaponBladePart(character)
-			spawnVFX(castTemplates[1], bladePart or hrp, VFX_CAST_LIFETIME)
+			spawnVFX(castTemplates[1], bladePart or hrp, castLife)
 		end
 	end
 
@@ -375,8 +377,9 @@ local function executeSkillEffects(userId: number, skillId: string, targetId: st
 		end
 	end
 
-	-- 3. 약간의 딜레이 후 애니메이션 재생
-	task.delay(0.05, function()
+	-- 3. VFX 출력 후 딜레이 → 애니메이션 재생 (스트라이크/돌진은 VFX 선행)
+	local animDelay = isShortVFX and 0.25 or 0.05
+	task.delay(animDelay, function()
 		if not humanoid or not humanoid.Parent then return end
 		if animName then
 			local track = AnimationManager.play(humanoid, animName, 0.05)
@@ -405,7 +408,7 @@ local function executeSkillEffects(userId: number, skillId: string, targetId: st
 				if hitVFXFolder then
 					local hitTemplates = findVFXTemplates(hitVFXFolder, assetName .. "_Hit")
 					for _, tmpl in ipairs(hitTemplates) do
-						spawnVFX(tmpl, targetHrp, VFX_HIT_LIFETIME)
+						spawnVFX(tmpl, targetHrp, hitLife)
 					end
 				end
 
