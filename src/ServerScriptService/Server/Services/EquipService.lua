@@ -146,13 +146,19 @@ function EquipService.equipItem(player: Player, itemId: string?)
 		tool.RequiresHandle = false
 		tool.CanBeDropped = false
 		
-		local handle = Instance.new("Part")
-		handle.Name = "Handle"
-		handle.Size = Vector3.new(0.5, 0.5, 0.5)
-		handle.Transparency = 1
-		handle.CanCollide = false
-		handle.Massless = true
-		handle.Parent = tool
+		-- SWORD: 모델 내 Handle 파트를 직접 사용
+		local usesModelHandle = (itemData.optimalTool == "SWORD")
+		local handle = nil
+		
+		if not usesModelHandle then
+			handle = Instance.new("Part")
+			handle.Name = "Handle"
+			handle.Size = Vector3.new(0.5, 0.5, 0.5)
+			handle.Transparency = 1
+			handle.CanCollide = false
+			handle.Massless = true
+			handle.Parent = tool
+		end
 		
 		if template then
 			local visual = template:Clone()
@@ -163,7 +169,11 @@ function EquipService.equipItem(player: Player, itemId: string?)
 					d.Disabled = true 
 				end
 				if d:IsA("BasePart") and d.Name == "Handle" then
-					d.Name = "ModelPart"
+					if usesModelHandle then
+						handle = d  -- 모델의 Handle을 Tool Handle로 사용
+					else
+						d.Name = "ModelPart"
+					end
 				end
 			end
 
@@ -213,10 +223,30 @@ function EquipService.equipItem(player: Player, itemId: string?)
 				local scale = targetSize / maxDim
 				assemblyModel:ScaleTo(scale)
 				cf, size = assemblyModel:GetBoundingBox() -- 재계산
-				assemblyModel:PivotTo(assemblyModel:GetPivot() * cf:Inverse())
+				if not usesModelHandle then
+					assemblyModel:PivotTo(assemblyModel:GetPivot() * cf:Inverse())
+				end
 			end
 
-			handle.CFrame = CFrame.new(0, 0, 0)
+			-- SWORD: Handle 파트를 Tool 직속 자식으로 이동 (Tool이 인식하도록)
+			if usesModelHandle and handle then
+				handle.Parent = tool
+				handle.Name = "Handle"
+			elseif usesModelHandle and not handle then
+				-- 모델에 Handle 파트가 없는 경우 폴백: 투명 Handle 생성
+				warn("[EquipService] SWORD model missing Handle part, creating fallback:", itemId)
+				handle = Instance.new("Part")
+				handle.Name = "Handle"
+				handle.Size = Vector3.new(0.5, 0.5, 0.5)
+				handle.Transparency = 1
+				handle.CanCollide = false
+				handle.Massless = true
+				handle.Parent = tool
+			end
+
+			if not usesModelHandle then
+				handle.CFrame = CFrame.new(0, 0, 0)
+			end
 			
 			-- 모든 파트 물리 해제 및 용접
 			for _, p in ipairs(tool:GetDescendants()) do
@@ -228,7 +258,9 @@ function EquipService.equipItem(player: Player, itemId: string?)
 					p.Anchored = false
 					
 					-- 투명한 파트(히트박스 등)는 그대로 투명하게 유지
-					if p == handle or p.Transparency > 0.95 then
+					-- SWORD Handle은 실물 파트이므로 투명 처리 제외
+					local isInvisibleHandle = (p == handle and not usesModelHandle)
+					if isInvisibleHandle or p.Transparency > 0.95 then
 						p.Transparency = 1
 						p.CanCollide = false
 						p.CanTouch = false
@@ -273,9 +305,9 @@ function EquipService.equipItem(player: Player, itemId: string?)
 		elseif itemData.optimalTool == "AXE" then
 			-- 도끼: 날카로운 부분이 캐릭터 정면을 향하도록 Y축 90° 회전
 			tool.Grip = CFrame.new(0, -0.8, 0) * CFrame.Angles(0, math.rad(90), 0)
-	elseif itemData.optimalTool == "SWORD" then
-		-- 검: 손잡이에서 아래쪽을 쥐고 날이 전방을 향하도록
-		tool.Grip = CFrame.new(0, -0.8, 0) * CFrame.Angles(0, 0, 0)
+		elseif itemData.optimalTool == "SWORD" then
+			-- 검: 칼날 세로 + 날카로운 면 정면
+			tool.Grip = CFrame.Angles(0, 0, math.rad(90))
 		elseif itemData.optimalTool == "BOW" then
 			-- 활대를 세로로 세우고, 활줄이 몸쪽을 향하도록 축을 뒤집어 정렬.
 			tool.Grip = CFrame.new(0.05, -0.24, -0.40) * CFrame.Angles(math.rad(-88), math.rad(180), math.rad(90))

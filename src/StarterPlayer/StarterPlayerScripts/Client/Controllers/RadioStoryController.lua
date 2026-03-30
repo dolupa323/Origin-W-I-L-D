@@ -386,7 +386,7 @@ local function ensureRingingSound(): Sound?
 	if not sound then
 		sound = Instance.new("Sound")
 		sound.Name = RADIO_SOUND_NAME
-		sound.Volume = 0.35
+		sound.Volume = 0.15
 		sound.RollOffMaxDistance = 40
 		sound.RollOffMinDistance = 8
 		sound.Looped = true

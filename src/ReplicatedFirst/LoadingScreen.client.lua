@@ -2,12 +2,15 @@
 -- 로딩 스크린 및 메인 타이틀 스크린 구현
 
 local ReplicatedFirst = game:GetService("ReplicatedFirst")
+local ContentProvider = game:GetService("ContentProvider")
 local TweenService = game:GetService("TweenService")
 local Players = game:GetService("Players")
 local ContextActionService = game:GetService("ContextActionService")
 
 -- 로블록스 기본 로딩 스크린 비활성화
 ReplicatedFirst:RemoveDefaultLoadingScreen()
+
+local LOGO_ASSET_ID = "rbxassetid://136692790872530"
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui", 30)
@@ -68,12 +71,17 @@ local originLogo = create("ImageLabel", {
 	Position = UDim2.new(0.5, 0, 0.4, 0),
 	Size = UDim2.new(0.6, 0, 0.6, 0),
 	BackgroundTransparency = 1,
-	Image = "rbxassetid://136692790872530",
+	Image = LOGO_ASSET_ID,
 	ScaleType = Enum.ScaleType.Fit,
 	ImageTransparency = 0,               
 	ZIndex = 3,
 	Visible = true
 })
+
+-- 로고 이미지 에셋 미리 로드 (ReplicatedFirst에서는 에셋이 아직 다운로드 안 됨)
+pcall(function()
+	ContentProvider:PreloadAsync({originLogo})
+end)
 
 -- 로고 아래 로딩바 추가
 local progressBarBG = create("Frame", {

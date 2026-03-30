@@ -262,6 +262,26 @@ local function _normalizePlayerState(state: any): any
 	state.combatTreeId = (type(state.combatTreeId) == "string") and state.combatTreeId or nil
 	state.activeSkillSlots = type(state.activeSkillSlots) == "table" and state.activeSkillSlots or { nil, nil, nil }
 
+	-- ★ SPEAR → SWORD 마이그레이션 (v1 레거시 세이브 호환)
+	if state.combatTreeId == "SPEAR" then
+		state.combatTreeId = "SWORD"
+	end
+	do
+		local migrated = {}
+		local changed = false
+		for key, val in pairs(state.unlockedSkills) do
+			local newKey = key:gsub("^SPEAR_", "SWORD_")
+			if newKey ~= key then changed = true end
+			migrated[newKey] = val
+		end
+		if changed then state.unlockedSkills = migrated end
+	end
+	for i, slotId in ipairs(state.activeSkillSlots) do
+		if type(slotId) == "string" then
+			state.activeSkillSlots[i] = slotId:gsub("^SPEAR_", "SWORD_")
+		end
+	end
+
 	return state
 end
 

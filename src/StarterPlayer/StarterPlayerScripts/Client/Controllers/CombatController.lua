@@ -1181,8 +1181,7 @@ playAttackAnimation = function(isHit: boolean)
 	elseif toolType == "PICKAXE" then
 		animNames = { "AttackTool_Mine" }
 	elseif toolType == "SWORD" then
-		local swordAnims = { AnimationIds.ATTACK_SWORD.SLASH, AnimationIds.ATTACK_SWORD.SWING }
-		animNames = { swordAnims[math.random(1, #swordAnims)] }
+		animNames = { AnimationIds.ATTACK_SWORD.SWING }
 	elseif toolType == "BOLA" then
 		animNames = { AnimationIds.BOLA.THROW }
 	elseif toolType == "CLUB" or toolType == "TORCH" then
@@ -1208,18 +1207,11 @@ playAttackAnimation = function(isHit: boolean)
 		end
 	end
 	
-	-- 애니메이션 재생 (AnimationManager 사용)
-	local track = AnimationManager.play(humanoid, animName, 0.05)
+	-- 애니메이션 재생
+	local track = AnimationManager.play(humanoid, animName, 0.05, nil, isHit and 1.2 or 1.0)
 	if track then
 		track.Priority = Enum.AnimationPriority.Action
 		track.Looped = false
-		
-		-- 맞았을 때 속도 조절 (임팩트 느낌)
-		if isHit then
-			track:AdjustSpeed(1.2)  -- 빠르게
-		else
-			track:AdjustSpeed(1.0)
-		end
 		
 		currentAttackTrack = track
 

@@ -99,8 +99,8 @@ local function findCreaturesInRadius(center: Vector3, radius: number, excludeId:
 	return results
 end
 
---- 단일 타겟에 스킬 데미지 적용
-local function applySkillDamage(player: Player, targetInstanceId: string, damage: number, isBlunt: boolean?)
+--- 단일 타겟에 스킬 데미지 적용 (lastKnownPos: 크리처 사망 후에도 데미지 표시를 위한 마지막 위치)
+local function applySkillDamage(player: Player, targetInstanceId: string, damage: number, isBlunt: boolean?, lastKnownPos: Vector3?)
 	if not CreatureService then return false, false end
 	
 	local userId = player.UserId
@@ -116,8 +116,10 @@ local function applySkillDamage(player: Player, targetInstanceId: string, damage
 	
 	-- 넉백 + 피격 연출
 	local creature = CreatureService.getCreatureRuntime(targetInstanceId)
+	local displayPos = lastKnownPos -- 폴백 위치
 	if creature and creature.rootPart then
 		local creaturePos = creature.rootPart.Position
+		displayPos = creaturePos
 		local char = player.Character
 		local attackerPos = char and char.PrimaryPart and char.PrimaryPart.Position or creaturePos
 		
@@ -142,16 +144,30 @@ local function applySkillDamage(player: Player, targetInstanceId: string, damage
 				isSkill = true,
 			})
 		end
+	elseif displayPos and NetController then
+		-- 크리처 런타임 제거됨 (사망 후) — 피격 연출만 전송 (넉백 없음)
+		NetController.FireAllClients("Combat.Creature.Hit", {
+			instanceId = targetInstanceId,
+			hitPosition = { x = displayPos.X, y = displayPos.Y, z = displayPos.Z },
+			damage = hpDamage,
+			killed = false,
+			isSkill = true,
+		})
 	end
 	
-	-- ★ 데미지 숫자 UI 표시 — creature 상태와 무관하게 항상 전송 (CombatService와 동일)
+	-- ★ 데미지 숫자 UI 표시 — creature 상태와 무관하게 항상 전송 (hitPosition 포함)
 	if NetController then
+		local hitPosData = nil
+		if displayPos then
+			hitPosData = { x = displayPos.X, y = displayPos.Y, z = displayPos.Z }
+		end
 		NetController.FireClient(player, "Combat.Hit.Result", {
 			damage = hpDamage,
 			torporDamage = torporDamage,
 			killed = killed,
 			targetId = targetInstanceId,
 			isSkill = true,
+			hitPosition = hitPosData,
 		})
 	end
 	
@@ -349,16 +365,26 @@ local function executeMultiHit(player, skill, targetId, baseDamage, itemData)
 	local attackMult = calculated.attackMult or 1.0
 	local isBlunt = itemData and itemData.isBlunt
 	
-	-- 첫 타 즉시, 나머지 딜레이
+	-- 첫 타 즉시, 나머지 딜레이 (크리처 사망 후에도 남은 타수 데미지 전부 표시)
 	task.spawn(function()
+		local lastKnownPos = nil
+		
+		-- 시작 전 타겟 위치 저장
+		local initCreature = CreatureService and CreatureService.getCreatureRuntime(targetId)
+		if initCreature and initCreature.rootPart then
+			lastKnownPos = initCreature.rootPart.Position
+		end
+		
 		for i = 1, multiHit do
 			if i > 1 then
 				task.wait(MULTI_HIT_INTERVAL)
 			end
 			
-			-- 타겟 생존 확인
+			-- 타겟 위치 갱신 (생존 시)
 			local creature = CreatureService and CreatureService.getCreatureRuntime(targetId)
-			if not creature or not creature.rootPart then break end
+			if creature and creature.rootPart then
+				lastKnownPos = creature.rootPart.Position
+			end
 			
 			local hitMult = damageMult
 			if i == multiHit and finalHitMult > 0 then
@@ -375,7 +401,7 @@ local function executeMultiHit(player, skill, targetId, baseDamage, itemData)
 				if hrp then
 					local targets = findCreaturesInRadius(hrp.Position, aoeRadius)
 					for _, t in ipairs(targets) do
-						applySkillDamage(player, t.instanceId, hitDamage, isBlunt)
+						applySkillDamage(player, t.instanceId, hitDamage, isBlunt, lastKnownPos)
 					end
 					-- 메인 타겟
 					local alreadyHit = false
@@ -383,11 +409,11 @@ local function executeMultiHit(player, skill, targetId, baseDamage, itemData)
 						if t.instanceId == targetId then alreadyHit = true break end
 					end
 					if not alreadyHit then
-						applySkillDamage(player, targetId, hitDamage, isBlunt)
+						applySkillDamage(player, targetId, hitDamage, isBlunt, lastKnownPos)
 					end
 				end
 			else
-				applySkillDamage(player, targetId, hitDamage, isBlunt)
+				applySkillDamage(player, targetId, hitDamage, isBlunt, lastKnownPos)
 			end
 			
 			-- 마지막 히트에 디버프 적용

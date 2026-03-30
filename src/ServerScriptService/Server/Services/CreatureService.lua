@@ -368,7 +368,7 @@ local function setupModelForCreature(model: Model, position: Vector3, data: any)
 	-- 7. 근거리 전용 울음소리 (RollOff로 가까이에서만 들림)
 	local ambientSound = Instance.new("Sound")
 	ambientSound.Name = "AmbientCry"
-	ambientSound.Volume = 0.6
+	ambientSound.Volume = 0.25
 	ambientSound.RollOffMode = Enum.RollOffMode.Linear
 	ambientSound.RollOffMinDistance = 10
 	ambientSound.RollOffMaxDistance = 60  -- 60 스터드 밖에서는 안 들림

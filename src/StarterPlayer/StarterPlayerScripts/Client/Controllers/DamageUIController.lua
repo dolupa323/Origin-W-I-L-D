@@ -159,12 +159,18 @@ function DamageUIController.Init()
 	
 	-- 1. 서버로부터 사냥/전투 타격 결과 수신
 	NetClient.On("Combat.Hit.Result", function(data)
-		-- data: { damage, torporDamage, killed, targetId }
+		-- data: { damage, torporDamage, killed, targetId, hitPosition? }
 		
 		local targetModel = findTargetModel(data.targetId)
-		if not targetModel then return end
-		
-		local spawnPos = targetModel:GetPivot().Position
+		local spawnPos
+		if targetModel then
+			spawnPos = targetModel:GetPivot().Position
+		elseif data.hitPosition then
+			-- 크리처 사망 후 모델 제거됐을 때 서버에서 전송한 위치 사용
+			spawnPos = Vector3.new(data.hitPosition.x, data.hitPosition.y, data.hitPosition.z)
+		else
+			return
+		end
 		
 		-- 데미지 표시 (치명타 분기)
 		if data.damage and data.damage > 0 then
