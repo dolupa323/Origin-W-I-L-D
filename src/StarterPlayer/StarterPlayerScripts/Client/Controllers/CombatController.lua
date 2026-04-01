@@ -1246,35 +1246,7 @@ function CombatController.attack(attackMeta)
 			end
 
 			if targetType == "resource" then
-				-- [개선] 노드 정보 미리 가져오기 (메시지용)
-				local nodeType = targetModel:GetAttribute("NodeType")
-				
-				-- 자원 채집 처리
-				local ok, errorOrData = NetClient.Request("Harvest.Hit.Request", {
-					nodeUID = targetId,
-					toolSlot = UIManager.getSelectedSlot(),
-				})
-				
-				if not ok then
-					local err = errorOrData
-					if err == Enums.ErrorCode.NO_TOOL or err == Enums.ErrorCode.WRONG_TOOL then
-						if nodeType == "TREE" then
-							UIManager.notify("나무를 베려면 도끼를 장착해야 합니다!", Color3.fromRGB(255, 150, 50))
-						elseif nodeType == "ROCK" or nodeType == "ORE" then
-							UIManager.notify("채광을 하려면 곡괭이를 장착해야 합니다!", Color3.fromRGB(255, 150, 50))
-						else
-							UIManager.notify("이 작업을 하기에 적합한 도구가 아닙니다.", Color3.fromRGB(255, 100, 100))
-						end
-					elseif err == Enums.ErrorCode.INVALID_STATE then
-						UIManager.notify("도구가 파손되어 기능을 상실했습니다!", Color3.fromRGB(255, 50, 50))
-					elseif err == Enums.ErrorCode.OUT_OF_RANGE then
-						UIManager.notify("대상과 너무 멉니다.", Color3.fromRGB(255, 100, 100))
-					elseif err == Enums.ErrorCode.COOLDOWN then
-						-- 쿨다운은 조용히 무시 (혹은 연출)
-					else
-						UIManager.notify("채집할 수 없는 상태입니다: " .. tostring(err), Color3.fromRGB(255, 100, 100))
-					end
-				end
+				-- 채집은 R키 UI로 전환됨 — 좌클릭은 무시
 			else
 				-- 크리처 공격 처리
 				local ok, errorOrData = NetClient.Request("Combat.Hit.Request", {

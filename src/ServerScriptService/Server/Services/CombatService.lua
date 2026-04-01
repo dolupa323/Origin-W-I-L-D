@@ -701,41 +701,16 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 		end
 	end
 	
-	-- 5. 피냄새 디버프 및 드롭 생성 (크리처를 킬했을 때)
+	-- 5. 피냄새 디버프 (크리처를 킬했을 때) — 드롭은 시체 채집으로 전환됨
 	if killed and dropPos and targetType == "CREATURE" and creature then
 		-- 피냄새 적용
 		if DebuffService then
 			DebuffService.applyDebuff(player.UserId, "BLOOD_SMELL")
 		end
 		
-		-- 드롭 아이템 생성
-		if WorldDropService and DataService then
-			local dropTable = DataService.getDropTable(creature.creatureId)
-			if dropTable then
-				for _, entry in ipairs(dropTable) do
-					if math.random() <= (entry.chance or 1.0) then
-						local count = math.random(entry.min or 1, entry.max or 1)
-						-- 랜덤 오프셋
-						local angle = math.random() * math.pi * 2
-						local radius = math.random() * 2
-						local baseSpawnPos = dropPos + Vector3.new(math.cos(angle) * radius, 5, math.sin(angle) * radius)
-						
-						-- [개선] 지면 인식 레이캐스트 (피격 대상 및 플레이어 제외하여 바닥 찾기)
-						local rayParams = RaycastParams.new()
-						local excludeList = {char}
-						if creature and creature.model then table.insert(excludeList, creature.model) end
-						rayParams.FilterDescendantsInstances = excludeList
-						rayParams.FilterType = Enum.RaycastFilterType.Exclude
-						
-						local rayResult = workspace:Raycast(baseSpawnPos, Vector3.new(0, -30, 0), rayParams)
-						local finalSpawnPos = rayResult and rayResult.Position or (dropPos + Vector3.new(math.cos(angle) * radius, 0, math.sin(angle) * radius))
-						
-						local creatureLevel = creature.data and creature.data.level or 1
-						WorldDropService.spawnDrop(finalSpawnPos, entry.itemId, count, nil, creatureLevel)
-					end
-				end
-			end
-		end
+		-- [시체 시스템] 드롭 아이템은 더 이상 직접 생성하지 않음
+		-- CreatureService.playNaturalDeathSequence에서 HarvestService.registerCorpseNode 호출하여
+		-- 시체를 ResourceNode로 등록 → 플레이어가 R키로 채집
 	end
 	
 	-- 5.5 퀘스트 콜백 (Phase 8)

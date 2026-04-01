@@ -259,7 +259,7 @@ for command, handler in pairs(DebuffService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)
 end
 
--- CreatureService 초기화 (+ PlayerStatService 추가)
+-- CreatureService 초기화 (+ PlayerStatService 추가, HarvestService는 후순위 주입)
 local CreatureService = require(Services.CreatureService)
 CreatureService.Init(NetController, DataService, WorldDropService, DebuffService, PlayerStatService)
 
@@ -342,6 +342,9 @@ HarvestService.Init(NetController, DataService, InventoryService, PlayerStatServ
 for command, handler in pairs(HarvestService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)
 end
+
+-- CreatureService에 HarvestService 후순위 주입 (시체 채집 연동)
+CreatureService.SetHarvestService(HarvestService)
 
 -- BaseClaimService 초기화 (Phase 7-2)
 local BaseClaimService = require(Services.BaseClaimService)

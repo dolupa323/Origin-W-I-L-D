@@ -97,6 +97,9 @@ local depletedNodes = {}
 -- 플레이어 쿨다운 { [userId] = lastHitTime }
 local playerCooldowns = {}
 
+-- R키 채집 시스템: 진행 중인 단건 채집 상태 { [userId] = { nodeUID, itemId, startTime, gatherTime, count } }
+local activeGathers = {}
+
 local questCallback = nil
 -- 스폰된 노드 수 추적 (자동스폰된 노드만)
 local spawnedNodeCount = 0
@@ -982,6 +985,142 @@ function HarvestService.registerNode(nodeId: string, position: Vector3, isAutoSp
 	return nodeUID
 end
 
+-- 시체 디스폰 시간 (초)
+local CORPSE_DESPAWN_TIME = 120
+
+--- 시체 노드 등록 (크리처 사망 시 호출)
+--- creature 모델을 ResourceNodes 폴더로 이전하고 채집 가능하도록 설정
+function HarvestService.registerCorpseNode(creatureId: string, position: Vector3, model: Model): string?
+	local nodeId = "CORPSE_" .. creatureId
+	local nodeData = DataService.getResourceNode(nodeId)
+	if not nodeData then
+		warn(string.format("[HarvestService] Unknown corpse node: %s", nodeId))
+		return nil
+	end
+
+	local nodeUID = generateNodeUID()
+
+	-- ResourceNodes 폴더 확보
+	local nodeFolder = workspace:FindFirstChild("ResourceNodes")
+	if not nodeFolder then
+		nodeFolder = Instance.new("Folder")
+		nodeFolder.Name = "ResourceNodes"
+		nodeFolder.Parent = workspace
+	end
+
+	-- 기존 크리처 모델 정리: 스크립트/사운드/BillboardGui 제거
+	for _, desc in ipairs(model:GetDescendants()) do
+		if desc:IsA("Script") or desc:IsA("LocalScript") or desc:IsA("ModuleScript")
+			or desc:IsA("Sound") or desc:IsA("BillboardGui") or desc:IsA("SurfaceGui") then
+			desc:Destroy()
+		end
+	end
+
+	-- 애니메이션 완전 정지 (Animator 트랙 전부 중단 + 파괴)
+	local humanoid = model:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		humanoid.WalkSpeed = 0
+		humanoid.JumpPower = 0
+		humanoid.AutoRotate = false
+		humanoid.PlatformStand = true
+
+		local animator = humanoid:FindFirstChildOfClass("Animator")
+		if animator then
+			for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+				track:Stop(0)
+			end
+			animator:Destroy()
+		end
+	end
+
+	-- AnimationController도 제거 (혹시 Humanoid 외부에 있을 경우)
+	for _, desc in ipairs(model:GetDescendants()) do
+		if desc:IsA("AnimationController") then
+			local anim = desc:FindFirstChildOfClass("Animator")
+			if anim then
+				for _, track in ipairs(anim:GetPlayingAnimationTracks()) do
+					track:Stop(0)
+				end
+			end
+			desc:Destroy()
+		elseif desc:IsA("Animation") then
+			desc:Destroy()
+		end
+	end
+
+	-- 모든 파트 고정 (눕히기 전에 먼저 앵커)
+	for _, part in ipairs(model:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.Anchored = true
+			part.CanCollide = true
+			part.CanQuery = true
+			part.CanTouch = true
+		end
+	end
+
+	-- 시체 눕히기: 모델 전체를 X축 기준 90° 회전 (옆으로 쓰러진 포즈)
+	local rootPart = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+	if rootPart then
+		local currentCF = rootPart.CFrame
+		-- 모델 높이 계산 (지면 밀착용)
+		local _, modelSize = model:GetBoundingBox()
+		local halfHeight = modelSize.Y * 0.3
+		-- X축으로 -90도 회전 (옆으로 쓰러짐) + 지면 밀착
+		local tiltedCF = currentCF * CFrame.Angles(math.rad(-90), 0, 0) * CFrame.new(0, 0, halfHeight)
+		model:PivotTo(tiltedCF)
+	end
+
+	-- 속성 설정 (InteractController 인식용)
+	model:SetAttribute("NodeId", nodeId)
+	model:SetAttribute("NodeUID", nodeUID)
+	model:SetAttribute("AutoSpawned", false)
+	model:SetAttribute("Depleted", false)
+
+	-- CollectionService 태그 추가
+	CollectionService:AddTag(model, "ResourceNode")
+
+	-- ResourceNodes 폴더로 이동
+	model.Name = nodeId
+	model.Parent = nodeFolder
+
+	-- 활성 노드 등록
+	activeNodes[nodeUID] = {
+		nodeId = nodeId,
+		remainingHits = nodeData.maxHealth,
+		depletedAt = nil,
+		position = position,
+		isAutoSpawned = false,
+		nodeModel = model,
+		isCorpse = true,
+	}
+
+	-- 클라이언트 알림
+	if NetController then
+		NetController.FireClientsInRange(position, 400, "Harvest.Node.Spawned", {
+			nodeUID = nodeUID,
+			nodeId = nodeId,
+			position = position,
+			maxHits = nodeData.maxHealth,
+		})
+	end
+
+	-- 시체 자동 디스폰 타이머 (시간 초과 시 제거)
+	task.delay(CORPSE_DESPAWN_TIME, function()
+		if activeNodes[nodeUID] then
+			HarvestService._destroyNodeModel(nodeUID)
+			-- 시체는 리스폰하지 않으므로 즉시 제거
+			activeNodes[nodeUID] = nil
+			-- 모델도 완전 파괴
+			if model and model.Parent then
+				model:Destroy()
+			end
+		end
+	end)
+
+	print(string.format("[HarvestService] Registered corpse node: %s (UID: %s) at %s", nodeId, nodeUID, tostring(position)))
+	return nodeUID
+end
+
 --- 노드 상태 조회
 function HarvestService.getNodeState(nodeUID: string): any?
 	local state = activeNodes[nodeUID]
@@ -1639,6 +1778,13 @@ function HarvestService.Init(
 
 	Players.PlayerRemoving:Connect(function(player)
 		starterNodesSeededUsers[player.UserId] = nil
+		-- 복합 키(userId_itemId) 기반 activeGathers 정리
+		local prefix = tostring(player.UserId) .. "_"
+		for key, _ in pairs(activeGathers) do
+			if string.sub(key, 1, #prefix) == prefix then
+				activeGathers[key] = nil
+			end
+		end
 	end)
 
 	print("[HarvestService] Initialized — PRE-PLACED + AUTO-SPAWN MIXED system")
@@ -1840,10 +1986,327 @@ function HarvestService._replenishLoop()
 	end
 end
 
+--========================================
+-- R키 채집 시스템: Gather Handlers
+--========================================
+
+--- 채집 시간 계산 (서버 권위)
+local GATHER_TIME_OPTIMAL = 3   -- 최적 도구
+local GATHER_TIME_WRONG   = 15  -- 부적합 도구
+local GATHER_TIME_BARE    = 30  -- 맨손
+
+local function calculateGatherTime(player: Player, nodeData: any): number
+	local toolType = getToolType(player, nil)
+	local optimal = nodeData.optimalTool
+
+	local baseTime = GATHER_TIME_BARE -- 맨손 기본
+
+	if not optimal or optimal == "" then
+		-- 도구 불필요 노드 (나뭇가지, 잔돌 등)
+		baseTime = GATHER_TIME_OPTIMAL
+	elseif toolType and isCompatible(toolType, optimal) then
+		baseTime = GATHER_TIME_OPTIMAL
+	elseif toolType then
+		baseTime = GATHER_TIME_WRONG
+	end
+
+	-- Work Speed 보너스 (10점당 -5% 시간)
+	if PlayerStatService then
+		local stats = PlayerStatService.getStats(player.UserId)
+		local workSpeedStat = (stats and stats.statInvested and stats.statInvested[Enums.StatId.WORK_SPEED]) or 0
+		local speedBonus = math.floor(workSpeedStat / 10) * 0.05
+		baseTime = baseTime * math.max(0.3, 1 - speedBonus)
+	end
+
+	return baseTime
+end
+
+--- Harvest.Gather.Request: 채집 시작 (클라이언트가 슬롯 클릭 시)
+local function handleGatherRequest(player: Player, payload: any)
+	local nodeUID = payload.nodeUID
+	local itemId = payload.itemId
+	local userId = player.UserId
+
+	if not nodeUID or not itemId then
+		return { success = false, errorCode = Enums.ErrorCode.BAD_REQUEST }
+	end
+
+	-- 노드 존재 확인
+	local nodeState = activeNodes[nodeUID]
+	if not nodeState then
+		return { success = false, errorCode = Enums.ErrorCode.NODE_NOT_FOUND }
+	end
+
+	-- 노드 데이터
+	local nodeData = DataService.getResourceNode(nodeState.nodeId)
+	if not nodeData then
+		return { success = false, errorCode = Enums.ErrorCode.NOT_FOUND }
+	end
+
+	-- 거리 검증
+	local character = player.Character
+	if character then
+		local hrp = character:FindFirstChild("HumanoidRootPart")
+		if hrp then
+			local p1 = Vector2.new(hrp.Position.X, hrp.Position.Z)
+			local p2 = Vector2.new(nodeState.position.X, nodeState.position.Z)
+			local distance = (p1 - p2).Magnitude
+			local maxRange = (Balance.HARVEST_RANGE or 25) + 10
+			if distance > maxRange then
+				return { success = false, errorCode = Enums.ErrorCode.OUT_OF_RANGE }
+			end
+		end
+	end
+
+	-- 해당 아이템이 이 노드의 resources에 있는지 확인
+	local foundResource = nil
+	for _, resource in ipairs(nodeData.resources) do
+		if resource.itemId == itemId then
+			foundResource = resource
+			break
+		end
+	end
+	if not foundResource then
+		return { success = false, errorCode = Enums.ErrorCode.BAD_REQUEST }
+	end
+
+	-- 복합 키 (같은 유저+같은 아이템 진행 중이면 자동 취소)
+	local gatherKey = tostring(userId) .. "_" .. itemId
+	if activeGathers[gatherKey] then
+		activeGathers[gatherKey] = nil
+	end
+
+	-- 채집 시간 계산
+	local gatherTime = calculateGatherTime(player, nodeData)
+
+	-- 1클릭 = 1개 (weight 확률 적용)
+	local count = 0
+	if math.random() <= (foundResource.weight or 1.0) then
+		count = 1
+	end
+
+	-- 진행 중 상태 저장
+	activeGathers[gatherKey] = {
+		nodeUID = nodeUID,
+		itemId = itemId,
+		startTime = tick(),
+		gatherTime = gatherTime,
+		count = count,
+	}
+
+	-- 남은 채집 가능 횟수 계산
+	local totalMaxGathers = 0
+	for _, res in ipairs(nodeData.resources or {}) do
+		totalMaxGathers = totalMaxGathers + (res.max or 1)
+	end
+	local damagePerGather = math.max(1, math.ceil((nodeData.maxHealth or 50) / math.max(1, totalMaxGathers)))
+	local remainingGathers = math.floor(nodeState.remainingHits / damagePerGather)
+
+	return {
+		success = true,
+		data = {
+			gatherTime = gatherTime,
+			count = count,
+			itemId = itemId,
+			remainingGathers = remainingGathers,
+		}
+	}
+end
+
+--- Harvest.Gather.Complete: 채집 완료 (클라이언트가 진행바 끝나면 호출)
+local function handleGatherComplete(player: Player, payload: any)
+	local nodeUID = payload.nodeUID
+	local itemId = payload.itemId
+	local userId = player.UserId
+
+	if not nodeUID or not itemId then
+		return { success = false, errorCode = Enums.ErrorCode.BAD_REQUEST }
+	end
+
+	-- 진행 중인 채집 확인 (복합 키)
+	local gatherKey = tostring(userId) .. "_" .. itemId
+	local gatherState = activeGathers[gatherKey]
+	if not gatherState then
+		return { success = false, errorCode = Enums.ErrorCode.INVALID_STATE }
+	end
+
+	-- 일치 확인
+	if gatherState.nodeUID ~= nodeUID or gatherState.itemId ~= itemId then
+		return { success = false, errorCode = Enums.ErrorCode.BAD_REQUEST }
+	end
+
+	-- 시간 검증 (서버 기준 채집 시간의 90% 이상 경과해야 유효 — 안티치트)
+	local elapsed = tick() - gatherState.startTime
+	if elapsed < gatherState.gatherTime * 0.9 then
+		return { success = false, errorCode = Enums.ErrorCode.COOLDOWN }
+	end
+
+	-- 노드 존재 재확인
+	local nodeState = activeNodes[nodeUID]
+	if not nodeState then
+		activeGathers[gatherKey] = nil
+		return { success = false, errorCode = Enums.ErrorCode.NODE_NOT_FOUND }
+	end
+
+	local nodeData = DataService.getResourceNode(nodeState.nodeId)
+
+	-- 진행 상태 제거
+	local count = gatherState.count
+	activeGathers[gatherKey] = nil
+
+	-- count가 0이면 (확률 실패) 성공은 하되 아이템 없음
+	if count <= 0 then
+		return { success = true, data = { itemId = itemId, count = 0 } }
+	end
+
+	-- 인벤토리에 직접 추가
+	if InventoryService then
+		local added, remaining = InventoryService.addItem(userId, itemId, count)
+		if remaining > 0 and UIManager then
+			-- 인벤토리 가득 참 — 일부만 추가
+		end
+	end
+
+	-- XP 보상
+	if nodeData and PlayerStatService then
+		local xpPerHit = nodeData.xpPerHit or 2
+		PlayerStatService.addXP(userId, xpPerHit * count, Enums.XPSource.HARVEST_RESOURCE)
+	end
+
+	-- 배고픔 소모
+	local HSuccess, HungerService = pcall(function() return require(game:GetService("ServerScriptService").Server.Services.HungerService) end)
+	if HSuccess and HungerService then
+		HungerService.consumeHunger(userId, (Balance.HUNGER_HARVEST_COST or 0.5) * 3)
+	end
+
+	-- 퀘스트 콜백
+	if questCallback and nodeData then
+		questCallback(userId, nodeData.nodeType or nodeData.id)
+	end
+
+	-- 노드 내구도 감소 (1개당 고정 비율 — 전체 가능 채집수 기반)
+	local totalMaxGathers = 0
+	for _, res in ipairs(nodeData and nodeData.resources or {}) do
+		totalMaxGathers = totalMaxGathers + (res.max or 1)
+	end
+	local damagePerGather = math.max(1, math.ceil((nodeData and nodeData.maxHealth or 50) / math.max(1, totalMaxGathers)))
+	nodeState.remainingHits = math.max(0, nodeState.remainingHits - damagePerGather)
+
+	-- 남은 채집 가능 횟수 응답에 포함
+	local remainingGathers = math.floor(nodeState.remainingHits / damagePerGather)
+
+	-- HP 브로드캐스트
+	if NetController then
+		NetController.FireClientsInRange(nodeState.position, 400, "Harvest.Node.Hit", {
+			nodeUID = nodeUID,
+			remainingHits = nodeState.remainingHits,
+			maxHits = nodeData.maxHealth,
+		})
+	end
+
+	-- 고갈 시 노드 제거 (월드 드롭 없이)
+	if nodeState.remainingHits <= 0 then
+		HarvestService._destroyNodeModel(nodeUID)
+
+		if nodeState.isCorpse then
+			-- 시체 노드: 리스폰 없이 즉시 완전 제거
+			local nodeModel = nodeState.nodeModel
+			activeNodes[nodeUID] = nil
+			if nodeModel and nodeModel.Parent then
+				nodeModel:Destroy()
+			end
+		elseif nodeState.isAutoSpawned then
+			local nodeId2 = nodeState.nodeId
+			spawnedNodesByType[nodeId2] = math.max(0, (spawnedNodesByType[nodeId2] or 0) - 1)
+			spawnedNodeCount = math.max(0, spawnedNodeCount - 1)
+			activeNodes[nodeUID] = nil
+		else
+			depletedNodes[nodeUID] = {
+				nodeId = nodeState.nodeId,
+				position = nodeState.position,
+				respawnAt = os.time() + (nodeData.respawnTime or 300),
+				isAutoSpawned = nodeState.isAutoSpawned,
+				nodeModel = nodeState.nodeModel,
+			}
+			activeNodes[nodeUID] = nil
+			task.delay(nodeData.respawnTime or 300, function()
+				HarvestService._respawnNode(nodeUID)
+			end)
+		end
+	end
+
+	return { success = true, data = { itemId = itemId, count = count, remainingGathers = remainingGathers } }
+end
+
+--- Harvest.Gather.Info: 노드의 아이템별 채집 가능 횟수 반환
+local function handleGatherInfo(player: Player, payload: any)
+	local nodeUID = payload.nodeUID
+	if not nodeUID then
+		return { success = false, errorCode = Enums.ErrorCode.BAD_REQUEST }
+	end
+
+	local nodeState = activeNodes[nodeUID]
+	if not nodeState then
+		return { success = false, errorCode = Enums.ErrorCode.NODE_NOT_FOUND }
+	end
+
+	local nodeData = DataService.getResourceNode(nodeState.nodeId)
+	if not nodeData then
+		return { success = false, errorCode = Enums.ErrorCode.NOT_FOUND }
+	end
+
+	-- 아이템별 채집 가능 횟수 계산 (서버 HP 기반)
+	local totalMaxGathers = 0
+	for _, res in ipairs(nodeData.resources or {}) do
+		totalMaxGathers = totalMaxGathers + (res.max or 1)
+	end
+	local damagePerGather = math.max(1, math.ceil((nodeData.maxHealth or 50) / math.max(1, totalMaxGathers)))
+	local remainingTotal = math.floor(nodeState.remainingHits / damagePerGather)
+
+	-- 각 리소스별 비율로 분배 (floor 손실분 보정)
+	local resourceCounts = {}
+	local resList = nodeData.resources or {}
+	local distributed = 0
+	for i, res in ipairs(resList) do
+		local ratio = (res.max or 1) / math.max(1, totalMaxGathers)
+		local count = math.max(0, math.floor(remainingTotal * ratio))
+		resourceCounts[res.itemId] = count
+		distributed = distributed + count
+	end
+	-- floor 절삭으로 빠진 나머지를 max 비율 높은 순으로 +1 보정
+	local deficit = remainingTotal - distributed
+	if deficit > 0 then
+		-- 비율 높은 리소스부터 보정 (원본 순서 유지를 위해 인덱스 정렬)
+		local sortedIdx = {}
+		for i, res in ipairs(resList) do
+			table.insert(sortedIdx, { idx = i, maxVal = res.max or 1 })
+		end
+		table.sort(sortedIdx, function(a, b) return a.maxVal > b.maxVal end)
+		for _, entry in ipairs(sortedIdx) do
+			if deficit <= 0 then break end
+			local res = resList[entry.idx]
+			resourceCounts[res.itemId] = resourceCounts[res.itemId] + 1
+			deficit = deficit - 1
+		end
+	end
+
+	return {
+		success = true,
+		data = {
+			remaining = resourceCounts,
+			remainingTotal = remainingTotal,
+			gatherTime = calculateGatherTime(player, nodeData),
+		}
+	}
+end
+
 function HarvestService.GetHandlers()
 	return {
 		["Harvest.Hit.Request"] = handleHitRequest,
 		["Harvest.GetNodes.Request"] = handleGetNodesRequest,
+		["Harvest.Gather.Request"] = handleGatherRequest,
+		["Harvest.Gather.Complete"] = handleGatherComplete,
+		["Harvest.Gather.Info"] = handleGatherInfo,
 	}
 end
 

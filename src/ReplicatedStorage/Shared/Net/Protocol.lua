@@ -110,6 +110,9 @@ Protocol.Commands = {
 	-- Harvest 명령어 (Phase 7)
 	["Harvest.Hit.Request"] = true,            -- 자원 수확 타격
 	["Harvest.GetNodes.Request"] = true,       -- 활성 노드 목록 조회
+	["Harvest.Gather.Request"] = true,         -- 채집 시작 요청 (R키 UI)
+	["Harvest.Gather.Complete"] = true,        -- 채집 완료 확인
+	["Harvest.Gather.Info"] = true,            -- 노드 채집 가능 횟수 조회
 	
 	-- Base 명령어 (Phase 7)
 	["Base.Get.Request"] = true,               -- 베이스 정보 조회

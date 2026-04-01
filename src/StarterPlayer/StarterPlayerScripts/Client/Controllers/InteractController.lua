@@ -18,6 +18,7 @@ local UILocalizer = require(Client.Localization.UILocalizer)
 local BuildController = require(Client.Controllers.BuildController)
 local RadioStoryController = require(Client.Controllers.RadioStoryController)
 local WindowManager = require(Client.Utils.WindowManager)
+local HarvestUI = require(Client.UI.HarvestUI)
 local UIManager = nil -- Circular dependency check (will require inside if needed)
 
 local InteractController = {}
@@ -528,8 +529,7 @@ function InteractController.onInteractPress()
 	
 	if currentTarget and currentTargetType then
 		if currentTargetType == "resource" then
-			-- 채집은 이제 공격(좌클릭)으로 처리하므로 여기서는 무시하거나 안내만 함
-			print("[InteractController] 공격(좌클릭)으로 채집하세요.")
+			-- R키로 채집 UI를 여세요
 		elseif currentTargetType == "npc" then
 			interactNPC(currentTarget)
 		end
@@ -540,6 +540,10 @@ end
 function InteractController.onFacilityInteractPress()
 	if InputManager.isUIOpen() then
 		-- 시설 상호작용 키(R)로 UI 닫기까지 일관 처리
+		if HarvestUI.IsOpen() then
+			HarvestUI.Close()
+			return
+		end
 		if WindowManager then
 			WindowManager.closeAll()
 		end
@@ -554,6 +558,18 @@ function InteractController.onFacilityInteractPress()
 	if currentTarget and currentTargetType == "radio" then
 		RadioStoryController.interact()
 		return
+	end
+
+	-- 자원 노드: R키로 채집 UI 열기
+	if currentTarget and currentTargetType == "resource" then
+		local nodeUID = currentTarget:GetAttribute("NodeUID")
+		local nodeId = currentTarget:GetAttribute("NodeId")
+		if nodeUID and nodeId then
+			HarvestUI.Open(nodeUID, nodeId, currentTarget)
+			return
+		else
+			warn("[InteractController] Resource node missing attributes - NodeUID:", nodeUID, "NodeId:", nodeId, "Model:", currentTarget:GetFullName())
+		end
 	end
 
 	-- 시설은 별도 추적된 대상 우선 사용 (채집노드가 가까워도 R키 작동)
@@ -627,16 +643,8 @@ local function onUpdate()
 				end
 				
 				if targetType == "resource" then
-					-- 채집노드가 가장 가까운데 시설도 근처에 있으면 R키 힌트 표시
-					if nearbyFacility then
-						local facId = nearbyFacility:GetAttribute("FacilityId")
-						local facData = facId and DataHelper.GetData("FacilityData", tostring(facId):upper()) or nil
-						local facName = facData and UILocalizer.LocalizeDataText("FacilityData", tostring(facId):upper(), "name", facData.name) or ""
-						targetName = facName
-						promptText = UILocalizer.Localize("[R] 사용") .. "  " .. UILocalizer.Localize("[T] 해체")
-					else
-						promptText = "" -- HP바로 대체
-					end
+					-- R키로 채집 UI 열기
+					promptText = UILocalizer.Localize("[R] 채집")
 				elseif targetType == "npc" then
 					promptText = UILocalizer.Localize("[Z] 대화")
 				elseif targetType == "facility" then

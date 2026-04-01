@@ -291,7 +291,7 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 	-- Tutorial quest: fixed HUD panel (non-toast)
 	local tutorialFrame = Utils.mkFrame({
 		name = "TutorialPanel",
-		size = UDim2.new(0, isSmall and 332 or 302, 0, isSmall and 134 or 118),
+		size = UDim2.new(0, isSmall and 460 or 420, 0, isSmall and 190 or 170),
 		pos = UDim2.new(1, -20, 0, isSmall and 182 or 174),
 		anchor = Vector2.new(1, 0),
 		bg = C.BG_PANEL,
@@ -316,11 +316,11 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 	HUDUI.Refs.tutorialTitle = Utils.mkLabel({
 		name = "TutorialTitle",
 		text = UILocalizer.Localize("튜토리얼 퀘스트"),
-		size = UDim2.new(1, -16, 0, 24),
-		pos = UDim2.new(0, 8, 0, 6),
+		size = UDim2.new(1, -16, 0, 32),
+		pos = UDim2.new(0, 10, 0, 8),
 		ax = Enum.TextXAlignment.Left,
 		font = F.TITLE,
-		ts = 20,
+		ts = 26,
 		color = C.GOLD,
 		parent = tutorialFrame,
 	})
@@ -328,12 +328,12 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 	HUDUI.Refs.tutorialStep = Utils.mkLabel({
 		name = "TutorialStep",
 		text = "",
-		size = UDim2.new(1, -16, 0, 42),
-		pos = UDim2.new(0, 8, 0, 30),
+		size = UDim2.new(1, -20, 0, 56),
+		pos = UDim2.new(0, 10, 0, 40),
 		ax = Enum.TextXAlignment.Left,
 		ay = Enum.TextYAlignment.Top,
 		wrap = true,
-		ts = 15,
+		ts = 20,
 		color = C.WHITE,
 		parent = tutorialFrame,
 	})
@@ -341,10 +341,10 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 	HUDUI.Refs.tutorialProgress = Utils.mkLabel({
 		name = "TutorialProgress",
 		text = "",
-		size = UDim2.new(1, -100, 0, 20),
-		pos = UDim2.new(0, 8, 1, -24),
+		size = UDim2.new(1, -120, 0, 24),
+		pos = UDim2.new(0, 10, 1, -30),
 		ax = Enum.TextXAlignment.Left,
-		ts = 14,
+		ts = 18,
 		color = C.GOLD,
 		parent = tutorialFrame,
 	})
@@ -352,10 +352,10 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 	HUDUI.Refs.tutorialReward = Utils.mkLabel({
 		name = "TutorialReward",
 		text = "",
-		size = UDim2.new(1, -16, 0, 18),
-		pos = UDim2.new(0, 8, 1, -44),
+		size = UDim2.new(1, -20, 0, 24),
+		pos = UDim2.new(0, 10, 1, -56),
 		ax = Enum.TextXAlignment.Left,
-		ts = 15,
+		ts = 20,
 		rich = true,
 		color = C.WHITE,
 		parent = tutorialFrame,
@@ -364,10 +364,10 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 	HUDUI.Refs.tutorialReadyHint = Utils.mkLabel({
 		name = "TutorialReadyHint",
 		text = UILocalizer.Localize("박스를 클릭해 완료"),
-		size = UDim2.new(0.48, 0, 0, 20),
-		pos = UDim2.new(0.5, 0, 1, -24),
+		size = UDim2.new(0.48, 0, 0, 24),
+		pos = UDim2.new(0.5, 0, 1, -30),
 		ax = Enum.TextXAlignment.Right,
-		ts = 14,
+		ts = 18,
 		font = F.TITLE,
 		color = C.GOLD,
 		vis = false,
@@ -377,13 +377,13 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 	local tutorialCompleteBtn = Utils.mkBtn({
 		name = "TutorialCompleteBtn",
 		text = "완료",
-		size = UDim2.new(0, 76, 0, 24),
-		pos = UDim2.new(1, -8, 1, -24),
+		size = UDim2.new(0, 96, 0, 32),
+		pos = UDim2.new(1, -10, 1, -30),
 		anchor = Vector2.new(1, 1),
 		bg = C.BG_PANEL_L,
 		bgT = 0.94,
 		stroke = false,
-		ts = 13,
+		ts = 17,
 		font = F.TITLE,
 		color = C.WHITE,
 		fn = function()
@@ -427,11 +427,11 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 
 		local panel = HUDUI.Refs.tutorialFrame
 		local panelWidth = math.max(260, math.floor(panel.Size.X.Offset))
-		local contentWidth = panelWidth - 16
-		local topPadding = 6
-		local sidePadding = 8
-		local rowGap = 4
-		local bottomPadding = 8
+		local contentWidth = panelWidth - 20
+		local topPadding = 8
+		local sidePadding = 10
+		local rowGap = 6
+		local bottomPadding = 10
 
 		local vpY = 900
 		local camera = workspace.CurrentCamera
@@ -440,19 +440,19 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 		end
 
 		local panelTop = isSmall and 188 or 178
-		local minHeight = isSmall and 120 or 108
+		local minHeight = isSmall and 170 or 155
 		local maxHeight = math.max(minHeight, vpY - panelTop - 24)
 
-		local titleH = math.max(20, math.floor(HUDUI.Refs.tutorialTitle.TextSize * 1.25))
+		local titleH = math.max(28, math.floor(HUDUI.Refs.tutorialTitle.TextSize * 1.25))
 		local stepBounds = TextService:GetTextSize(HUDUI.Refs.tutorialStep.Text or "", HUDUI.Refs.tutorialStep.TextSize, HUDUI.Refs.tutorialStep.Font, Vector2.new(contentWidth, 10000))
-		local stepH = math.max(20, stepBounds.Y + 4)
+		local stepH = math.max(28, stepBounds.Y + 6)
 		local rewardBounds = TextService:GetTextSize(HUDUI.Refs.tutorialReward.Text or "", HUDUI.Refs.tutorialReward.TextSize, HUDUI.Refs.tutorialReward.Font, Vector2.new(contentWidth, 10000))
-		local rewardH = math.max(18, rewardBounds.Y + 2)
+		local rewardH = math.max(24, rewardBounds.Y + 4)
 
 		local btn = HUDUI.Refs.tutorialCompleteBtn
-		local btnWidth = math.max(72, math.floor(btn.Size.X.Offset))
-		local btnHeight = math.max(22, math.floor(btn.Size.Y.Offset))
-		local progressH = math.max(18, math.floor(HUDUI.Refs.tutorialProgress.TextSize * 1.3))
+		local btnWidth = math.max(90, math.floor(btn.Size.X.Offset))
+		local btnHeight = math.max(28, math.floor(btn.Size.Y.Offset))
+		local progressH = math.max(22, math.floor(HUDUI.Refs.tutorialProgress.TextSize * 1.3))
 		local bottomRowH = math.max(btnHeight, progressH)
 
 		local wantedHeight = topPadding + titleH + rowGap + stepH + rowGap + rewardH + rowGap + bottomRowH + bottomPadding
@@ -460,23 +460,23 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 
 		panel.Size = UDim2.new(0, panelWidth, 0, panelHeight)
 
-		HUDUI.Refs.tutorialTitle.Size = UDim2.new(1, -16, 0, titleH)
+		HUDUI.Refs.tutorialTitle.Size = UDim2.new(1, -20, 0, titleH)
 		HUDUI.Refs.tutorialTitle.Position = UDim2.new(0, sidePadding, 0, topPadding)
 
-		HUDUI.Refs.tutorialStep.Size = UDim2.new(1, -16, 0, stepH)
+		HUDUI.Refs.tutorialStep.Size = UDim2.new(1, -20, 0, stepH)
 		HUDUI.Refs.tutorialStep.Position = UDim2.new(0, sidePadding, 0, topPadding + titleH + rowGap)
 
-		HUDUI.Refs.tutorialReward.Size = UDim2.new(1, -16, 0, rewardH)
+		HUDUI.Refs.tutorialReward.Size = UDim2.new(1, -20, 0, rewardH)
 		HUDUI.Refs.tutorialReward.Position = UDim2.new(0, sidePadding, 0, topPadding + titleH + rowGap + stepH + rowGap)
 
 		local bottomY = panelHeight - bottomPadding - bottomRowH
-		HUDUI.Refs.tutorialProgress.Size = UDim2.new(1, -(btnWidth + 22), 0, progressH)
+		HUDUI.Refs.tutorialProgress.Size = UDim2.new(1, -(btnWidth + 26), 0, progressH)
 		HUDUI.Refs.tutorialProgress.Position = UDim2.new(0, sidePadding, 0, bottomY + math.floor((bottomRowH - progressH) * 0.5))
 
-		HUDUI.Refs.tutorialReadyHint.Size = UDim2.new(1, -(btnWidth + 22), 0, progressH)
+		HUDUI.Refs.tutorialReadyHint.Size = UDim2.new(1, -(btnWidth + 26), 0, progressH)
 		HUDUI.Refs.tutorialReadyHint.Position = UDim2.new(0, sidePadding, 0, bottomY + math.floor((bottomRowH - progressH) * 0.5))
 
-		HUDUI.Refs.tutorialCompleteBtn.Position = UDim2.new(1, -8, 1, -8)
+		HUDUI.Refs.tutorialCompleteBtn.Position = UDim2.new(1, -10, 1, -10)
 		HUDUI.Refs.tutorialClickArea.ZIndex = HUDUI.Refs.tutorialCompleteBtn.ZIndex + 1
 	end
 
@@ -490,26 +490,26 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 		end
 
 		local vp = camera.ViewportSize
-		local panelWidth = math.clamp(math.floor(vp.X * (isSmall and 0.42 or 0.24)), isSmall and 300 or 270, isSmall and 430 or 390)
+		local panelWidth = math.clamp(math.floor(vp.X * (isSmall and 0.50 or 0.32)), isSmall and 420 or 380, isSmall and 560 or 520)
 
 		tutorialFrame.Size = UDim2.new(0, panelWidth, 0, tutorialFrame.Size.Y.Offset)
 		tutorialFrame.Position = UDim2.new(1, -20, 0, isSmall and 188 or 178)
 
-		local titleSize = math.clamp(math.floor(vp.Y * (isSmall and 0.028 or 0.023)), 18, 28)
-		local bodySize = math.clamp(math.floor(vp.Y * (isSmall and 0.022 or 0.019)), 14, 21)
-		local progressSize = math.clamp(math.floor(vp.Y * (isSmall and 0.02 or 0.0175)), 13, 19)
+		local titleSize = math.clamp(math.floor(vp.Y * (isSmall and 0.036 or 0.030)), 24, 36)
+		local bodySize = math.clamp(math.floor(vp.Y * (isSmall and 0.028 or 0.024)), 18, 28)
+		local progressSize = math.clamp(math.floor(vp.Y * (isSmall and 0.025 or 0.022)), 17, 24)
 
 		HUDUI.Refs.tutorialTitle.TextSize = titleSize
 		HUDUI.Refs.tutorialStep.TextSize = bodySize
 		HUDUI.Refs.tutorialProgress.TextSize = progressSize
-		HUDUI.Refs.tutorialReward.TextSize = math.clamp(math.floor(vp.Y * (isSmall and 0.019 or 0.0165)), 14, 20)
+		HUDUI.Refs.tutorialReward.TextSize = math.clamp(math.floor(vp.Y * (isSmall and 0.025 or 0.022)), 18, 26)
 
-		local panelHeight = math.max(isSmall and 120 or 108, tutorialFrame.Size.Y.Offset)
-		local btnWidth = math.clamp(math.floor(panelWidth * 0.24), 72, 110)
-		local btnHeight = math.clamp(math.floor(panelHeight * 0.24), 22, 34)
+		local panelHeight = math.max(isSmall and 170 or 155, tutorialFrame.Size.Y.Offset)
+		local btnWidth = math.clamp(math.floor(panelWidth * 0.24), 90, 130)
+		local btnHeight = math.clamp(math.floor(panelHeight * 0.24), 28, 42)
 		HUDUI.Refs.tutorialCompleteBtn.Size = UDim2.new(0, btnWidth, 0, btnHeight)
-		HUDUI.Refs.tutorialCompleteBtn.TextSize = math.clamp(math.floor(panelHeight * 0.12), 12, 18)
-		HUDUI.Refs.tutorialReadyHint.TextSize = math.clamp(math.floor(panelHeight * 0.125), 12, 18)
+		HUDUI.Refs.tutorialCompleteBtn.TextSize = math.clamp(math.floor(panelHeight * 0.13), 15, 22)
+		HUDUI.Refs.tutorialReadyHint.TextSize = math.clamp(math.floor(panelHeight * 0.13), 15, 22)
 
 		relayoutTutorialPanel()
 	end

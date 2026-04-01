@@ -18,6 +18,7 @@ local NetController
 local DataService
 local WorldDropService
 local PlayerStatService -- Phase 6 연동
+local HarvestService -- 시체 채집 연동
 local DropTableData -- require 나중에 (상호참조 방지)
 local DebuffService -- Phase 4-4 연동
 local protectedZoneChecker = nil -- TotemService에서 주입
@@ -747,6 +748,18 @@ local function playNaturalDeathSequence(creature)
 		rootPart.Anchored = true
 	end
 
+	-- 시체 채집 시스템: HarvestService에 시체 노드 등록
+	if HarvestService and creature.creatureId then
+		local position = rootPart and rootPart.Position or model:GetPivot().Position
+		local nodeUID = HarvestService.registerCorpseNode(creature.creatureId, position, model)
+		if nodeUID then
+			-- registerCorpseNode가 모델 소유권을 가져감 → 여기서 파괴하지 않음
+			print(string.format("[CreatureService] Corpse registered: %s → %s", creature.creatureId, nodeUID))
+			return
+		end
+	end
+
+	-- 시체 등록 실패 시 기존 사망 연출 (페이드 + 하강)으로 폴백
 	for _, inst in ipairs(model:GetDescendants()) do
 		if inst:IsA("BasePart") then
 			inst.CanCollide = false
@@ -1883,6 +1896,15 @@ end
 
 function CreatureService.SetProtectedZoneChecker(checkerFn)
 	protectedZoneChecker = checkerFn
+end
+
+--========================================
+-- 후순위 의존성 주입
+--========================================
+
+--- HarvestService를 후순위 주입 (ServerInit에서 초기화 순서 차이로 인해)
+function CreatureService.SetHarvestService(_HarvestService)
+	HarvestService = _HarvestService
 end
 
 --========================================
