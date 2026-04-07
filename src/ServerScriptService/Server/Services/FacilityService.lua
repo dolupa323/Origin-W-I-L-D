@@ -1167,6 +1167,12 @@ function FacilityService.SetPalboxService(_PalboxService)
 	print("[FacilityService] PalboxService injected")
 end
 
+--- BuildService 주입 (순환 참조 방지) - ServerInit에서 BuildService 초기화 후 호출
+function FacilityService.SetBuildService(_BuildService)
+	BuildService = _BuildService
+	print("[FacilityService] BuildService injected")
+end
+
 --- PalAIService 주입 (Phase 7-5)
 function FacilityService.SetPalAIService(_PalAIService)
 	PalAIService = _PalAIService

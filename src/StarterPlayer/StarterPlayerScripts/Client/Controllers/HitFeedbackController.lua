@@ -59,19 +59,30 @@ local function playCharacterShake(sourcePos)
 	local origPivot = char:GetPivot()
 	
 	task.spawn(function()
-		-- 피격 방향으로부터 살짝 뒤로 튕김 (Recoil상향)
+		-- 피격 방향으로부터 살짝 뒤로 튕김 (Recoil)
 		local hitDir
 		if sourcePos then
-			hitDir = (hrp.Position - sourcePos).Unit
+			hitDir = (hrp.Position - sourcePos)
 		else
 			hitDir = -hrp.CFrame.LookVector
 		end
+		-- ★ [FIX] Y축 제거: 지형 아래로 밀려들어가면 물리 발사 유발
+		hitDir = Vector3.new(hitDir.X, 0, hitDir.Z)
+		if hitDir.Magnitude < 0.01 then
+			hitDir = -hrp.CFrame.LookVector * Vector3.new(1, 0, 1)
+		end
+		hitDir = hitDir.Unit
 		
-		-- 1단계: 강한 반동 (0.4 -> 0.8 Studs)
-		char:PivotTo(origPivot * CFrame.new(hitDir * 0.8))
+		-- ★ [FIX] 월드 좌표 오프셋 사용 (origPivot * CFrame.new은 로컬 좌표 적용)
+		-- CFrame.new(worldOffset) + origPivot 회전 조합 → 월드 방향 그대로 유지
+		local offset1 = CFrame.new(hitDir * 0.5)
+		local offset2 = CFrame.new(-hitDir * 0.2)
+		
+		-- 1단계: 반동
+		char:PivotTo(offset1 * origPivot)
 		task.wait(0.04)
-		-- 2단계: 복원 시 미세 진동 (0.15 -> 0.3 Studs)
-		char:PivotTo(origPivot * CFrame.new(-hitDir * 0.3))
+		-- 2단계: 복원 시 미세 진동
+		char:PivotTo(offset2 * origPivot)
 		task.wait(0.04)
 		char:PivotTo(origPivot)
 	end)

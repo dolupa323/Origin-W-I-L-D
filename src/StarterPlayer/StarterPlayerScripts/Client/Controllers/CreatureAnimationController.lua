@@ -264,7 +264,7 @@ function CreatureAnimationController.Init()
 		end
 	end)
 
-	-- 서버 공격 이벤트 수신
+	-- 서버 공격 이벤트 수신 (레거시 호환 유지)
 	NetClient.On("Creature.Attack.Play", function(data)
 		local model = nil
 		for m, _ in pairs(activeCreatures) do
@@ -283,33 +283,135 @@ function CreatureAnimationController.Init()
 				local attackAnimName = animSet.ATTACK
 				
 				if attackAnimName then
-					-- 현재 재생 중인 이동 애니메이션 잠시 중지 (부드러운 타격)
 					if info.lastAnim ~= "" then
 						AnimationManager.stop(humanoid, info.lastAnim, 0.1)
 						info.lastAnim = "" 
 					end
 					
-					-- [핵심] 공격 애니메이션 재생 루틴
 					task.spawn(function()
 						info.isAttacking = true
-						
-						-- ★ 서버 권위 객체: WalkSpeed/Velocity 조작 제거
-						-- NetworkOwner=nil(서버 소유) 크리처의 물리 속성은 서버에서만 제어
-						-- 서버의 CreatureService에서 attackingUntil + WalkSpeed=0 으로 이미 처리됨
-						
-						-- 공격 애니메이션 재생
 						local prepTrack = AnimationManager.play(humanoid, attackAnimName, 0.1)
 						if prepTrack then
 							prepTrack.Priority = Enum.AnimationPriority.Action
 							task.wait(prepTrack.Length > 0 and prepTrack.Length or 0.5)
 						end
-						
-						-- ★ 공격 상태 해제 (애니메이션 상태만 관리)
-						-- 서버가 WalkSpeed를 제어하므로 클라이언트 복원 불필요
 						task.wait(0.1)
 						info.isAttacking = false
 					end)
 				end
+			end
+		end
+	end)
+
+	-- ★ 텔레그래프 공격 이벤트 수신 (2단계: 선행 모션 → 공격 모션)
+	NetClient.On("Creature.Attack.Telegraph", function(data)
+		local model = nil
+		for m, _ in pairs(activeCreatures) do
+			if m:GetAttribute("InstanceId") == data.instanceId then
+				model = m
+				break
+			end
+		end
+		
+		if model then
+			local info = activeCreatures[model]
+			local humanoid = model:FindFirstChildOfClass("Humanoid")
+			if humanoid and info then
+				local creatureId = model:GetAttribute("CreatureId") or model.Name:upper()
+				local animSet = CreatureAnimationIds[creatureId] or CreatureAnimationIds.DEFAULT
+				local windupTime = data.windupTime or 0.5
+				local attackTime = data.attackTime or 0.5
+				
+				-- data.anim으로 애니메이션 결정 (nil이면 애니 없이 대기)
+				local attackAnimName = nil
+				if data.anim then
+					attackAnimName = animSet[data.anim] or animSet.ATTACK
+				end
+				local windupAnimName = animSet.ATTACK_WINDUP or nil
+				
+				-- 현재 이동 애니메이션 중단
+				if info.lastAnim ~= "" then
+					AnimationManager.stop(humanoid, info.lastAnim, 0.1)
+					info.lastAnim = ""
+				end
+				
+				task.spawn(function()
+					info.isAttacking = true
+					
+					-- 1단계: 선행 모션 (windup) — 공격 준비 자세
+					local windupTrack = nil
+					if windupAnimName and windupAnimName ~= attackAnimName then
+						windupTrack = AnimationManager.play(humanoid, windupAnimName, 0.15)
+						if windupTrack then
+							windupTrack.Priority = Enum.AnimationPriority.Action
+							if windupTrack.Length > 0 then
+								windupTrack:AdjustSpeed(windupTrack.Length / windupTime)
+							end
+						end
+						-- ★ 선딜 대부분 대기 후, 마지막 0.5초에 발광 경고
+						local flashLeadTime = math.min(0.5, windupTime * 0.8)
+						task.wait(windupTime - flashLeadTime)
+						
+						-- ★ 공격 직전 발광 경고: 노란 Highlight 반짝
+						local highlight = Instance.new("Highlight")
+						highlight.Name = "TelegraphGlow"
+						highlight.FillColor = Color3.fromRGB(255, 240, 130)
+						highlight.FillTransparency = 0.5
+						highlight.OutlineColor = Color3.fromRGB(255, 220, 60)
+						highlight.OutlineTransparency = 0.2
+						highlight.Adornee = model
+						highlight.Parent = model
+						
+						task.wait(flashLeadTime)
+						
+						if highlight and highlight.Parent then
+							highlight:Destroy()
+						end
+					else
+						-- windupAnim 없는 경우에도 마지막 0.5초 발광
+						local flashLeadTime = math.min(0.5, windupTime * 0.8)
+						task.wait(windupTime - flashLeadTime)
+						
+						local highlight = Instance.new("Highlight")
+						highlight.Name = "TelegraphGlow"
+						highlight.FillColor = Color3.fromRGB(255, 240, 130)
+						highlight.FillTransparency = 0.5
+						highlight.OutlineColor = Color3.fromRGB(255, 220, 60)
+						highlight.OutlineTransparency = 0.2
+						highlight.Adornee = model
+						highlight.Parent = model
+						
+						task.wait(flashLeadTime)
+						
+						if highlight and highlight.Parent then
+							highlight:Destroy()
+						end
+					end
+					
+					-- 2단계: 공격 모션 (attack) — 선행 모션과 크로스페이드
+					if attackAnimName then
+						local attackTrack = AnimationManager.play(humanoid, attackAnimName, 0.05)
+						if attackTrack then
+							attackTrack.Priority = Enum.AnimationPriority.Action
+							if attackTrack.Length > 0 then
+								attackTrack:AdjustSpeed(attackTrack.Length / attackTime)
+							end
+						end
+						-- 공격 모션 시작 후 선행 모션 정지 (크로스페이드)
+						if windupTrack and windupAnimName and windupAnimName ~= attackAnimName then
+							AnimationManager.stop(humanoid, windupAnimName, 0.05)
+						end
+						task.wait(attackTime)
+					else
+						if windupTrack and windupAnimName then
+							AnimationManager.stop(humanoid, windupAnimName, 0.1)
+						end
+						task.wait(attackTime)
+					end
+					
+					task.wait(0.1)
+					info.isAttacking = false
+				end)
 			end
 		end
 	end)

@@ -74,6 +74,10 @@ if success then
 	-- CreatureAnimationController 초기화 (공룡 애니메이션)
 	local CreatureAnimationController = require(Controllers.CreatureAnimationController)
 	CreatureAnimationController.Init()
+
+	-- AttackIndicatorController 초기화 (크리처 텔레그래프 범위 표시)
+	local AttackIndicatorController = require(Controllers.AttackIndicatorController)
+	AttackIndicatorController.Init()
 	
 	-- [REMOVED] CreatureHealthUIController — 레거시 흰색 이름+초록 HP바 박스 제거
 	-- 크리처 HP/Torpor 정보는 별도 UI로 대체됨

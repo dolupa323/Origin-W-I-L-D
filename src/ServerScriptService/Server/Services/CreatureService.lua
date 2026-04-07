@@ -47,6 +47,7 @@ end
 -- Private State
 local activeCreatures = {} -- [instanceId] = { model=Part, data=Data, state=..., targetPosition=Vector3, lastStateChange=number }
 local creatureCount = 0
+local _lastKnownPlayerPos = {} -- [userId] = Vector3 (리스폰 대기 중 디스폰 방지용)
 
 --- 크리처 상태 설정 헬퍼 (내부 상태 + 클라이언트 속성 동기화)
 local function setCreatureState(creature, newState)
@@ -437,13 +438,28 @@ local function setupModelForCreature(model: Model, position: Vector3, data: any)
 	end
 	combatCry.Parent = rootPart
 	
-	-- ★ 크리처 파트 CanCollide=false: 플레이어와 물리 충돌 완전 제거
+	-- ★ 크리처 파트 CanCollide=false + Massless=true: 플레이어와 물리 충돌 완전 제거
 	-- 밀림/끼임/튕김 방지 — Humanoid 내부 캡슐이 지면 충돌을 담당
+	-- Massless=true: 물리 겹침 발생 시에도 크리처 파트가 플레이어에게 힘을 전달하지 못함
 	for _, part in ipairs(model:GetDescendants()) do
 		if part:IsA("BasePart") then
 			part.CanCollide = false
+			if part ~= rootPart then
+				part.Massless = true
+			end
 		end
 	end
+	
+	-- ★ [FIX] 런타임 중 추가되는 파트도 충돌/질량 설정 적용 (애니메이션 본, 이펙트 파트 등)
+	model.DescendantAdded:Connect(function(desc)
+		if desc:IsA("BasePart") then
+			desc.CollisionGroup = rootPart.CollisionGroup -- 현재 그룹 (Creatures / CombatCreatures)
+			desc.CanCollide = false
+			if desc ~= rootPart then
+				desc.Massless = true
+			end
+		end
+	end)
 	
 	-- ★ [FIX] Humanoid 엔진이 HumanoidRootPart.CanCollide를 매 프레임 true로 강제하므로,
 	-- GetPropertyChangedSignal로 감시하여 즉시 false로 되돌림 (플레이어 발사 방지)
@@ -739,6 +755,11 @@ function CreatureService.removeCreature(instanceId: string)
 		CombatService.disengageCreature(instanceId)
 	end
 	
+	-- ★ 텔레그래프 범위 표시 정리 신호
+	if NetController then
+		NetController.FireAllClients("Creature.Removed", { instanceId = instanceId })
+	end
+	
 	-- 즉시 런타임에서 제거
 	local weight = getCapWeight(creature.data)
 	activeCreatures[instanceId] = nil
@@ -975,6 +996,12 @@ function CreatureService.processAttack(instanceId: string, hpDamage: number, tor
 		local weight = getCapWeight(creature.data)
 		activeCreatures[instanceId] = nil 
 		creatureCount = creatureCount - weight
+		
+		-- ★ 텔레그래프 범위 표시 정리 신호
+		if NetController then
+			NetController.FireAllClients("Creature.Removed", { instanceId = instanceId })
+		end
+		
 		playNaturalDeathSequence(creature)
 		
 		return true, deathPos
@@ -1426,47 +1453,77 @@ function CreatureService._updateAILoop()
 	spatialParams.FilterType = Enum.RaycastFilterType.Include
 	
 	local allPlayers = Players:GetPlayers()
+	
+	-- ★ [FIX] 리스폰 대기 중 플레이어의 마지막 위치 저장 (캐릭터 nil → 디스폰 방지)
+	-- 플레이어 사망 → 캐릭터 제거 → 리스폰 대기(5초) 동안 hrp가 nil이 되면
+	-- 솔로 플레이 시 모든 크리처가 minDist=9999으로 디스폰되는 버그 방지
+	
+	-- 퇴장한 플레이어 정리
+	local activeUserIds = {}
+	for _, p in ipairs(allPlayers) do
+		activeUserIds[p.UserId] = true
+	end
+	for uid, _ in pairs(_lastKnownPlayerPos) do
+		if not activeUserIds[uid] then
+			_lastKnownPlayerPos[uid] = nil
+		end
+	end
+	
+	local hasAnyPresence = false
+	
 	for _, p in ipairs(allPlayers) do
 		local char = p.Character
 		local hrp = char and char:FindFirstChild("HumanoidRootPart")
 		local hum = char and char:FindFirstChild("Humanoid")
 		local isAlive = hum and hum.Health > 0
 		
+		-- 현재 위치 또는 마지막으로 알려진 위치 사용
+		local pPos = nil
+		if hrp then
+			pPos = hrp.Position
+			_lastKnownPlayerPos[p.UserId] = pPos -- 위치 갱신
+		else
+			-- 캐릭터 없음 (사망 리스폰 대기 중) → 마지막 위치 사용
+			pPos = _lastKnownPlayerPos[p.UserId]
+		end
+		
+		if not pPos then continue end
+		hasAnyPresence = true
+		
 		-- [FIX] 사망한 플레이어도 proximity 계산에 포함 (despawn 방지)
 		-- 어그로 대상에서만 제외함 (closestPlayerHum은 살아있는 경우만 설정)
-		if hrp then
-			local pPos = hrp.Position
-			-- 플레이어 주변 300스터드(DESPAWN_DIST) 내의 크리처 파트 탐색
-			local nearbyParts = workspace:GetPartBoundsInRadius(pPos, DESPAWN_DIST, spatialParams)
-			
-			-- 한 명의 플레이어가 같은 크리처의 여러 파트를 감지하는 것 방지
-			local processedForThisPlayer = {} 
-			
-			for _, part in ipairs(nearbyParts) do
-				local model = part:FindFirstAncestorOfClass("Model")
-				if model and model.Parent == creatureFolder then
-					local instanceId = model:GetAttribute("InstanceId")
-					if instanceId and not processedForThisPlayer[instanceId] then
-						processedForThisPlayer[instanceId] = true
-						
-						local creature = activeCreatures[instanceId]
-						if creature and creature.rootPart then
-							local d = (pPos - creature.rootPart.Position).Magnitude
-							if d < creature.minDist then
-								creature.minDist = d
-								creature.closestPlayerPos = pPos
-								creature.closestPlayerRoot = hrp
-								-- [FIX] 어그로 대상은 살아있는 플레이어만
-								creature.closestPlayerHum = isAlive and hum or creature.closestPlayerHum
-								creature.closestPlayerUserId = isAlive and p.UserId or creature.closestPlayerUserId
-								
-								-- [추가] 공격 판정용 머리(Head) 위치 탐색
-								local head = creature.model:FindFirstChild("Head", true) or creature.model:FindFirstChild("Neck", true)
-								if head then
-									creature.headDist = (pPos - head.Position).Magnitude
-								else
-									creature.headDist = d
-								end
+		-- ★ hrp 없어도 pPos(마지막 위치)로 proximity 계산 수행
+		
+		-- 플레이어 주변 300스터드(DESPAWN_DIST) 내의 크리처 파트 탐색
+		local nearbyParts = workspace:GetPartBoundsInRadius(pPos, DESPAWN_DIST, spatialParams)
+		
+		-- 한 명의 플레이어가 같은 크리처의 여러 파트를 감지하는 것 방지
+		local processedForThisPlayer = {} 
+		
+		for _, part in ipairs(nearbyParts) do
+			local model = part:FindFirstAncestorOfClass("Model")
+			if model and model.Parent == creatureFolder then
+				local instanceId = model:GetAttribute("InstanceId")
+				if instanceId and not processedForThisPlayer[instanceId] then
+					processedForThisPlayer[instanceId] = true
+					
+					local creature = activeCreatures[instanceId]
+					if creature and creature.rootPart then
+						local d = (pPos - creature.rootPart.Position).Magnitude
+						if d < creature.minDist then
+							creature.minDist = d
+							creature.closestPlayerPos = pPos
+							creature.closestPlayerRoot = hrp -- nil일 수 있음 (리스폰 대기)
+							-- [FIX] 어그로 대상은 살아있는 플레이어만
+							creature.closestPlayerHum = isAlive and hum or creature.closestPlayerHum
+							creature.closestPlayerUserId = isAlive and p.UserId or creature.closestPlayerUserId
+							
+							-- [추가] 공격 판정용 머리(Head) 위치 탐색
+							local head = creature.model:FindFirstChild("Head", true) or creature.model:FindFirstChild("Neck", true)
+							if head then
+								creature.headDist = (pPos - head.Position).Magnitude
+							else
+								creature.headDist = d
 							end
 						end
 					end
@@ -1547,10 +1604,11 @@ function CreatureService._updateAILoop()
 			-- 기절 회복 체크
 			if creature.state == "STUNNED" and creature.currentTorpor <= STUN_RECOVERY_THRESHOLD then
 				setCreatureState(creature, "IDLE")
-				-- ★ 기절 해제: Anchored 해제 + CanCollide 복원 + 이동 능력 복원
+				-- ★ 기절 해제: Anchored 해제 + 이동 능력 복원
 				if creature.rootPart then
 					creature.rootPart.Anchored = false
-					creature.rootPart.CanCollide = true  -- ★ 충돌 복원
+					-- CanCollide는 false 유지 (GetPropertyChangedSignal 리스너가 관리)
+					-- true로 복원하면 Humanoid 충돌로 플레이어 지형 끌림 발생
 				end
 				creature.humanoid.WalkSpeed = creature.data.walkSpeed or 10
 				creature.humanoid.JumpPower = 5
@@ -1956,6 +2014,7 @@ function CreatureService._updateAILoop()
 				-- ★ 공격 직후 쿨다운 대기 중에도 정지 유지 (겹치며 따라가기 방지)
 				local isInCooldown = creature.lastAttackTime and (now - creature.lastAttackTime < (creature.data.attackCooldown or CREATURE_ATTACK_COOLDOWN))
 				local shouldStop = (headDist <= stopRange) or (creature.attackingUntil and now < creature.attackingUntil) or (isInCooldown and headDist <= stopRange * 2)
+				local isAttacking = creature.attackingUntil and now < creature.attackingUntil
 				if creature.state == "CHASE" and shouldStop then
 					-- ★ 공격 중 WalkSpeed=0: Humanoid 내부 물리가 이동력을 재적용하는 것을 원천 차단
 					humanoid.WalkSpeed = 0
@@ -1963,8 +2022,8 @@ function CreatureService._updateAILoop()
 					creature.lastMoveToPos = hrp.Position
 					-- ★ 관성 제거: 수평 속도 즉시 0으로
 					hrp.AssemblyLinearVelocity = Vector3.new(0, hrp.AssemblyLinearVelocity.Y, 0)
-					-- ★ 부드러운 회전 (Lerp) — 팡이처럼 도는 순간 회전 방지
-					if closestPlayerPos then
+					-- ★ 공격 중에는 회전 금지 (인디케이터 방향 고정)
+					if not isAttacking and closestPlayerPos then
 						local dir = (closestPlayerPos - hrp.Position) * Vector3.new(1, 0, 1)
 						if dir.Magnitude > 0.1 then
 							local targetCF = CFrame.lookAt(hrp.Position, hrp.Position + dir.Unit)
@@ -1977,6 +2036,12 @@ function CreatureService._updateAILoop()
 						end
 					end
 				else
+					-- ★ 공격 모션 중이면 경로 이동 차단 (같은 프레임에서 attackingUntil 셋 전에 도달한 경우 방어)
+					if creature.attackingUntil and now < creature.attackingUntil then
+						humanoid.WalkSpeed = 0
+						humanoid:MoveTo(hrp.Position)
+						hrp.AssemblyLinearVelocity = Vector3.new(0, hrp.AssemblyLinearVelocity.Y, 0)
+					else
 					-- 1. 경로 재계산 조건 체크
 					local needsNewPath = false
 					if not creature.pathData then
@@ -2124,6 +2189,7 @@ function CreatureService._updateAILoop()
 						-- 직접 이동 중인 경우 — pathData nil이므로 위에서 이미 MoveTo 처리됨
 						-- ★ 중복 MoveTo 호출 제거 (같은 틱에서 이미 호출했으므로 스킵)
 					end
+					end -- 공격 모션 중 경로 이동 차단 end
 				end
 			end
 
@@ -2181,23 +2247,120 @@ function CreatureService._updateAILoop()
 
 					if not creature.lastAttackTime or (now - creature.lastAttackTime >= (creature.data.attackCooldown or CREATURE_ATTACK_COOLDOWN)) then
 						creature.lastAttackTime = now
-						-- ★ 공격 딘레이 동안 이동 차단 (미끄러짐 방지)
-						local baseDelay = creature.data.attackDelay or 0.7
-						local isTrike = (creature.data.id == "TRICERATOPS" or creature.data.id == "BABY_TRICERATOPS")
-						local isClose = (headDist <= attackRange * 0.6)
-						local attackDelay = (isClose and isTrike) and math.min(baseDelay, 0.6) or baseDelay
-						creature.attackingUntil = now + attackDelay + NETWORK_ANIM_BUFFER + 0.15 -- 애니메이션 여유 + 네트워크 보상
-						if closestPlayerHum and closestPlayerHum.Health > 0 then
+						
+						-- ★ 텔레그래프 공격 패턴 선택
+						local attacks = creature.data.attacks
+						local chosenAttack = nil
+						if attacks and #attacks > 0 then
+							-- 사거리 내 사용 가능한 패턴 중 랜덤 선택
+							local validAttacks = {}
+							for _, atk in ipairs(attacks) do
+								local atkRange = atk.range or atk.radius or atk.length or attackRange
+								if headDist <= atkRange * 1.5 then
+									table.insert(validAttacks, atk)
+								end
+							end
+							if #validAttacks > 0 then
+								chosenAttack = validAttacks[math.random(1, #validAttacks)]
+							else
+								chosenAttack = attacks[1] -- 폴백: 첫 번째 패턴
+							end
+						end
+						
+						-- attacks 배열이 없는 크리처 → 레거시 즉시 공격 (초원섬 크리처 등)
+						if not chosenAttack then
+							local attackDelay = creature.data.attackDelay or 0.5
+							creature.attackingUntil = now + attackDelay + NETWORK_ANIM_BUFFER
+
 							if NetController then
-								NetController.FireAllClients("Creature.Attack.Play", { instanceId = id, targetUserId = closestPlayerUserId, isClose = isClose })
+								NetController.FireAllClients("Creature.Attack.Play", { instanceId = id })
 							end
 
-							-- ★ 타겟 락킹: 공격 선언 시점 플레이어 위치 기록
-							-- 딜레이 후 플레이어 이동량으로 회피 성공 여부를 판정
-							-- (1) 허공 타격 후 접근 → 데미지 없음 (위치 기준이 선언 시점)
-							-- (2) 구르기/이동 회피 → 이동 거리만큼 공정한 판정
-							local lockedPlayerPos = closestPlayerPos
-							task.delay(attackDelay + NETWORK_ANIM_BUFFER, function()
+							if closestPlayerHum and closestPlayerHum.Health > 0 then
+								task.delay(attackDelay, function()
+									local currentCreature = activeCreatures[id]
+									if not currentCreature or not currentCreature.model or not currentCreature.model.Parent then return end
+
+									local player = Players:GetPlayerByUserId(closestPlayerUserId)
+									if not player then return end
+									local playerChar = player.Character
+									local playerHrp = playerChar and playerChar:FindFirstChild("HumanoidRootPart")
+									if not playerHrp then return end
+									if getProtectedZoneInfo(playerHrp.Position) then return end
+
+									local CombatService = require(game:GetService("ServerScriptService").Server.Services.CombatService)
+									if CombatService.isPlayerInvulnerable(closestPlayerUserId) then return end
+
+									local dist = (playerHrp.Position - currentCreature.rootPart.Position).Magnitude
+									if dist <= attackRange * 1.3 then
+										CombatService.damagePlayer(closestPlayerUserId, dmg, currentCreature.rootPart.Position, id)
+									end
+								end)
+							end
+							continue
+						end
+						
+						-- 선행/공격 시간 계산
+						local windupTime = chosenAttack.windupTime or 0.5
+						local attackTime = chosenAttack.attackTime or 0.5
+						local totalTime = windupTime + attackTime
+						creature.attackingUntil = now + totalTime + NETWORK_ANIM_BUFFER
+
+						-- ★ 텔레그래프 시작 즉시 이동 정지 (인디케이터 위치 고정)
+						humanoid.WalkSpeed = 0
+						humanoid:MoveTo(hrp.Position)
+						hrp.AssemblyLinearVelocity = Vector3.new(0, hrp.AssemblyLinearVelocity.Y, 0)
+						
+						local attackDamage = (chosenAttack and chosenAttack.damage) or dmg
+						
+						if closestPlayerHum and closestPlayerHum.Health > 0 then
+							-- 공격 선언 시점의 크리처 방향 기록 (PROJECTILE용 타겟 위치 포함)
+							local lockedCreaturePos = hrp.Position
+							local lockedCreatureLook = hrp.CFrame.LookVector
+							local lockedTargetPos = closestPlayerPos
+								
+								-- ★ CONE 패턴: 머리(Head) 위치를 기준점으로 사용
+								local lockedAttackOrigin = lockedCreaturePos
+								if chosenAttack and chosenAttack.pattern == "CONE" then
+									local headPart = nil
+									for _, desc in ipairs(creature.model:GetDescendants()) do
+										if desc:IsA("BasePart") and desc.Name:match("^Head") then
+											headPart = desc
+											break
+										end
+									end
+									if headPart then
+										lockedAttackOrigin = headPart.Position
+									end
+								end
+							
+							-- ★ 클라이언트에 텔레그래프 데이터 전송 (선행 모션 + 범위 표시)
+							if NetController then
+								NetController.FireAllClients("Creature.Attack.Telegraph", {
+									instanceId = id,
+									creatureId = creature.creatureId,
+									targetUserId = closestPlayerUserId,
+									pattern = chosenAttack and chosenAttack.pattern or "CONE",
+									windupTime = windupTime,
+									attackTime = attackTime,
+									-- 공격 애니메이션 키 (nil이면 애니 없이 대기)
+									anim = chosenAttack and chosenAttack.anim or nil,
+									-- 패턴별 범위 데이터
+									angle = chosenAttack and chosenAttack.angle,
+									range = chosenAttack and chosenAttack.range,
+									radius = chosenAttack and chosenAttack.radius,
+									width = chosenAttack and chosenAttack.width,
+									length = chosenAttack and chosenAttack.length,
+									impactRadius = chosenAttack and chosenAttack.impactRadius,
+									-- 위치/방향 정보 (CONE은 머리 위치 전송)
+									creaturePos = {lockedAttackOrigin.X, lockedAttackOrigin.Y, lockedAttackOrigin.Z},
+									creatureLook = {lockedCreatureLook.X, lockedCreatureLook.Y, lockedCreatureLook.Z},
+									targetPos = {lockedTargetPos.X, lockedTargetPos.Y, lockedTargetPos.Z},
+								})
+							end
+
+							-- ★ 공격 모션 종료 시점에 판정 (windupTime + attackTime 후)
+							task.delay(totalTime + NETWORK_ANIM_BUFFER, function()
 								-- 1. 크리처 활성 상태 재확인
 								local currentCreature = activeCreatures[id]
 								if not currentCreature or not currentCreature.model or not currentCreature.model.Parent then return end
@@ -2214,15 +2377,29 @@ function CreatureService._updateAILoop()
 								if not playerHrp then return end
 								if getProtectedZoneInfo(playerHrp.Position) then return end
 								
-								-- ★ 타겟 락킹 회피 판정
-								-- 공격 선언 시점 위치에서 충분히 이동했으면 회피 성공
-								-- dodgeThreshold: 공격 사거리의 40% 또는 최소 5스터드
-								local dodgeDist = (playerHrp.Position - lockedPlayerPos).Magnitude
-								local dodgeThreshold = math.max(attackRange * 0.4, 5)
-								if dodgeDist > dodgeThreshold then return end -- 회피 성공
-								
+								-- ★ 텔레그래프 범위 기반 피격 판정 (공격 모션 종료 시점)
 								local CombatService = require(game:GetService("ServerScriptService").Server.Services.CombatService)
-								CombatService.damagePlayer(closestPlayerUserId, dmg, currentCreature.rootPart.Position, id)
+								
+								-- 무적 상태 체크
+								if CombatService.isPlayerInvulnerable(closestPlayerUserId) then return end
+								
+								local playerCurrentPos = playerHrp.Position
+								
+								-- ★ 선언 시점 고정 위치/방향으로 판정 (시각 인디케이터 = 판정 범위 일치)
+								local isHit = false
+								if chosenAttack then
+									isHit = CombatService.isPlayerInAttackArea(
+										chosenAttack,
+										lockedAttackOrigin,
+										lockedCreatureLook,
+										playerCurrentPos,
+										lockedTargetPos -- PROJECTILE 착탄 지점
+									)
+								end
+								
+								if isHit then
+									CombatService.damagePlayer(closestPlayerUserId, attackDamage, currentCreature.rootPart.Position, id)
+								end
 							end)
 						end
 					end

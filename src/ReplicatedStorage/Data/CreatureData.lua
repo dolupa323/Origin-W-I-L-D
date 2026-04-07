@@ -69,10 +69,14 @@ local CreatureData = {
 		attackRange = 10,
 		detectRange = 25,
 		attackDelay = 0.6,
-		attackCooldown = 2.5,
+		attackCooldown = 6.25,
 		behavior = "NEUTRAL",
 		modelName = "Parasaur",
 		xpReward = 20,
+		attacks = {
+			{ name = "침뼉기", pattern = "CONE", angle = 90, range = 25, damage = 20, windupTime = 3.6, attackTime = 0.5, anim = "SPIT" },
+			{ name = "꼬리치기", pattern = "CIRCLE", radius = 16, damage = 15, windupTime = 5.4, attackTime = 0.5, anim = "ATTACK" },
+		},
 		-- 도감 시스템
 		dnaRequired = 5,
 		passiveEffect = { stat = "maxStamina", value = 15 },     -- 최대 기력 +15
@@ -100,7 +104,11 @@ local CreatureData = {
 		modelName = "Triceratops",
 		xpReward = 40,
 		attackDelay = 1.3,
-		attackCooldown = 3.5,
+		attackCooldown = 8.75,
+		attacks = {
+			{ name = "박치기", pattern = "CONE", angle = 90, range = 25, damage = 45, windupTime = 3.6, attackTime = 0.7, anim = "ATTACK" },
+			{ name = "앞발찍기", pattern = "CIRCLE", radius = 18, damage = 35, windupTime = 6.0, attackTime = 0.5, anim = "STOMP" },
+		},
 		-- 도감 시스템
 		dnaRequired = 5,
 		passiveEffect = { stat = "defense", value = 5 },         -- 방어력 +5
@@ -146,10 +154,13 @@ local CreatureData = {
 		attackRange = 12,
 		detectRange = 15,
 		attackDelay = 0.8,
-		attackCooldown = 3.0,
+		attackCooldown = 7.5,
 		behavior = "NEUTRAL",
 		modelName = "Stegosaurus",
 		xpReward = 35,
+		attacks = {
+			{ name = "꼬리치기", pattern = "CIRCLE", radius = 18, damage = 40, windupTime = 5.4, attackTime = 0.5, anim = "ATTACK" },
+		},
 		-- 도감 시스템
 		dnaRequired = 5,
 		passiveEffect = { stat = "maxHealth", value = 20 },      -- 최대 체력 +20
@@ -198,10 +209,13 @@ local CreatureData = {
 		attackRange = 8,
 		detectRange = 50,
 		attackDelay = 0.4,
-		attackCooldown = 2.0,
+		attackCooldown = 5.0,
 		behavior = "AGGRESSIVE",
 		modelName = "Raptor",
 		xpReward = 25,
+		attacks = {
+			{ name = "깨물기", pattern = "CONE", angle = 80, range = 16, damage = 15, windupTime = 2.4, attackTime = 0.45, anim = "ATTACK" },
+		},
 		-- 도감 시스템
 		dnaRequired = 5,
 		passiveEffect = { stat = "attackMult", value = 0.05 },   -- 공격력 +5%

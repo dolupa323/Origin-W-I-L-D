@@ -375,7 +375,7 @@ function SaveService.savePlayer(userId: number, snapshot: any?, isLogout: boolea
 	local player = Players:GetPlayerByUserId(userId)
 	if player and player.Character and not state.respawnStructureId then
 		local hrp = player.Character:FindFirstChild("HumanoidRootPart")
-		if hrp and not hrp.Anchored and hrp.Position.Y < 3000 then
+		if hrp and not hrp.Anchored and hrp.Position.Y < 3000 and hrp.Position.Y > 0 then
 			state.lastPosition = {
 				x = hrp.Position.X,
 				y = hrp.Position.Y,
@@ -645,8 +645,14 @@ local function _spawnAfterDataLoad(player: Player, userId: number)
 		local ly = state.lastPosition.y or 0
 		local lz = state.lastPosition.z or 0
 		if math.abs(lx) > 1 or math.abs(ly) > 1 or math.abs(lz) > 1 then
-			spawnPos = Vector3.new(lx, ly + 5, lz)
-			print(string.format("[SaveService] Spawn from lastPosition: %.1f, %.1f, %.1f", spawnPos.X, spawnPos.Y, spawnPos.Z))
+			-- ★ Y좌표 안전 검증: 지하(음수)로 저장된 위치는 무시
+			if ly < 0 then
+				print(string.format("[SaveService] lastPosition Y=%.1f is underground, clearing", ly))
+				state.lastPosition = nil
+			else
+				spawnPos = Vector3.new(lx, ly + 5, lz)
+				print(string.format("[SaveService] Spawn from lastPosition: %.1f, %.1f, %.1f", spawnPos.X, spawnPos.Y, spawnPos.Z))
+			end
 		else
 			print("[SaveService] lastPosition is near origin (0,0,0), ignoring")
 		end

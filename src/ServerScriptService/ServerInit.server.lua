@@ -31,9 +31,12 @@ local function initCollisionGroups()
 	
 	-- 크리처끼리는 충돌하지 않도록 설정 (Physics 부하 절감)
 	PhysicsService:CollisionGroupSetCollidable("Creatures", "Creatures", false)
-	-- ★ 비전투 크리처 vs 플레이어: 충돌 ON (몸 통과 방지)
-	-- 밀림 방지는 CustomPhysicalProperties(100) + RootPriority(127) + SetNetworkOwner(nil)로 처리
-	PhysicsService:CollisionGroupSetCollidable("Creatures", "Players", true)
+	-- ★ 크리처 vs 플레이어: 충돌 OFF
+	-- Humanoid 엔진이 HumanoidRootPart.CanCollide를 매 물리 프레임 true로 강제하기 때문에
+	-- GetPropertyChangedSignal로 복원해도 해당 프레임의 충돌은 이미 발생함
+	-- 대형 공룡 아래에서 전투 시 플레이어가 지형 아래로 밀리는 버그 방지
+	-- 접촉 판정은 CombatService 거리 기반 체크로 처리
+	PhysicsService:CollisionGroupSetCollidable("Creatures", "Players", false)
 	-- ★ [FIX] 전투 중 크리처-플레이어 물리 충돌 비활성화
 	-- Humanoid 엔진이 HumanoidRootPart.CanCollide를 매 프레임 강제 true로 설정하므로,
 	-- CombatCreatures-Players 충돌이 true면 크리처 추격 시 플레이어가 물리 발사됨

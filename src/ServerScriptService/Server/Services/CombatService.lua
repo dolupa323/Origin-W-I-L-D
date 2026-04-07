@@ -298,6 +298,67 @@ end
 -- StaminaService Integration (Phase 10)
 --========================================
 
+--========================================
+-- Telegraph Attack Pattern Hit Detection
+--========================================
+
+--- 부채꼴(CONE) 범위 판정: 크리처 전방 기준 angle 내 + range 내
+function CombatService.isInCone(creaturePos: Vector3, creatureLook: Vector3, playerPos: Vector3, range: number, halfAngleDeg: number): boolean
+	local toPlayer = playerPos - creaturePos
+	toPlayer = Vector3.new(toPlayer.X, 0, toPlayer.Z)
+	local flatLook = Vector3.new(creatureLook.X, 0, creatureLook.Z)
+	if toPlayer.Magnitude < 0.01 or flatLook.Magnitude < 0.01 then return true end
+	if toPlayer.Magnitude > range then return false end
+	local dot = flatLook.Unit:Dot(toPlayer.Unit)
+	local angleRad = math.acos(math.clamp(dot, -1, 1))
+	return angleRad <= math.rad(halfAngleDeg)
+end
+
+--- 원형(CIRCLE) 범위 판정: 크리처 중심 반경 내
+function CombatService.isInCircle(creaturePos: Vector3, playerPos: Vector3, radius: number): boolean
+	local dist = (Vector3.new(playerPos.X, 0, playerPos.Z) - Vector3.new(creaturePos.X, 0, creaturePos.Z)).Magnitude
+	return dist <= radius
+end
+
+--- 직선 돌진(CHARGE) 범위 판정: 크리처 전방 직사각형 통로 내
+function CombatService.isInCharge(creaturePos: Vector3, creatureLook: Vector3, playerPos: Vector3, width: number, length: number): boolean
+	local flatLook = Vector3.new(creatureLook.X, 0, creatureLook.Z)
+	if flatLook.Magnitude < 0.01 then return false end
+	flatLook = flatLook.Unit
+	local toPlayer = playerPos - creaturePos
+	toPlayer = Vector3.new(toPlayer.X, 0, toPlayer.Z)
+	-- 전방 투영 (forward distance)
+	local forwardDist = flatLook:Dot(toPlayer)
+	if forwardDist < 0 or forwardDist > length then return false end
+	-- 횡방향 투영 (lateral distance)
+	local rightDir = Vector3.new(flatLook.Z, 0, -flatLook.X)
+	local lateralDist = math.abs(rightDir:Dot(toPlayer))
+	return lateralDist <= (width / 2)
+end
+
+--- 원거리 투사체(PROJECTILE) 범위 판정: 착탄 지점 기준 반경 내
+function CombatService.isInProjectile(impactPos: Vector3, playerPos: Vector3, impactRadius: number): boolean
+	local dist = (Vector3.new(playerPos.X, 0, playerPos.Z) - Vector3.new(impactPos.X, 0, impactPos.Z)).Magnitude
+	return dist <= impactRadius
+end
+
+--- 공격 패턴에 따라 적절한 판정 함수 호출
+function CombatService.isPlayerInAttackArea(attackData: any, creaturePos: Vector3, creatureLook: Vector3, playerPos: Vector3, targetLockPos: Vector3?): boolean
+	local pattern = attackData.pattern
+	if pattern == "CONE" then
+		return CombatService.isInCone(creaturePos, creatureLook, playerPos, attackData.range, (attackData.angle or 60) / 2)
+	elseif pattern == "CIRCLE" then
+		return CombatService.isInCircle(creaturePos, playerPos, attackData.radius)
+	elseif pattern == "CHARGE" then
+		return CombatService.isInCharge(creaturePos, creatureLook, playerPos, attackData.width, attackData.length)
+	elseif pattern == "PROJECTILE" then
+		local impactPos = targetLockPos or playerPos
+		return CombatService.isInProjectile(impactPos, playerPos, attackData.impactRadius or 5)
+	end
+	-- 패턴 없음 → 히트 불가 (레거시 폴백 제거)
+	return false
+end
+
 function CombatService.SetStaminaService(_StaminaService)
 	StaminaService = _StaminaService
 end
@@ -763,19 +824,12 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 				-- ★ 넉백 적용: X,Z 방향만, Y는 현재 속도 유지
 				creature.rootPart.AssemblyLinearVelocity = knockDir * knockForce + Vector3.new(0, creature.rootPart.AssemblyLinearVelocity.Y * 0.8, 0)
 				
-				-- ★ 넉백 후 안정화: Anchored로 고정하되, 플레이어와 충돌 방지
-				task.delay(0.05, function()
-					if creature and creature.rootPart and creature.rootPart.Parent then
-						creature.rootPart.Anchored = true
-					end
-				end)
-				
-				task.delay(0.3, function()
-					if creature and creature.rootPart and creature.rootPart.Parent and creature.state ~= "STUNNED" then
-						creature.rootPart.Anchored = false
-						-- ★ [FIX] CanCollide=true 복원 제거: Humanoid가 강제 true로 설정하면
-						-- 충돌 그룹과 결합되어 플레이어 물리 발사 유발
-						-- CanCollide=false는 CreatureService에서 설정한 상태 유지
+				-- ★ [FIX] Anchored 토글 제거: Anchored=true→false 전환 시
+				-- Humanoid 내부 캡슐이 재초기화되면서 근접 플레이어를 물리 발사시킴
+				-- 대신 짧은 딜레이 후 수평 속도를 0으로 제거 (관성 제거)
+				task.delay(0.08, function()
+					if creature and creature.rootPart and creature.rootPart.Parent and not creature.rootPart.Anchored then
+						creature.rootPart.AssemblyLinearVelocity = Vector3.new(0, creature.rootPart.AssemblyLinearVelocity.Y, 0)
 					end
 				end)
 			end
