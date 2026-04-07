@@ -398,12 +398,6 @@ local function _syncToSave(userId: number)
 	end)
 end
 
-local function emitCraftEventToAll(eventName: string, data: any)
-	if NetController then
-		NetController.FireAllClients(eventName, data)
-	end
-end
-
 --========================================
 -- Public API
 --========================================

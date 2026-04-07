@@ -2119,6 +2119,8 @@ function HarvestService.SpawnZone(zoneName)
 
 	while spawned < PER_ZONE_COUNT and attempts < MAX_ATTEMPTS do
 		attempts = attempts + 1
+		-- ★ 10회마다 yield: 게임 루프 블로킹 방지 (포탈, Totem 등 다른 요청 처리 가능)
+		if attempts % 10 == 0 then task.wait() end
 		local xOffset = (math.random() * 2 - 1) * SPAWN_RADIUS
 		local zOffset = (math.random() * 2 - 1) * SPAWN_RADIUS
 		local x = MAP_CENTER.X + xOffset

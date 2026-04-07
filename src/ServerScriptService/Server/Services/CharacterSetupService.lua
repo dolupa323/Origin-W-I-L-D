@@ -26,14 +26,6 @@ local function randomChoice(tbl)
 	return tbl[math.random(1, #tbl)]
 end
 
---- 신체 부위 색상 설정
-local function setBodyPartColor(character, partName: string, color: Color3)
-	local part = character:FindFirstChild(partName)
-	if part and part:IsA("BasePart") then
-		part.Color = color
-	end
-end
-
 --- 선사시대 스타일 적용
 local function applyPrehistoricStyle(player, character)
 	-- 한 프레임 양보: 캐릭터가 Workspace에 완전히 parent된 후 작업

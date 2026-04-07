@@ -339,10 +339,10 @@ local function getMouseAimTarget(origin: Vector3): Vector3?
 	return finalPos
 end
 
+local BOW_AMMO_TYPES = {"BRONZE_ARROW", "STONE_ARROW"}
+
 local function getAmmoForWeapon(itemId: string?): string?
 	local upper = string.upper(tostring(itemId or ""))
-	if upper == "WOODEN_BOW" then return "STONE_ARROW" end
-	if upper == "BRONZE_BOW" then return "BRONZE_ARROW" end
 	if upper == "CROSSBOW" then return "IRON_BOLT" end
 	return nil
 end
@@ -351,8 +351,9 @@ local function hasRequiredBowAmmo(itm): boolean
 	if not itm or not itm.id then
 		return false
 	end
+	local isBow = string.upper(tostring(itm.optimalTool or "")) == "BOW"
 	local ammoId = getAmmoForWeapon(itm.id)
-	if not ammoId then
+	if not ammoId and not isBow then
 		return true
 	end
 	-- NO_ARROW_CONSUME 패시브 체크
@@ -374,7 +375,17 @@ local function hasRequiredBowAmmo(itm): boolean
 	if not counts then
 		return false
 	end
-	return (tonumber(counts[ammoId]) or 0) > 0
+	-- 석궩: 특정 탄약
+	if ammoId then
+		return (tonumber(counts[ammoId]) or 0) > 0
+	end
+	-- 활: 아무 화살이나 사용 가능
+	for _, arrowId in ipairs(BOW_AMMO_TYPES) do
+		if (tonumber(counts[arrowId]) or 0) > 0 then
+			return true
+		end
+	end
+	return false
 end
 
 local function getLiveBowAimDirection(origin: Vector3): Vector3
@@ -420,36 +431,22 @@ local function clearBowPreview()
 end
 
 local function hideBowPreviewVisuals()
-	if bowPreviewLinePart then bowPreviewLinePart.Transparency = 1 end
 	if bowPreviewTipPart then bowPreviewTipPart.Transparency = 1 end
 end
 
 local function ensureBowPreviewParts()
-	if not bowPreviewLinePart then
-		local line = Instance.new("Part")
-		line.Name = "BowGhostLine"
-		line.Anchored = true
-		line.CanCollide = false
-		line.CanQuery = false
-		line.CanTouch = false
-		line.Material = Enum.Material.Glass
-		line.Color = Color3.fromRGB(120, 200, 100)
-		line.Transparency = 0.65
-		line.Size = Vector3.new(0.04, 0.04, 1)
-		line.Parent = workspace.CurrentCamera
-		bowPreviewLinePart = line
-	end
 	if not bowPreviewTipPart then
 		local tip = Instance.new("Part")
-		tip.Name = "BowAimSpike"
+		tip.Name = "BowImpactMarker"
+		tip.Shape = Enum.PartType.Cylinder
 		tip.Anchored = true
 		tip.CanCollide = false
 		tip.CanQuery = false
 		tip.CanTouch = false
-		tip.Material = Enum.Material.Glass
+		tip.Material = Enum.Material.Neon
 		tip.Color = Color3.fromRGB(130, 210, 110)
-		tip.Transparency = 0.55
-		tip.Size = Vector3.new(0.06, 0.06, 0.5)
+		tip.Transparency = 0.4
+		tip.Size = Vector3.new(0.08, 1.2, 1.2)
 		tip.Parent = workspace.CurrentCamera
 		bowPreviewTipPart = tip
 	end
@@ -508,19 +505,14 @@ local function updateBowPreview(itm)
 
 	ensureBowPreviewParts()
 
-	-- 3D 조준선 위치 갱신
-	local dist = (hitPos - origin).Magnitude
-	local midPoint = origin + direction * (dist / 2)
-	if bowPreviewLinePart then
-		bowPreviewLinePart.Size = Vector3.new(0.04, 0.04, dist)
-		bowPreviewLinePart.CFrame = CFrame.lookAt(midPoint, hitPos)
-		bowPreviewLinePart.Transparency = 0.65
-	end
+	-- 타격 지점 마커 갱신 (카메라를 향하는 원형 마커)
 	if bowPreviewTipPart then
-		-- 뾰족한 못 형태: 도착지점에서 조준 방향으로 절반 묻힘
-		bowPreviewTipPart.Size = Vector3.new(0.06, 0.06, 0.5)
-		bowPreviewTipPart.CFrame = CFrame.lookAt(hitPos, hitPos + direction)
-		bowPreviewTipPart.Transparency = 0.55
+		local cam = workspace.CurrentCamera
+		if cam then
+			-- 카메라→타격지점 방향으로 Cylinder 축(X)을 정렬 → 정면에서 원형으로 보임
+			bowPreviewTipPart.CFrame = CFrame.lookAt(hitPos, cam.CFrame.Position) * CFrame.Angles(0, math.rad(90), 0)
+		end
+		bowPreviewTipPart.Transparency = 0.4
 	end
 end
 

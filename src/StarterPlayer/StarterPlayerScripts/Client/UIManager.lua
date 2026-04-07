@@ -327,7 +327,6 @@ local selectedTechId = nil
 local techLines = {} -- 연결선용
 
 -- Notification State
-local notifyConn
 local notifyQueue = {}
 local sideNotifyStack = {} -- [frame] = { startTime, label }
 local sideNotifyContainer = nil

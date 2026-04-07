@@ -239,10 +239,10 @@ local function isBowWeapon(itemData): boolean
 	return opt == "BOW" or opt == "CROSSBOW"
 end
 
+local BOW_AMMO_TYPES = {"BRONZE_ARROW", "STONE_ARROW"}
+
 local function getAmmoForWeapon(itemId: string): string?
 	local upper = string.upper(tostring(itemId or ""))
-	if upper == "WOODEN_BOW" then return "STONE_ARROW" end
-	if upper == "BRONZE_BOW" then return "BRONZE_ARROW" end
 	if upper == "CROSSBOW" then return "IRON_BOLT" end
 	return nil
 end
@@ -623,7 +623,7 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 		end
 	end
 
-	if isBowShot and ammoItemId then
+	if isBowShot then
 		-- 스킬 패시브: NO_ARROW_CONSUME 체크
 		local skipArrow = false
 		if SkillService then
@@ -633,8 +633,20 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 			end
 		end
 		if not skipArrow then
-			local removed = InventoryService.removeItem(userId, ammoItemId, 1)
-			if removed < 1 then
+			local consumed = false
+			if ammoItemId then
+				-- 석궩: 특정 탄약 (IRON_BOLT)
+				consumed = InventoryService.removeItem(userId, ammoItemId, 1) >= 1
+			else
+				-- 활: 아무 화살이나 소비 (상위 등급 우선)
+				for _, arrowId in ipairs(BOW_AMMO_TYPES) do
+					if InventoryService.removeItem(userId, arrowId, 1) >= 1 then
+						consumed = true
+						break
+					end
+				end
+			end
+			if not consumed then
 				return false, Enums.ErrorCode.MISSING_REQUIREMENTS
 			end
 		end

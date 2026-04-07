@@ -74,16 +74,6 @@ local CreatureAnimationIds = {
 		EAT = "Stegosaurus_Eat",
 		IDLE_VARIANTS = { "Stegosaurus_Idle", "Stegosaurus_Walk", "Stegosaurus_Eat" },
 	},
-	
-	-- 티라노 등 다른 공룡은 준비되면 아래 주석을 풀고 등록하세요.
-	--[[
-	TREX = {
-		IDLE = "TREX_Idle",
-		WALK = "TREX_Walk",
-		RUN = "TREX_Run",
-		ATTACK = "TREX_Attack",
-	},
-	]]
 }
 
 return CreatureAnimationIds

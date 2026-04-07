@@ -26,13 +26,8 @@ local dropCount = 0
 
 -- 드롭 모델 캐시 [dropId] = Model
 local dropModels = {}
--- 애니메이션 중인 드롭들 [dropId] = { model, startPos, t }
-local animatingDrops = {}
-local renderConn = nil
-
 -- 드롭 모델 폴더
 local dropFolder = nil
-
 -- [OPTIMIZATION] Batch Animation State
 local animatingDrops = {} -- [dropId] = { model, startPos, t }
 local renderConn = nil

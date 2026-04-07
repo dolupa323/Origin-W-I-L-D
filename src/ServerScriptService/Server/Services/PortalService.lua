@@ -353,38 +353,60 @@ local function _requestPortalTeleport(player, payload)
 		return { success = false, errorCode = "INVALID_STATE" }
 	end
 
+	-- 도착 포탈 위치 결정: 출발→귀환포탈, 귀환→출발포탈
+	local arrivalPortalName = isReturn and def.portalName or def.returnPortalName
+	local arrivalPortal = _getPortalObject(arrivalPortalName)
+	local arrivalPos
+	if arrivalPortal then
+		if arrivalPortal:IsA("Model") then
+			arrivalPos = arrivalPortal:GetPivot().Position + Vector3.new(0, 5, 0)
+		elseif arrivalPortal:IsA("BasePart") then
+			arrivalPos = arrivalPortal.Position + Vector3.new(0, 5, 0)
+		end
+	end
+	if not arrivalPos then
+		warn("[PortalService] Arrival portal not found:", arrivalPortalName, "— using zone spawnPoint")
+		arrivalPos = zoneInfo.spawnPoint + Vector3.new(0, 5, 0)
+	end
+
 	local destName = isReturn and "초원섬" or def.destinationName
 	NetController.FireClient(player, "Portal.Teleporting", {
 		portalId = portalId,
 		destination = destName,
 	})
 
-	-- 페이드 애니메이션 대기 + 대상 Zone 스폰
-	if HarvestService and HarvestService.SpawnZone then
-		HarvestService.SpawnZone(targetZoneName)
-	end
-	if CreatureService and CreatureService.SpawnZone then
-		CreatureService.SpawnZone(targetZoneName)
-	end
-	task.wait(1.5) -- 클라이언트 페이드 완료 대기
+	-- 비동기로 SpawnZone + 텔레포트 처리 (RemoteFunction 블로킹 방지)
+	-- ★ task.defer: 호출자(handler)가 먼저 return한 뒤 다음 프레임에 실행
+	-- task.spawn은 내부가 yield하기 전까지 호출자를 블로킹하므로 사용 금지
+	task.defer(function()
+		if HarvestService and HarvestService.SpawnZone then
+			HarvestService.SpawnZone(targetZoneName)
+		end
+		if CreatureService and CreatureService.SpawnZone then
+			CreatureService.SpawnZone(targetZoneName)
+		end
+		task.wait(1.5) -- 클라이언트 페이드 완료 대기
 
-	local saveOk = SaveService.savePlayer(userId)
-	if not saveOk then
-		return { success = false, errorCode = "INTERNAL_ERROR" }
-	end
+		local saveOk = SaveService.savePlayer(userId)
+		if not saveOk then
+			NetController.FireClient(player, "Portal.Error", { message = "데이터 저장 실패" })
+			return
+		end
 
-	local character = player.Character
-	local hrp = character and character:FindFirstChild("HumanoidRootPart")
-	if not character or not hrp then
-		return { success = false, errorCode = "INTERNAL_ERROR" }
-	end
+		local character = player.Character
+		local hrp = character and character:FindFirstChild("HumanoidRootPart")
+		if not character or not hrp then
+			NetController.FireClient(player, "Portal.Error", { message = "캐릭터를 찾을 수 없습니다" })
+			return
+		end
 
-	local targetPos = zoneInfo.spawnPoint + Vector3.new(0, 5, 0)
-	character:PivotTo(CFrame.new(targetPos))
+		character:PivotTo(CFrame.new(arrivalPos))
 
-	NetController.FireClient(player, "Portal.Arrived", { zone = targetZoneName, portalId = portalId })
-	print(string.format("[PortalService] %s warped to '%s' via portal '%s'%s",
-		player.Name, targetZoneName, portalId, isReturn and " (return)" or ""))
+		NetController.FireClient(player, "Portal.Arrived", { zone = targetZoneName, portalId = portalId })
+		print(string.format("[PortalService] %s warped to '%s' via portal '%s'%s (pos=%.0f,%.0f,%.0f)",
+			player.Name, targetZoneName, portalId, isReturn and " (return)" or "",
+			arrivalPos.X, arrivalPos.Y, arrivalPos.Z))
+	end)
 
 	return { success = true, data = { teleporting = true, zone = targetZoneName } }
 end

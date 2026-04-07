@@ -286,13 +286,6 @@ local function startHeartbeat()
 	end)
 end
 
-local function stopHeartbeat()
-	if heartbeatConnection then
-		heartbeatConnection:Disconnect()
-		heartbeatConnection = nil
-	end
-end
-
 --========================================
 -- Initialization
 --========================================

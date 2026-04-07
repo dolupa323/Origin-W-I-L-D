@@ -534,69 +534,97 @@ _layoutDetailPanel = function()
 	local ph = panel.AbsoluteSize.Y
 	if pw < 50 or ph < 30 then return end
 
-	local s = math.clamp(math.min(pw / 400, ph / 140), 0.6, 3.0)
-	local iconSz = math.floor(math.clamp(86 * s, 44, 150))
-	local nameX = iconSz + math.floor(22 * s)
+	-- ★ 패널 높이(ph) 기준으로만 스케일 계산 — 패널 밖 넘침 방지
+	local s = math.clamp(ph / 160, 0.55, 1.3)
+	local iconSz = math.floor(math.clamp(ph * 0.52, 36, 120))
+	local nameX = iconSz + math.floor(12 * s)
+	local rightAreaW = math.floor(math.clamp(pw * 0.32, 120, 280))
+	local textAreaW = pw - nameX - rightAreaW - math.floor(8 * s)
 
 	local icon = panel:FindFirstChild("DetailIcon")
 	if icon then
 		icon.Size = UDim2.new(0, iconSz, 0, iconSz)
-		icon.Position = UDim2.new(0, math.floor(16 * s), 0.5, 0)
+		icon.Position = UDim2.new(0, math.floor(10 * s), 0.5, 0)
+		icon.AnchorPoint = Vector2.new(0, 0.5)
 	end
+
+	-- 세로 배치: 이름 → 타입정보 → 설명 → 효과 (ph 비율로 분배)
+	local nameH = math.floor(ph * 0.2)
+	local infoH = math.floor(ph * 0.14)
+	local descH = math.floor(ph * 0.34)
+	local effectsH = math.floor(ph * 0.14)
+	local gap = math.floor(ph * 0.02)
+	local topPad = math.floor(ph * 0.06)
 
 	local name = panel:FindFirstChild("DetailName")
 	if name then
-		name.Size = UDim2.new(0.5, -nameX, 0, math.floor(34 * s))
-		name.Position = UDim2.new(0, nameX, 0, math.floor(6 * s))
-		name.TextSize = math.floor(math.clamp(28 * s, 18, 44))
+		name.Size = UDim2.new(0, textAreaW, 0, nameH)
+		name.Position = UDim2.new(0, nameX, 0, topPad)
+		name.TextSize = math.floor(math.clamp(ph * 0.155, 14, 32))
+		name.TextTruncate = Enum.TextTruncate.AtEnd
 	end
 
 	local info = panel:FindFirstChild("DetailInfo")
 	if info then
-		info.Size = UDim2.new(0.55, -nameX, 0, math.floor(26 * s))
-		info.Position = UDim2.new(0, nameX, 0, math.floor(42 * s))
-		info.TextSize = math.floor(math.clamp(20 * s, 15, 32))
+		info.Size = UDim2.new(0, textAreaW, 0, infoH)
+		info.Position = UDim2.new(0, nameX, 0, topPad + nameH + gap)
+		info.TextSize = math.floor(math.clamp(ph * 0.11, 11, 22))
+		info.TextTruncate = Enum.TextTruncate.AtEnd
 	end
 
 	local desc = panel:FindFirstChild("DetailDesc")
 	if desc then
-		desc.Size = UDim2.new(0.55, -nameX, 0, math.floor(56 * s))
-		desc.Position = UDim2.new(0, nameX, 0, math.floor(70 * s))
-		desc.TextSize = math.floor(math.clamp(20 * s, 15, 32))
+		desc.Size = UDim2.new(0, textAreaW, 0, descH)
+		desc.Position = UDim2.new(0, nameX, 0, topPad + nameH + infoH + gap * 2)
+		desc.TextSize = math.floor(math.clamp(ph * 0.1, 11, 20))
+		desc.TextWrapped = true
+		desc.TextTruncate = Enum.TextTruncate.AtEnd
 	end
 
 	local effects = panel:FindFirstChild("DetailEffects")
 	if effects then
-		effects.Size = UDim2.new(0.55, -nameX, 0, math.floor(26 * s))
-		effects.Position = UDim2.new(0, nameX, 1, -math.floor(30 * s))
-		effects.TextSize = math.floor(math.clamp(19 * s, 14, 30))
+		effects.Size = UDim2.new(0, textAreaW, 0, effectsH)
+		effects.Position = UDim2.new(0, nameX, 1, -(effectsH + math.floor(ph * 0.04)))
+		effects.TextSize = math.floor(math.clamp(ph * 0.095, 10, 20))
+		effects.TextTruncate = Enum.TextTruncate.AtEnd
 	end
+
+	-- 우측 영역: 상태 + 해금버튼 + 슬롯 (패널 우측에 수직 중앙 정렬)
+	local rightX = pw - rightAreaW - math.floor(8 * s)
 
 	local status = panel:FindFirstChild("DetailStatus")
 	if status then
-		status.Size = UDim2.new(0, math.floor(200 * s), 0, math.floor(34 * s))
-		status.Position = UDim2.new(1, -math.floor(214 * s), 0.5, -math.floor(38 * s))
-		status.TextSize = math.floor(math.clamp(20 * s, 15, 32))
+		local stW = math.floor(rightAreaW * 0.95)
+		local stH = math.floor(ph * 0.2)
+		status.Size = UDim2.new(0, stW, 0, stH)
+		status.Position = UDim2.new(0, rightX, 0, topPad)
+		status.TextSize = math.floor(math.clamp(ph * 0.11, 11, 22))
+		status.TextTruncate = Enum.TextTruncate.AtEnd
 	end
 
 	local btn = panel:FindFirstChild("DetailUnlockBtn")
 	if btn then
-		btn.Size = UDim2.new(0, math.floor(130 * s), 0, math.floor(48 * s))
-		btn.Position = UDim2.new(1, -math.floor(144 * s), 0.5, math.floor(4 * s))
-		btn.TextSize = math.floor(math.clamp(23 * s, 16, 36))
+		local bW = math.floor(math.clamp(rightAreaW * 0.7, 70, 160))
+		local bH = math.floor(math.clamp(ph * 0.28, 26, 50))
+		btn.Size = UDim2.new(0, bW, 0, bH)
+		btn.Position = UDim2.new(0, rightX + math.floor((rightAreaW - bW) / 2), 0.5, math.floor(ph * 0.02))
+		btn.TextSize = math.floor(math.clamp(ph * 0.13, 13, 28))
 	end
 
 	-- 슬롯 할당 버튼 (Q/F/V) 레이아웃
-	local slotBtnW = math.floor(math.clamp(52 * s, 36, 80))
-	local slotBtnH = math.floor(math.clamp(42 * s, 30, 64))
-	local slotGap = math.floor(math.clamp(6 * s, 3, 12))
+	local slotBtnW = math.floor(math.clamp(rightAreaW * 0.28, 30, 60))
+	local slotBtnH = math.floor(math.clamp(ph * 0.24, 24, 48))
+	local slotGap = math.floor(math.clamp(4 * s, 2, 8))
 	local totalSlotW = slotBtnW * 3 + slotGap * 2
+	local slotStartX = rightX + math.floor((rightAreaW - totalSlotW) / 2)
+	local slotY = ph - slotBtnH - math.floor(ph * 0.06)
 	for si = 1, 3 do
 		local slotBtn = panel:FindFirstChild("SlotBtn" .. si)
 		if slotBtn then
 			slotBtn.Size = UDim2.new(0, slotBtnW, 0, slotBtnH)
-			slotBtn.Position = UDim2.new(1, -math.floor(totalSlotW + 14 * s) + (si - 1) * (slotBtnW + slotGap), 0.5, math.floor(4 * s))
-			slotBtn.TextSize = math.floor(math.clamp(19 * s, 14, 32))
+			slotBtn.Position = UDim2.new(0, slotStartX + (si - 1) * (slotBtnW + slotGap), 0, slotY)
+			slotBtn.AnchorPoint = Vector2.new(0, 0)
+			slotBtn.TextSize = math.floor(math.clamp(ph * 0.1, 11, 22))
 		end
 	end
 end
@@ -662,53 +690,61 @@ _renderSkillNodes = function(nodeArea)
 	local areaHeight = nodeArea.AbsoluteSize.Y
 	if areaHeight < 50 then areaHeight = 450 end
 
-	-- 반응형 스케일 팩터 (높이 기준 — 수평 스크롤이므로 Y만 맞추면 됨)
-	local scale = math.clamp(areaHeight / 250, 0.6, 3.0)
-	local nodeSize = math.floor(math.clamp(80 * scale, 50, 180))
+	-- 반응형 스케일 팩터 (높이 기준)
+	local scale = math.clamp(areaHeight / 250, 0.6, 2.0)
+	local nodeSize = math.floor(math.clamp(60 * scale, 40, 68))
 
-	-- 레이아웃 계산 (수평 배치 — 고정 간격, 스크롤로 해결)
+	-- 레이아웃 계산 (원본 배치 유지: 패시브 상단행, 액티브 하단행, 좌→우 컬럼)
+	-- 폭 초과 시 줄바꿈하여 상하 스크롤
 	local nPassive = #passives
 	if nPassive == 0 then return end
 
-	local colSpacing = math.floor(nodeSize * 2.0)
-	local marginX = math.floor(nodeSize * 1.2) -- 좌측 여백 (다이아몬드 절반+이름)
-	local startX = marginX
+	local colSpacing = math.floor(nodeSize * 1.8)
+	local marginX = math.floor(nodeSize * 1.0)
 
-	-- Y 좌표는 nodeSize 기준으로 비례 (화면 크기 독립)
-	local markerY = math.floor(nodeSize * 0.15)
-	local passiveY = markerY + math.floor(nodeSize * 1.15)
-	local activeY = passiveY + math.floor(nodeSize * 2.1)
+	-- 한 줄에 들어가는 최대 컬럼 수 (폭 기반 자동 줄바꿈)
+	local usableWidth = areaWidth - marginX * 2
+	local colsPerRow = math.max(1, math.floor((usableWidth + colSpacing - nodeSize) / colSpacing))
+
+	-- 한 페이지(행 묶음)의 높이: 마커 + 패시브행 + 액티브행 (여유 있게)
+	local markerH = math.floor(nodeSize * 0.15)
+	local passiveY = markerH + math.floor(nodeSize * 1.2)
+	local activeY = passiveY + math.floor(nodeSize * 2.2)
+	local pageHeight = activeY + math.floor(nodeSize * 1.8) -- 한 페이지 총 높이
 
 	-- 노드 위치 맵
 	local nodePositions = {}
 
-	-- ========== 패시브 행 ==========
+	-- ========== 패시브 행 (상단, 좌→우, 폭 넘으면 줄바꿈) ==========
 	for i, skill in ipairs(passives) do
-		local cx = startX + (i - 1) * colSpacing
-		local cy = passiveY
+		local colIndex = (i - 1) % colsPerRow         -- 현재 줄 내 컬럼
+		local rowIndex = math.floor((i - 1) / colsPerRow) -- 몇 번째 줄
+
+		local cx = marginX + colIndex * colSpacing
+		local cy = passiveY + rowIndex * pageHeight
 		nodePositions[skill.id] = { x = cx, y = cy }
 
-		-- 레벨 마커
+		-- 레벨 마커 (노드 위)
 		local marker = Instance.new("TextLabel")
 		marker.Name = "LvMark_" .. i
 		marker.Size = UDim2.new(0, nodeSize * 1.6, 0, math.floor(nodeSize * 0.24))
-		marker.Position = UDim2.new(0, cx, 0, markerY)
+		marker.Position = UDim2.new(0, cx, 0, markerH + rowIndex * pageHeight)
 		marker.AnchorPoint = Vector2.new(0.5, 0)
 		marker.BackgroundTransparency = 1
 		marker.Text = "Lv." .. skill.reqLevel
 		marker.TextColor3 = playerLevel >= skill.reqLevel and Color3.fromRGB(170, 165, 140) or C.DIM
-		marker.TextSize = math.floor(math.clamp(nodeSize * 0.22, 13, 30))
+		marker.TextSize = math.floor(math.clamp(nodeSize * 0.22, 13, 24))
 		marker.Font = Enum.Font.RobotoMono
 		marker.ZIndex = 2
 		marker.Parent = nodeArea
 
 		-- 마커 → 노드 연결선
-		local lineLen = passiveY - markerY - math.floor(nodeSize * 0.28) - nodeSize * 0.35
+		local lineLen = passiveY - markerH - math.floor(nodeSize * 0.28) - nodeSize * 0.35
 		if lineLen > 2 then
 			local markLine = Instance.new("Frame")
 			markLine.Name = "MarkLine"
 			markLine.Size = UDim2.new(0, 1, 0, lineLen)
-			markLine.Position = UDim2.new(0, cx, 0, markerY + math.floor(nodeSize * 0.22))
+			markLine.Position = UDim2.new(0, cx, 0, markerH + math.floor(nodeSize * 0.22) + rowIndex * pageHeight)
 			markLine.AnchorPoint = Vector2.new(0.5, 0)
 			markLine.BackgroundColor3 = C.BORDER_DIM
 			markLine.BackgroundTransparency = 0.7
@@ -722,12 +758,14 @@ _renderSkillNodes = function(nodeArea)
 		_createDiamondNode(nodeArea, skill, cx, cy, nodeSize, isUnlocked, canUnlock, isTreeLocked, playerLevel)
 	end
 
-	-- ========== 액티브 행 ==========
+	-- ========== 액티브 행 (하단, 선행스킬 컬럼과 같은 X에 배치) ==========
 	for _, skill in ipairs(actives) do
 		local prereqId = skill.prereqs and skill.prereqs[1]
 		local prereqPos = prereqId and nodePositions[prereqId]
-		local cx = prereqPos and prereqPos.x or startX
-		local cy = activeY
+		local cx = prereqPos and prereqPos.x or marginX
+		-- 같은 줄(페이지)의 액티브 Y = 해당 페이지의 activeY
+		local prereqRow = prereqPos and math.floor((prereqPos.y - passiveY) / pageHeight + 0.5) or 0
+		local cy = activeY + prereqRow * pageHeight
 		nodePositions[skill.id] = { x = cx, y = cy }
 
 		local isUnlocked = unlockedSkills[skill.id] == true
@@ -754,10 +792,11 @@ _renderSkillNodes = function(nodeArea)
 		_updateDetailPanel()
 	end
 
-	-- 수평 스크롤 영역 설정 (마지막 노드 + 우측 여백)
-	local contentRight = startX + (nPassive - 1) * colSpacing + marginX
-	if contentRight > areaWidth then
-		nodeArea.CanvasSize = UDim2.new(0, contentRight + 10, 0, 0)
+	-- 상하 스크롤 영역 설정 (마지막 페이지 하단 + 여백)
+	local totalRows = math.ceil(nPassive / colsPerRow)
+	local contentBottom = (totalRows - 1) * pageHeight + activeY + math.floor(nodeSize * 1.5)
+	if contentBottom > areaHeight then
+		nodeArea.CanvasSize = UDim2.new(0, 0, 0, contentBottom + 10)
 	else
 		nodeArea.CanvasSize = UDim2.new(0, 0, 0, 0)
 	end
@@ -1148,7 +1187,7 @@ function SkillTreeUI.Init(parent, UIManager, isMobile)
 	nodeArea.ScrollBarImageTransparency = 0.4
 	nodeArea.CanvasSize = UDim2.new(0, 0, 0, 0) -- _renderSkillNodes에서 동적 설정
 	nodeArea.AutomaticCanvasSize = Enum.AutomaticSize.None
-	nodeArea.ScrollingDirection = Enum.ScrollingDirection.X
+	nodeArea.ScrollingDirection = Enum.ScrollingDirection.Y
 	nodeArea.ElasticBehavior = Enum.ElasticBehavior.Always
 	nodeArea.Parent = contentArea
 	SkillTreeUI.Refs.NodeArea = nodeArea

@@ -119,28 +119,6 @@ local function distanceBetween(pos1: Vector3, pos2: Vector3): number
 end
 
 --========================================
--- Internal: 가장 가까운 플레이어 거리
---========================================
-local function getNearestPlayerDistance(pos: Vector3): number
-	local minDist = math.huge
-	
-	for _, player in ipairs(Players:GetPlayers()) do
-		local character = player.Character
-		if character then
-			local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-			if humanoidRootPart then
-				local dist = distanceBetween(pos, humanoidRootPart.Position)
-				if dist < minDist then
-					minDist = dist
-				end
-			end
-		end
-	end
-	
-	return minDist
-end
-
---========================================
 -- Internal: 병합 대상 찾기
 --========================================
 local function findMergeTarget(pos: Vector3, itemId: string): any?

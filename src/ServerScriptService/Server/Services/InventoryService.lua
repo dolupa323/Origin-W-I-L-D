@@ -164,23 +164,6 @@ local function _validateCountAvailable(inv: any, slot: number, count: number): (
 	return true, nil
 end
 
---- ?�택 규칙 검�?(?�치�?가???��?)
-local function _validateStackRules(inv: any, toSlot: number, movingItemId: string, movingCount: number): (boolean, string?)
-	local targetSlot = inv.slots[toSlot]
-	
-	if targetSlot == nil then
-		-- �??�롯?�면 무조�?OK
-		return true, nil
-	end
-	
-	-- ?�른 ?�이?�이�??�치�?불�?
-	if targetSlot.itemId ~= movingItemId then
-		return false, Enums.ErrorCode.ITEM_MISMATCH
-	end
-	
-	return true, nil
-end
-
 --========================================
 -- Internal: Slot Calculations
 --========================================

@@ -61,6 +61,8 @@ local ZONE_CONFIGS = {
 			{ id = "ROCK_SOFT", weight = 50 },
 			{ id = "GROUND_STONE", weight = 90 },
 			{ id = "FALM_TREE", weight = 55 },
+			{ id = "OBSIDIAN_NODE", weight = 25 },
+			{ id = "REED_BUSH", weight = 50 },
 		},
 	},
 }

@@ -607,30 +607,40 @@ function CreatureService.spawn(creatureId, position)
 		rootPart:SetNetworkOwner(nil) -- nil = 서버 소유
 	end)
 	
-	-- ★ 개선: StreamingEnabled 대응 지형 로딩 감지 → Anchored 해제
+	-- ★ 개선: StreamingEnabled 대응 지형 로딩 감지 → 정확한 높이 배치 후 Anchored 해제
 	-- 레이캐스트로 지형을 감지할 때까지 대기, 최대 5초
 	task.spawn(function()
 		local maxWait = 5
 		local elapsedTime = 0
 		local checkInterval = 0.1
 		
+		-- Raycast 필터: Terrain + Map 모두 포함 (Map 위 스폰 대응)
+		local raycastParams = RaycastParams.new()
+		raycastParams.FilterType = Enum.RaycastFilterType.Include
+		local filterList = { workspace.Terrain }
+		local map = workspace:FindFirstChild("Map")
+		if map then table.insert(filterList, map) end
+		raycastParams.FilterDescendantsInstances = filterList
+		
 		while elapsedTime < maxWait do
 			if not rootPart or not rootPart.Parent then
 				return  -- 크리처가 삭제됨
 			end
 			
-			-- 레이캐스트로 지형 감지
+			-- 레이캐스트로 지형/맵 감지
 			local rayOrigin = rootPart.Position + Vector3.new(0, 2, 0)
 			local rayDirection = Vector3.new(0, -50, 0)
-			local raycastParams = RaycastParams.new()
-			raycastParams.FilterType = Enum.RaycastFilterType.Whitelist
-			raycastParams.FilterDescendantsInstances = {workspace.Terrain}
-			
 			local rayResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
 			
 			if rayResult then
-				-- ✅ 지형 감지됨 → Anchored 해제
+				-- ✅ 지면 감지됨 → 정확한 높이로 재배치 후 Anchored 해제
 				if rootPart.Anchored then
+					local groundY = rayResult.Position.Y
+					local hipHeight = humanoid.HipHeight
+					local correctY = groundY + hipHeight + rootPart.Size.Y / 2
+					local currentCF = rootPart.CFrame
+					local yDiff = correctY - currentCF.Position.Y
+					model:PivotTo(currentCF + Vector3.new(0, yDiff, 0))
 					rootPart.Anchored = false
 				end
 				return
@@ -1173,7 +1183,7 @@ end
 
 --- 맵 중심 주변에 스폰 위치 찾기 (플레이어 없이도 동작)
 function CreatureService._findMapSpawnPosition(center: Vector3, radius: number): Vector3?
-	for i = 1, 10 do
+	for i = 1, 30 do
 		-- 사각형 맵 전역 분포 (Corners 포함)
 		local xOffset = (math.random() * 2 - 1) * radius
 		local zOffset = (math.random() * 2 - 1) * radius
@@ -1302,6 +1312,8 @@ function CreatureService.SpawnZone(zoneName)
 
 	while spawned < PER_ZONE_COUNT and attempts < MAX_ATTEMPTS do
 		attempts = attempts + 1
+		-- ★ 10회마다 yield: 게임 루프 블로킹 방지 (포탈 등 다른 요청 처리 가능)
+		if attempts % 10 == 0 then task.wait() end
 		local pos = CreatureService._findMapSpawnPosition(zoneCenter, zoneRadius)
 		if pos then
 			local cid = SpawnConfig.GetRandomCreatureForZone(zoneName)
@@ -1339,7 +1351,13 @@ function CreatureService.SpawnZone(zoneName)
 		end
 	end
 
-	print(string.format("[CreatureService] SpawnZone '%s' complete: %d creatures spawned", zoneName, spawned))
+	print(string.format("[CreatureService] SpawnZone '%s' complete: %d/%d creatures spawned", zoneName, spawned, PER_ZONE_COUNT))
+
+	-- ★ 목표 대비 50% 미만이면 spawnedZones 리셋 (다음 포탈 진입 시 재시도 허용)
+	if spawned < math.floor(PER_ZONE_COUNT * 0.5) then
+		spawnedZones[zoneName] = nil
+		warn(string.format("[CreatureService] SpawnZone '%s' under 50%% target (%d/%d), allowing retry", zoneName, spawned, PER_ZONE_COUNT))
+	end
 end
 
 --- 보충 스폰 루프 (CAP 대비 부족분만 플레이어 주변에 보충 — Zone별 크리처 선택)
@@ -1347,7 +1365,7 @@ function CreatureService._replenishLoop()
 	if creatureCount >= CREATURE_CAP then return end
 	
 	local deficit = CREATURE_CAP - creatureCount
-	local toSpawn = math.min(deficit, 2)
+	local toSpawn = math.min(deficit, 5)
 	
 	local players = Players:GetPlayers()
 	for i = #players, 2, -1 do

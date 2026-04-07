@@ -112,13 +112,14 @@ local ResourceNodeData = {
 	--========================================
 	{
 		id = "FALM_TREE",
-		name = "열대 나무",
+		name = "야자나무",
 		level = 4,
 		modelName = "FALM_TREE",
 		nodeType = "TREE",
 		optimalTool = "AXE",
 		resources = {
-			{ itemId = "LOG", min = 2, max = 4, weight = 1.0 },
+			{ itemId = "PALM_LOG", min = 2, max = 4, weight = 1.0 },
+			{ itemId = "COCONUT", min = 1, max = 2, weight = 0.6 },
 		},
 		maxHealth = 80,
 		respawnTime = 300,
@@ -206,6 +207,42 @@ local ResourceNodeData = {
 	},
 
 	--========================================
+	-- [열대섬 특화] 흑요석, 억새 갈대
+	--========================================
+	{
+		id = "OBSIDIAN_NODE",
+		name = "흑요석 바위",
+		level = 8,
+		modelName = "OBSIDIAN_NODE",
+		nodeType = "ROCK",
+		optimalTool = "PICKAXE",
+		resources = {
+			{ itemId = "OBSIDIAN", min = 2, max = 5, weight = 1.0 },
+			{ itemId = "STONE", min = 1, max = 3, weight = 0.4 },
+		},
+		maxHealth = 400,
+		respawnTime = 500,
+		xpPerHit = 8,
+		requiresTool = true,
+	},
+	{
+		id = "REED_BUSH",
+		name = "억새 갈대",
+		level = 3,
+		modelName = "REED_BUSH",
+		nodeType = "FIBER",
+		optimalTool = "SICKLE",
+		resources = {
+			{ itemId = "REED", min = 2, max = 4, weight = 1.0 },
+			{ itemId = "FIBER", min = 1, max = 2, weight = 0.5 },
+		},
+		maxHealth = 40,
+		respawnTime = 180,
+		xpPerHit = 3,
+		requiresTool = false,
+	},
+
+	--========================================
 	-- 크리처 시체 (사냥 후 채집)
 	--========================================
 	{
@@ -251,6 +288,7 @@ local ResourceNodeData = {
 		optimalTool = nil,
 		resources = {
 			{ itemId = "MEAT", min = 3, max = 6, weight = 1.0 },
+			{ itemId = "TROPICAL_LEATHER", min = 2, max = 4, weight = 0.7 },
 			{ itemId = "PARASAUR_DNA", min = 1, max = 1, weight = 0.15 },
 		},
 		maxHealth = 7,
@@ -267,6 +305,7 @@ local ResourceNodeData = {
 		optimalTool = nil,
 		resources = {
 			{ itemId = "MEAT", min = 4, max = 8, weight = 1.0 },
+			{ itemId = "TROPICAL_LEATHER", min = 3, max = 6, weight = 0.8 },
 			{ itemId = "HORN", min = 1, max = 1, weight = 0.3 },
 			{ itemId = "TRICERATOPS_DNA", min = 1, max = 1, weight = 0.08 },
 		},
@@ -302,6 +341,7 @@ local ResourceNodeData = {
 		optimalTool = nil,
 		resources = {
 			{ itemId = "MEAT", min = 4, max = 7, weight = 1.0 },
+			{ itemId = "TROPICAL_LEATHER", min = 3, max = 5, weight = 0.8 },
 			{ itemId = "BONE", min = 1, max = 2, weight = 0.4 },
 			{ itemId = "STEGOSAURUS_DNA", min = 1, max = 1, weight = 0.08 },
 		},
@@ -337,7 +377,9 @@ local ResourceNodeData = {
 		optimalTool = nil,
 		resources = {
 			{ itemId = "MEAT", min = 1, max = 3, weight = 1.0 },
+			{ itemId = "TROPICAL_LEATHER", min = 2, max = 3, weight = 0.6 },
 			{ itemId = "BONE", min = 1, max = 1, weight = 0.3 },
+			{ itemId = "SHARP_TOOTH", min = 1, max = 2, weight = 0.4 },
 			{ itemId = "RAPTOR_DNA", min = 1, max = 1, weight = 0.10 },
 		},
 		maxHealth = 5,
