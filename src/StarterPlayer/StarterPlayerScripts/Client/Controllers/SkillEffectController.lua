@@ -382,7 +382,7 @@ local function executeSkillEffects(userId: number, skillId: string, targetId: st
 				end
 			end
 			if not targetPos then
-				-- 타겟 없으면 전방으로 발사
+				-- 타겟 없으면 캐릭터 정면으로 발사
 				targetPos = hrp.Position + hrp.CFrame.LookVector * 80
 			end
 
@@ -391,8 +391,8 @@ local function executeSkillEffects(userId: number, skillId: string, targetId: st
 			if direction.Magnitude < 1 then direction = hrp.CFrame.LookVector end
 			direction = direction.Unit
 
-			-- ★ 화살 모델 발사 (로컬 플레이어만)
-			if userId == player.UserId then
+			-- ★ 화살 모델 발사 (로컬 플레이어만, BOW_A2는 속사 루프에서 개별 발사)
+			if userId == player.UserId and skillId ~= "BOW_A2" then
 				local ok, CombatCtrl = pcall(function()
 					return require(script.Parent.CombatController)
 				end)
@@ -406,18 +406,139 @@ local function executeSkillEffects(userId: number, skillId: string, targetId: st
 			-- 스킬별 CFrame 보정
 			local rotationOffset = CFrame.new()
 			if skillId == "BOW_A1" then
-				-- 강사: 촉이 전방을 향하도록 X축 90도
-				rotationOffset = CFrame.Angles(math.rad(90), 0, 0)
+				-- 강사: 뾰족한 끝(X축)이 전방을 향하도록 Y축 회전
+				rotationOffset = CFrame.Angles(0, math.rad(-90), 0)
 			elseif skillId == "BOW_A2" then
-				-- 속사: 세로 배치 (가로→세로 전환)
 				rotationOffset = CFrame.Angles(math.rad(-90), 0, math.rad(90))
 			elseif skillId == "BOW_A3" then
-				-- 폭렬 사격: X축 180도 (촉이 전방을 향하도록)
 				rotationOffset = CFrame.Angles(math.rad(180), 0, 0)
 			end
-			-- BOW_A2 속사: 보정 없음 (세로 그대로)
 
-			-- VFX 파트 생성
+			-- ★ BOW_A2 속사: Cast VFX를 순차적으로 5발 발사
+			if skillId == "BOW_A2" then
+				local rapidCount = 5
+				local rapidInterval = 0.12
+				for shotIdx = 1, rapidCount do
+					task.delay((shotIdx - 1) * rapidInterval, function()
+						if not hrp or not hrp.Parent then return end
+						-- 각 화살마다 약간의 랜덤 방향 산란
+						local spread = Vector3.new(
+							(math.random() - 0.5) * 0.08,
+							(math.random() - 0.5) * 0.04,
+							(math.random() - 0.5) * 0.08
+						)
+						local shotDir = (direction + spread).Unit
+						local shotTarget = startPos + shotDir * distance
+						local shotTravelTime = math.clamp(distance / 65, 0.35, 1.3)
+					-- ★ 속사 화살 모델 트레이서 (로컬 플레이어만)
+					if userId == player.UserId then
+						local ok2, CombatCtrl2 = pcall(function()
+							return require(script.Parent.CombatController)
+						end)
+						if ok2 and CombatCtrl2 and CombatCtrl2.fireArrowTracer then
+							CombatCtrl2.fireArrowTracer(shotTarget, startPos, shotDir)
+						end
+					end
+						local tmpl = castTemplates[(shotIdx - 1) % #castTemplates + 1]
+						local shotVfx = tmpl:Clone()
+						local forwardCF = CFrame.lookAt(startPos, startPos + shotDir)
+						if shotVfx:IsA("BasePart") then
+							shotVfx.CFrame = forwardCF * rotationOffset
+							shotVfx.Anchored = true
+							shotVfx.CanCollide = false
+							shotVfx.CanQuery = false
+							shotVfx.CanTouch = false
+							if shotVfx:IsA("Part") and not shotVfx:IsA("MeshPart") then
+								shotVfx.Transparency = 1
+							end
+						elseif shotVfx:IsA("Model") then
+							shotVfx:PivotTo(forwardCF * rotationOffset)
+						end
+						shotVfx.Parent = workspace
+
+						for _, desc in shotVfx:GetDescendants() do
+							if desc:IsA("ParticleEmitter") then
+								local bc = desc:GetAttribute("BurstCount")
+								if bc then desc:Emit(bc)
+								else desc.Enabled = true end
+							end
+						end
+
+						-- 화살 경로 추종
+						task.spawn(function()
+							local t0 = tick()
+							while true do
+								local alpha = math.min((tick() - t0) / shotTravelTime, 1)
+								local pos = startPos:Lerp(shotTarget, alpha)
+								local cf = CFrame.lookAt(pos, pos + shotDir)
+								if shotVfx:IsA("BasePart") and shotVfx.Parent then
+									shotVfx.CFrame = cf * rotationOffset
+								elseif shotVfx:IsA("Model") and shotVfx.Parent then
+									shotVfx:PivotTo(cf * rotationOffset)
+								end
+								if alpha >= 1 then break end
+								task.wait()
+							end
+							for _, desc in shotVfx:GetDescendants() do
+								if desc:IsA("ParticleEmitter") then desc.Enabled = false end
+							end
+							-- 개별 화살 도착 시 Hit VFX + 사운드
+							local arrivalPos = shotTarget
+							if hitVFXFolder then
+								local hitTemplates = findVFXTemplates(hitVFXFolder, assetName .. "_Hit")
+								for _, htmpl in ipairs(hitTemplates) do
+									local hitVfx = htmpl:Clone()
+									if hitVfx:IsA("BasePart") then
+										hitVfx.Anchored = true
+										hitVfx.CanCollide = false
+										hitVfx.CanQuery = false
+										hitVfx.CanTouch = false
+										hitVfx.CFrame = CFrame.new(arrivalPos)
+										if hitVfx:IsA("Part") and not hitVfx:IsA("MeshPart") then
+											hitVfx.Transparency = 1
+										end
+									end
+									hitVfx.Parent = workspace
+									for _, d in hitVfx:GetDescendants() do
+										if d:IsA("ParticleEmitter") then
+											local bc2 = d:GetAttribute("BurstCount")
+											if bc2 then d:Emit(bc2)
+											else d.Enabled = true
+												task.delay(1.5, function()
+													if d and d.Parent then d.Enabled = false end
+												end)
+											end
+										end
+									end
+									Debris:AddItem(hitVfx, hitLife)
+								end
+							end
+							if hitSoundFolder then
+								local hitSndTmpl = hitSoundFolder:FindFirstChild(assetName .. "_Hit")
+								if hitSndTmpl then
+									local sndPart = Instance.new("Part")
+									sndPart.Size = Vector3.one
+									sndPart.Transparency = 1
+									sndPart.Anchored = true
+									sndPart.CanCollide = false
+									sndPart.CanQuery = false
+									sndPart.CanTouch = false
+									sndPart.Position = arrivalPos
+									sndPart.Parent = workspace
+									local sfx = hitSndTmpl:Clone()
+									sfx.Parent = sndPart
+									sfx:Play()
+									Debris:AddItem(sndPart, 3)
+								end
+							end
+						end)
+						Debris:AddItem(shotVfx, castLife)
+					end)
+				end
+				-- BOW_A2는 여기서 처리 완료 — 아래 공통 로직 스킵
+				Debris:AddItem(vfx, 0.1) -- 빈 원본 즉시 정리
+			else
+			-- ★ BOW_A1, BOW_A3 등 기존 단일 VFX 로직
 			local vfx = castTemplates[1]:Clone()
 			if vfx:IsA("BasePart") then
 				local forwardCF = CFrame.lookAt(startPos, startPos + direction)
@@ -558,6 +679,7 @@ local function executeSkillEffects(userId: number, skillId: string, targetId: st
 			end)
 
 			Debris:AddItem(vfx, castLife)
+			end -- BOW_A2 else 종료
 		end
 	elseif isAxeSkill and castVFXFolder and assetName then
 		--========================================

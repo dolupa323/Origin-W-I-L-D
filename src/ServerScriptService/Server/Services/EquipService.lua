@@ -309,8 +309,8 @@ function EquipService.equipItem(player: Player, itemId: string?)
 			-- 검: 칼날 세로 + 날카로운 면 정면
 			tool.Grip = CFrame.Angles(0, 0, math.rad(90))
 		elseif itemData.optimalTool == "BOW" then
-			-- 활대를 세로로 세우고, 활줄이 몸쪽을 향하도록 축을 뒤집어 정렬.
-			tool.Grip = CFrame.new(0.05, -0.24, -0.40) * CFrame.Angles(math.rad(-88), math.rad(180), math.rad(90))
+			-- Y=-90 방향, 위치를 손 가까이 조정
+			tool.Grip = CFrame.new(0, 0, 0) * CFrame.Angles(0, math.rad(-90), 0)
 		elseif itemData.optimalTool == "CROSSBOW" then
 			-- 석궁은 활보다 약간 낮고 전방을 향하도록 분리 세팅.
 			tool.Grip = CFrame.new(0.14, -0.30, -0.56) * CFrame.Angles(math.rad(2), math.rad(90), math.rad(86))

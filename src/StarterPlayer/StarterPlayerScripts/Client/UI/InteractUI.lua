@@ -74,7 +74,7 @@ function InteractUI.Init(parent, isMobile)
 	local prompt = Utils.mkFrame({
 		name = "InteractPrompt",
 		size = UDim2.new(0, 0, 0, 0),
-		pos = UDim2.new(0.5, 0, 0.75, 0),
+		pos = UDim2.new(0.5, 0, isSmall and 0.52 or 0.55, 0),
 		anchor = Vector2.new(0.5, 0.5),
 		bg = C.BG_PANEL,
 		bgT = 0.85,
@@ -178,7 +178,7 @@ function InteractUI.Init(parent, isMobile)
 	local build = Utils.mkFrame({
 		name = "BuildPrompt",
 		size = UDim2.new(0, 200, 0, 110),
-		pos = UDim2.new(0.02, 0, isSmall and 0.8 or 0.85, 0),
+		pos = UDim2.new(0.02, 0, isSmall and 0.55 or 0.6, 0),
 		anchor = Vector2.new(0, 0.5),
 		bg = C.BG_PANEL,
 		bgT = T.PANEL,

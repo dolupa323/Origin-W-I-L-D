@@ -55,7 +55,7 @@ local bowPredictedChargeRatio = 0
 local bowPredictedHeldSec = 0
 
 -- 화살 비주얼 회전 보정
-local ARROW_MODEL_ROTATION_OFFSET = CFrame.Angles(0, math.rad(90), 0)
+local ARROW_MODEL_ROTATION_OFFSET = CFrame.Angles(0, math.rad(-90), 0)
 local BOW_DRAW_FRONT_SPEED = 0.85
 local DEFAULT_MIN_AIM_TIME = 0.2
 local DEFAULT_MAX_CHARGE_TIME = 1.2
@@ -516,180 +516,101 @@ local function updateBowPreview(itm)
 	end
 end
 
-local function beginBowDraw(pressedHitPos: Vector3?)
-	if bowDrawActive or InputManager.isUIOpen() then
-		return
-	end
-	local itm = getEquippedItemData()
-	if isBowWeapon(itm, getEquippedToolType()) and not hasRequiredBowAmmo(itm) then
-		notifyBowNoAmmo()
-		return
-	end
-	bowDrawActive = true
-	bowDrawStartedAt = tick()
-	enterAimZoom()
-	bowDrawPressedHitPos = pressedHitPos
-	bowDrawPressedTargetCenter = resolveMouseTargetCenter(pressedHitPos)
-	bowDrawPassedHalf = false
-	bowDrawReadyToFire = false
-	clearBowPreview()
-	local character = player.Character
-	local humanoid = character and character:FindFirstChild("Humanoid")
-	if humanoid then
-		bowPreviousAutoRotate = humanoid.AutoRotate
-		humanoid.AutoRotate = false
-	end
-	if currentBowDrawConn then
-		currentBowDrawConn:Disconnect()
-		currentBowDrawConn = nil
-	end
-
-	local character = player.Character
-	local humanoid = character and character:FindFirstChild("Humanoid")
-	if humanoid and AnimationIds.ATTACK_BOW and AnimationIds.ATTACK_BOW.DRAW then
-		local equippedBow = getEquippedItemData()
-		local track = AnimationManager.play(humanoid, AnimationIds.ATTACK_BOW.DRAW, 0.05)
-		if track then
-			track.TimePosition = 0
-			track.Priority = Enum.AnimationPriority.Action
-			track.Looped = false
-			track:AdjustSpeed(BOW_DRAW_FRONT_SPEED)
-			currentBowDrawTrack = track
-
-			currentBowDrawConn = RunService.RenderStepped:Connect(function()
-				updateBowPreview(equippedBow)
-				if not bowDrawActive then
-					return
-				end
-
-				if not currentBowDrawTrack then
-					return
-				end
-				if not currentBowDrawTrack.IsPlaying then
-					if currentBowDrawConn then
-						currentBowDrawConn:Disconnect()
-						currentBowDrawConn = nil
-					end
-					return
-				end
-
-				local length = currentBowDrawTrack.Length
-				if length <= 0 then
-					return
-				end
-
-				if (not bowDrawPassedHalf) and currentBowDrawTrack.TimePosition >= (length * BOW_DRAW_FRONT_RATIO) then
-					bowDrawPassedHalf = true
-					currentBowDrawTrack:AdjustSpeed(BOW_DRAW_HOLD_SPEED)
-				end
-
-				if currentBowDrawTrack.TimePosition >= (length - BOW_DRAW_END_EPSILON) then
-					bowDrawReadyToFire = true
-					currentBowDrawTrack.TimePosition = math.max(0, length - BOW_DRAW_END_EPSILON)
-					currentBowDrawTrack:AdjustSpeed(0)
-				end
-			end)
-		end
-	end
-end
-
 local playAttackAnimation
 local spawnArrowTracer
 
-local function endBowDraw(releaseHitPos: Vector3?)
-	if not bowDrawActive then
-		return
-	end
-	bowDrawActive = false
-	if currentBowDrawConn then
-		currentBowDrawConn:Disconnect()
-		currentBowDrawConn = nil
-	end
-	local predictedOrigin = bowPredictedOrigin
-	local predictedDirection = bowPredictedDirection
-	local predictedHitPos = bowPredictedHitPos
-	local predictedChargeRatio = bowPredictedChargeRatio
-	local predictedHeldSec = bowPredictedHeldSec
-	clearBowPreview()
-	bowDrawPassedHalf = false
-	local canFire = bowDrawReadyToFire
-	bowDrawReadyToFire = false
-	local character = player.Character
-	local humanoid = character and character:FindFirstChild("Humanoid")
-	if humanoid then
-		humanoid.AutoRotate = (bowPreviousAutoRotate ~= nil) and bowPreviousAutoRotate or true
-	end
-	bowPreviousAutoRotate = nil
-	if currentBowDrawTrack and currentBowDrawTrack.IsPlaying then
-		currentBowDrawTrack:Stop(0.04)
-	end
-	currentBowDrawTrack = nil
-	if not canFire then
-		notifyBowIncomplete()
-		exitAimZoom()
-		bowDrawStartedAt = 0
-		bowDrawPressedHitPos = nil
-		bowDrawPressedTargetCenter = nil
-		return
-	end
+--- 좌클릭 즉시 활 발사 (조준 시스템 없음)
+local function fireBowInstant(clickHitPos: Vector3?)
+	if InputManager.isUIOpen() then return end
 
 	local itm = getEquippedItemData()
-	if not isBowWeapon(itm, getEquippedToolType()) then
-		exitAimZoom()
-		bowDrawStartedAt = 0
-		bowDrawPressedHitPos = nil
-		bowDrawPressedTargetCenter = nil
+	if not isBowWeapon(itm, getEquippedToolType()) then return end
+
+	-- 쿨다운
+	local dynamicCooldown = (itm and itm.attackSpeed) or ATTACK_COOLDOWN
+	local now = tick()
+	if now - lastAttackTime < dynamicCooldown then return end
+	lastAttackTime = now
+
+	-- 탄약 체크
+	if not hasRequiredBowAmmo(itm) then
+		notifyBowNoAmmo()
 		return
 	end
-
-	local heldSec = predictedHeldSec > 0 and predictedHeldSec or math.max(0, tick() - bowDrawStartedAt)
-	bowDrawStartedAt = 0
-
-	local minAimTime = math.max(0.05, tonumber(itm and itm.minAimTime) or DEFAULT_MIN_AIM_TIME)
-	local maxChargeTime = math.max(minAimTime + 0.1, tonumber(itm and itm.maxChargeTime) or DEFAULT_MAX_CHARGE_TIME)
-	if heldSec < minAimTime then
-		exitAimZoom()
-		bowDrawPressedHitPos = nil
-		bowDrawPressedTargetCenter = nil
-		return
-	end
-
-	local chargeRatio = math.clamp((heldSec - minAimTime) / (maxChargeTime - minAimTime), 0, 1)
-	local maxRange = tonumber(itm and (itm.maxRange or itm.range)) or 120
-	local minRange = math.max(8, tonumber(itm and itm.minRange) or math.floor(maxRange * 0.25))
-	local effectiveRange = minRange + ((maxRange - minRange) * chargeRatio)
 
 	local origin = getBowMuzzleOrigin()
-	if not origin then
-		exitAimZoom()
-		bowDrawPressedHitPos = nil
-		return
+	if not origin then return end
+
+	-- 클릭 위치 → 발사 방향 계산
+	local direction
+	if clickHitPos then
+		local dir = clickHitPos - origin
+		if dir.Magnitude > 0.5 then
+			direction = dir.Unit
+		end
+	end
+	if not direction then
+		-- 클릭 위치가 없으면 마우스 레이캐스트
+		local _, mouseHit = InputManager.raycastFromMouse(nil, BOW_AIM_RAYCAST_DISTANCE)
+		if mouseHit then
+			local dir = mouseHit - origin
+			if dir.Magnitude > 0.5 then
+				direction = dir.Unit
+			end
+		end
+	end
+	if not direction then
+		direction = getBowForwardDirection()
 	end
 
-	bowDrawPressedHitPos = nil
-	bowDrawPressedTargetCenter = nil
+	-- 캐릭터를 발사 방향으로 회전
+	orientCharacterToAim(direction)
 
-	local direction = getLiveBowAimDirection(origin)
+	-- 사거리 계산 (충전 없으므로 최대 사거리)
+	local maxRange = tonumber(itm and (itm.maxRange or itm.range)) or 120
+	local chargeRatio = 1.0
+	local heldSec = 1.0
 
-	local aimHitPos = predictedHitPos
-	if not aimHitPos then
-		local rayParams = RaycastParams.new()
-		rayParams.FilterType = Enum.RaycastFilterType.Exclude
-		rayParams.FilterDescendantsInstances = { player.Character }
-		local rayResult = workspace:Raycast(origin, direction * effectiveRange, rayParams)
-		aimHitPos = rayResult and rayResult.Position or (origin + (direction * effectiveRange))
+	-- 발사 애니메이션
+	local character = player.Character
+	local humanoid = character and character:FindFirstChild("Humanoid")
+	if humanoid and AnimationIds.ATTACK_BOW and AnimationIds.ATTACK_BOW.DRAW then
+		local track = AnimationManager.play(humanoid, AnimationIds.ATTACK_BOW.DRAW, 0.05)
+		if track then
+			track.Priority = Enum.AnimationPriority.Action
+			track.Looped = false
+			track:AdjustSpeed(2.0) -- 빠르게 재생
+		end
 	end
 
-	if predictedDirection and predictedDirection.Magnitude > 0.001 then
-		direction = predictedDirection
-	end
-	if predictedOrigin then
-		origin = predictedOrigin
-	end
-	if predictedChargeRatio > 0 then
-		chargeRatio = predictedChargeRatio
+	-- 발사 효과음 (BOW_A1 강사 스킬과 동일)
+	do
+		local assets = ReplicatedStorage:FindFirstChild("Assets")
+		local skillSounds = assets and assets:FindFirstChild("SkillSounds")
+		local castFolder = skillSounds and skillSounds:FindFirstChild("Cast")
+		local castSnd = castFolder and castFolder:FindFirstChild("SkillBow_Power_Cast")
+		if castSnd and character then
+			local hrpSnd = character:FindFirstChild("HumanoidRootPart")
+			if hrpSnd then
+				local sfx = castSnd:Clone()
+				sfx.Volume = (sfx.Volume or 0.5) * 0.3
+				sfx.Parent = hrpSnd
+				sfx:Play()
+				sfx.Ended:Once(function()
+					if sfx and sfx.Parent then sfx:Destroy() end
+				end)
+			end
+		end
 	end
 
+	-- 착탄점 계산
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	rayParams.FilterDescendantsInstances = { player.Character }
+	local rayResult = workspace:Raycast(origin, direction * maxRange, rayParams)
+	local aimHitPos = rayResult and rayResult.Position or (origin + direction * maxRange)
+
+	-- 서버에 발사 요청
 	local ok, errorOrData = NetClient.Request("Combat.Hit.Request", {
 		targetId = nil,
 		toolSlot = UIManager.getSelectedSlot(),
@@ -701,18 +622,35 @@ local function endBowDraw(releaseHitPos: Vector3?)
 	})
 
 	if not ok then
-		exitAimZoom()
 		if errorOrData == Enums.ErrorCode.MISSING_REQUIREMENTS then
 			notifyBowNoAmmo()
-		elseif errorOrData == Enums.ErrorCode.ALREADY_IN_COMBAT then
-			UIManager.notify("이미 다른 대상과 전투 중입니다!", Color3.fromRGB(255, 150, 50))
-		elseif errorOrData == Enums.ErrorCode.INVALID_STATE then
-			UIManager.notify("조건이 맞지 않아 발사되지 않았습니다.", Color3.fromRGB(255, 140, 100))
 		end
 		return
 	end
 
-	spawnArrowTracer(aimHitPos, origin, direction, exitAimZoom)
+	-- 화살 비주얼
+	spawnArrowTracer(aimHitPos, origin, direction, nil)
+end
+
+-- 안전 클리어 (구 조준 시스템 잔여 상태 정리용)
+local function cleanupBowState()
+	bowDrawActive = false
+	bowDrawReadyToFire = false
+	if currentBowDrawConn then
+		currentBowDrawConn:Disconnect()
+		currentBowDrawConn = nil
+	end
+	clearBowPreview()
+	exitAimZoom()
+	local character = player.Character
+	local humanoid = character and character:FindFirstChild("Humanoid")
+	if humanoid then
+		humanoid.AutoRotate = true
+	end
+	bowPreviousAutoRotate = nil
+	bowDrawStartedAt = 0
+	bowDrawPressedHitPos = nil
+	bowDrawPressedTargetCenter = nil
 end
 
 spawnArrowTracer = function(targetPos: Vector3?, startPos: Vector3?, directionOverride: Vector3?, onArrived: (() -> ())?)
@@ -758,23 +696,29 @@ spawnArrowTracer = function(targetPos: Vector3?, startPos: Vector3?, directionOv
 			isModelVisual = true
 			for _, d in ipairs(visual:GetDescendants()) do
 				if d:IsA("BasePart") then
+					d.Size = d.Size * 2
 					d.Anchored = true
 					d.CanCollide = false
 					d.CanQuery = false
 					d.CanTouch = false
 				end
 			end
+			-- 초기 위치를 즉시 startPos로 설정 (템플릿 원점=땅바닥 방지)
+			local initCf = CFrame.lookAt(startPos, startPos + direction)
+			visual:PivotTo(initCf * ARROW_MODEL_ROTATION_OFFSET)
 		elseif visual:IsA("BasePart") then
+			visual.Size = visual.Size * 2
 			visual.Anchored = true
 			visual.CanCollide = false
 			visual.CanQuery = false
 			visual.CanTouch = false
+			visual.CFrame = CFrame.lookAt(startPos, startPos + direction) * ARROW_MODEL_ROTATION_OFFSET
 		end
 		visual.Parent = workspace
 	else
 		local part = Instance.new("Part")
 		part.Name = "ArrowTracer"
-		part.Size = Vector3.new(0.15, 0.15, 1.4)
+		part.Size = Vector3.new(0.3, 0.3, 2.8)
 		part.Anchored = true
 		part.CanCollide = false
 		part.CanQuery = false
@@ -815,14 +759,14 @@ spawnArrowTracer = function(targetPos: Vector3?, startPos: Vector3?, directionOv
 		arrowTrail.Attachment1 = at1
 		arrowTrail.Color = ARROW_TRAIL_COLOR
 		arrowTrail.Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 0.1),
-			NumberSequenceKeypoint.new(0.45, 0.45),
+			NumberSequenceKeypoint.new(0, 0.05),
+			NumberSequenceKeypoint.new(0.45, 0.35),
 			NumberSequenceKeypoint.new(1, 1),
 		})
 		arrowTrail.Lifetime = arrowTrailLife
 		arrowTrail.MinLength = 0.02
 		arrowTrail.WidthScale = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 0.45),
+			NumberSequenceKeypoint.new(0, 1.2),
 			NumberSequenceKeypoint.new(1, 0),
 		})
 		arrowTrail.FaceCamera = false
@@ -1335,7 +1279,7 @@ function CombatController.Init()
 	InputManager.onLeftClick("CombatAttack", function(hitPos)
 		local itm = getEquippedItemData()
 		if isBowWeapon(itm, getEquippedToolType()) then
-			beginBowDraw(hitPos)
+			fireBowInstant(hitPos)
 			return
 		end
 		CombatController.attack()
@@ -1343,31 +1287,16 @@ function CombatController.Init()
 
 	UserInputService.InputEnded:Connect(function(input, _gameProcessed)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-			endBowDraw(nil)
+			cleanupBowState()
 		end
 	end)
 
 	UserInputService.WindowFocusReleased:Connect(function()
-				local character = player.Character
-				local humanoid = character and character:FindFirstChild("Humanoid")
-				if humanoid then
-					humanoid.AutoRotate = (bowPreviousAutoRotate ~= nil) and bowPreviousAutoRotate or true
-				end
-				bowPreviousAutoRotate = nil
-		bowDrawActive = false
-		bowDrawReadyToFire = false
-		clearBowPreview()
-		exitAimZoom()
-		bowDrawStartedAt = 0
-		bowDrawPressedHitPos = nil
-		bowDrawPressedTargetCenter = nil
+		cleanupBowState()
 	end)
 
 	player.CharacterAdded:Connect(function()
-				bowPreviousAutoRotate = nil
-		bowDrawActive = false
-		bowDrawReadyToFire = false
-		clearBowPreview()
+		cleanupBowState()
 		-- 리스폰 시 FOV 즉시 복귀
 		if isAimZoomed then
 			isAimZoomed = false
@@ -1377,9 +1306,6 @@ function CombatController.Init()
 			if cam then cam.FieldOfView = originalFOV or 70 end
 			originalFOV = nil
 		end
-		bowDrawStartedAt = 0
-		bowDrawPressedHitPos = nil
-		bowDrawPressedTargetCenter = nil
 	end)
 
 	-- 전투 교전 표시 아이콘 수신

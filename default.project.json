@@ -12,6 +12,10 @@
     },
     "ServerScriptService": { "$path": "src/ServerScriptService" },
     "StarterPlayer": {
+      "$properties": {
+        "CameraMaxZoomDistance": 60,
+        "CameraMinZoomDistance": 5
+      },
       "StarterPlayerScripts": { "$path": "src/StarterPlayer/StarterPlayerScripts" }
     },
     "Workspace": {

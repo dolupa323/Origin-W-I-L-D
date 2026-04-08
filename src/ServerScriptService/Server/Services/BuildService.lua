@@ -241,6 +241,45 @@ local function validatePosition(position: Vector3): (boolean, string?, string?, 
 end
 
 --========================================
+-- Internal: alternateWoodIds 대체 재료 해석
+-- requirements 내 alternateWoodIds에 포함된 itemId가 있으면
+-- 플레이어 인벤토리에서 실제 보유한 대체 아이템으로 치환한 목록 반환
+--========================================
+local function resolveAlternateRequirements(userId: number, requirements: any, alternateWoodIds: any?): any
+	if not alternateWoodIds or #alternateWoodIds == 0 then
+		return requirements
+	end
+
+	-- alternateWoodIds 집합화
+	local altSet = {}
+	for _, id in ipairs(alternateWoodIds) do
+		altSet[id] = true
+	end
+
+	local resolved = {}
+	for _, req in ipairs(requirements) do
+		if altSet[req.itemId] then
+			-- 대체 가능 재료 → 인벤토리에서 보유한 것 찾기
+			local found = false
+			for _, altId in ipairs(alternateWoodIds) do
+				if InventoryService.hasItem(userId, altId, req.amount) then
+					table.insert(resolved, { itemId = altId, amount = req.amount })
+					found = true
+					break
+				end
+			end
+			if not found then
+				-- 아무 대체 재료도 없음 → 원본 유지 (검증에서 실패하게 됨)
+				table.insert(resolved, req)
+			end
+		else
+			table.insert(resolved, req)
+		end
+	end
+	return resolved
+end
+
+--========================================
 -- Internal: 재료 검증
 --========================================
 local function validateRequirements(userId: number, requirements: any): (boolean, string?)
@@ -601,8 +640,9 @@ function BuildService.place(player: Player, facilityId: string, position: Vector
 
 	position = Vector3.new(position.X, groundY, position.Z)
 	
-	-- 6. 재료 검증
-	local reqOk, reqErr = validateRequirements(userId, facilityData.requirements)
+	-- 6. 재료 검증 (alternateWoodIds 대체 재료 해석)
+	local resolvedReqs = resolveAlternateRequirements(userId, facilityData.requirements, facilityData.alternateWoodIds)
+	local reqOk, reqErr = validateRequirements(userId, resolvedReqs)
 	if not reqOk then
 		return false, reqErr, nil
 	end
@@ -610,7 +650,7 @@ function BuildService.place(player: Player, facilityId: string, position: Vector
 	-- === 실행 단계 ===
 	
 	-- 7. 재료 소모
-	consumeRequirements(userId, facilityData.requirements)
+	consumeRequirements(userId, resolvedReqs)
 	
 	-- 8. 구조물 ID 생성
 	local structureId = generateStructureId()

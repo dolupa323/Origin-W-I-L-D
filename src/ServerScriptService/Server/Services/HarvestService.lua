@@ -2286,6 +2286,11 @@ local function handleGatherRequest(player: Player, payload: any)
 		return { success = false, errorCode = Enums.ErrorCode.BAD_REQUEST }
 	end
 
+	-- ★ resolvedResources의 남은 수량이 0이면 채집 불가 (중복 채집 방지)
+	if nodeState.resolvedResources and foundResource.count <= 0 then
+		return { success = false, errorCode = Enums.ErrorCode.BAD_REQUEST }
+	end
+
 	-- 복합 키 (같은 유저+같은 아이템 진행 중이면 자동 취소)
 	local gatherKey = tostring(userId) .. "_" .. itemId
 	if activeGathers[gatherKey] then
@@ -2421,10 +2426,26 @@ local function handleGatherComplete(player: Player, payload: any)
 		return { success = true, data = { itemId = itemId, count = 0 } }
 	end
 
-	-- 인벤토리에 직접 추가
+	-- ★ resolvedResources 수량 차감 (중복 채집 방지)
+	if nodeState.resolvedResources then
+		for _, res in ipairs(nodeState.resolvedResources) do
+			if res.itemId == itemId then
+				res.count = math.max(0, res.count - count)
+				break
+			end
+		end
+	end
+
+	-- 인벤토리에 직접 추가 (재료 속성 롤링 포함)
 	local inventoryFull = false
 	if InventoryService then
-		local added, remaining = InventoryService.addItem(userId, itemId, count)
+		local sourceLevel = nodeData and nodeData.level or 1
+		local rolledAttr, rolledLv = MaterialAttributeData.rollAttribute(itemId, sourceLevel)
+		local attributes = nil
+		if rolledAttr and rolledLv then
+			attributes = { [rolledAttr] = rolledLv }
+		end
+		local added, remaining = InventoryService.addItem(userId, itemId, count, nil, attributes)
 		if remaining > 0 then
 			inventoryFull = true
 			-- 남은 아이템은 월드 드롭으로 발 밑에 생성 (유실 방지)
@@ -2433,7 +2454,7 @@ local function handleGatherComplete(player: Player, payload: any)
 				local dropPos = character and character:FindFirstChild("HumanoidRootPart")
 					and character.HumanoidRootPart.Position + Vector3.new(0, 2, 0)
 					or nodeState.position
-				WorldDropService.spawnDrop(dropPos, itemId, remaining)
+				WorldDropService.spawnDrop(dropPos, itemId, remaining, nil, sourceLevel)
 			end
 		end
 	end

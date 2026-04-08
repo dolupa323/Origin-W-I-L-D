@@ -1,7 +1,7 @@
 -- AttackIndicatorController.lua
--- 크리처 텔레그래프 공격 범위 표시 (데칼 기반)
--- ReplicatedStorage > Assets > AttackIndicators 폴더의 Decal 사용
--- 선행 모션 시작 시 범위 ON → 공격 모션 종료 시 범위 OFF
+-- 크리처 공격 범위 3D 볼륨 표시기
+-- Part 기반 반투명 Neon 볼륨으로 공격 범위를 시각화
+-- telegraph(패턴) 공격 + 레거시(즉시) 공격 모두 지원
 
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -19,10 +19,13 @@ local AttackIndicatorController = {}
 --========================================
 -- Constants
 --========================================
-local INDICATOR_HEIGHT = Balance.TELEGRAPH_INDICATOR_HEIGHT or 0.15
-local FLASH_SPEED = Balance.TELEGRAPH_FLASH_SPEED or 3.0
-local INDICATOR_OPACITY = Balance.TELEGRAPH_INDICATOR_OPACITY or 0.35
-local INDICATOR_OVERSIZE = Balance.TELEGRAPH_INDICATOR_OVERSIZE or 1.15
+local VOLUME_HEIGHT = 3                          -- 볼륨 높이 (studs)
+local VOLUME_TRANSPARENCY = 0.85                 -- 기본 투명도 (높을수록 투명)
+local VOLUME_COLOR = Color3.fromRGB(255, 80, 80) -- 위험 영역 빨간색 (연한 톤)
+local FLASH_SPEED = 4.0                          -- 깜빡임 속도
+local INDICATOR_OVERSIZE = 1.0                   -- 판정 범위와 정확히 일치
+local FADE_IN_TIME = 0.08                        -- 페이드인 시간 (짧게)
+local FADE_OUT_TIME = 0.15                       -- 페이드아웃 시간
 
 -- Active indicators: [instanceId] = { model: Model, conn: RBXScriptConnection? }
 local activeIndicators = {}
@@ -31,54 +34,6 @@ local activeIndicators = {}
 local indicatorFolder = Instance.new("Folder")
 indicatorFolder.Name = "AttackIndicators"
 indicatorFolder.Parent = Workspace
-
--- 데칼 에셋 캐시
-local decalCache = {}
-
---========================================
--- Decal Asset Loader
---========================================
-
---- 데칼 에셋 폴더 로드 (Assets/AttackIndicators)
-local function getDecalAsset(pattern: string, creatureId: string?): Decal?
-	-- 1. 크리처 전용 데칼 검색 (Decal_CONE_PARASAUR 등)
-	if creatureId then
-		local specificName = "Decal_" .. pattern .. "_" .. creatureId
-		if decalCache[specificName] then
-			return decalCache[specificName]
-		end
-		local assets = ReplicatedStorage:FindFirstChild("Assets")
-		if assets then
-			local folder = assets:FindFirstChild("AttackIndicators")
-			if folder then
-				local decal = folder:FindFirstChild(specificName)
-				if decal then
-					decalCache[specificName] = decal
-					return decal
-				end
-			end
-		end
-	end
-
-	-- 2. 범용 데칼 폴백 (Decal_CONE 등)
-	local genericName = "Decal_" .. pattern
-	if decalCache[genericName] then
-		return decalCache[genericName]
-	end
-	local assets = ReplicatedStorage:FindFirstChild("Assets")
-	if assets then
-		local folder = assets:FindFirstChild("AttackIndicators")
-		if folder then
-			local decal = folder:FindFirstChild(genericName)
-			if decal then
-				decalCache[genericName] = decal
-				return decal
-			end
-		end
-	end
-
-	return nil
-end
 
 --========================================
 -- Utility
@@ -94,169 +49,121 @@ local function findHeadPart(model: Model): BasePart?
 	return nil
 end
 
---========================================
--- Ground Height Raycast
---========================================
+--- instanceId로 Workspace 내 크리처 모델 검색
+local function findCreatureModel(instanceId: string): Model?
+	local folder = Workspace:FindFirstChild("Creatures")
+	if not folder then return nil end
+	for _, child in ipairs(folder:GetChildren()) do
+		if child:IsA("Model") and child:GetAttribute("InstanceId") == instanceId then
+			return child
+		end
+	end
+	return nil
+end
 
 --- 지면 높이를 Raycast로 구함 (Terrain만 대상)
 local function getGroundY(pos: Vector3): number
-	local rayOrigin = Vector3.new(pos.X, pos.Y + 50, pos.Z)
-	local rayDir = Vector3.new(0, -100, 0)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Include
 	params.FilterDescendantsInstances = { Workspace.Terrain }
-	local result = Workspace:Raycast(rayOrigin, rayDir, params)
-	if result then
-		return result.Position.Y + INDICATOR_HEIGHT
-	end
-	return pos.Y + INDICATOR_HEIGHT
-end
-
---- 여러 샘플 지점 중 가장 높은 지면 Y를 반환 (고저차 대응)
-local function getMaxGroundY(samplePoints: {Vector3}): number
-	local maxY = -math.huge
-	for _, pt in ipairs(samplePoints) do
-		local y = getGroundY(pt)
-		if y > maxY then
-			maxY = y
-		end
-	end
-	return maxY
+	local result = Workspace:Raycast(
+		Vector3.new(pos.X, pos.Y + 50, pos.Z),
+		Vector3.new(0, -100, 0),
+		params
+	)
+	return result and result.Position.Y or pos.Y
 end
 
 --========================================
--- Decal-Based Indicator Creation
+-- 3D Volume Part Creation
 --========================================
 
---- 데칼 기반 인디케이터 Part 생성 (공통)
-local function createDecalPart(decalSource: Decal, sizeX: number, sizeZ: number, origin: Vector3, cframe: CFrame): Part
+--- 반투명 Neon Part 생성 (공통)
+local function createVolumePart(size: Vector3, cf: CFrame): Part
 	local part = Instance.new("Part")
-	part.Name = "IndicatorSurface"
+	part.Name = "AttackVolume"
 	part.Anchored = true
 	part.CanCollide = false
 	part.CanQuery = false
 	part.CanTouch = false
-	part.Material = Enum.Material.SmoothPlastic
-	part.Color = Color3.new(1, 1, 1)
-	part.Transparency = 1 -- Part 자체는 투명, 데칼만 보임
-	part.Size = Vector3.new(sizeX, 0.05, sizeZ)
-	part.CFrame = cframe
-
-	-- Top면에 데칼 복사
-	local decal = decalSource:Clone()
-	decal.Face = Enum.NormalId.Top
-	decal.Parent = part
-
+	part.CastShadow = false
+	part.Material = Enum.Material.Neon
+	part.Color = VOLUME_COLOR
+	part.Transparency = 1 -- 시작 시 투명 (페이드인)
+	part.Size = size
+	part.CFrame = cf
 	return part
 end
 
---- CONE (부채꼴) 인디케이터 생성
---- ★ 데칼 크기 = 판정 범위와 정확히 일치
---- origin(Head 위치)에서 전방 range까지가 판정 범위
---- Part는 origin을 뒷변으로, 전방 range를 앞변으로 배치
-local function createConeIndicator(origin: Vector3, lookVector: Vector3, range: number, angleDeg: number, decalSource: Decal): Model
+--- CONE (부채꼴) → 박스로 근사
+local function createConeVolume(origin: Vector3, lookVector: Vector3, range: number, angleDeg: number): Model
 	local model = Instance.new("Model")
-	model.Name = "ConeIndicator"
+	model.Name = "ConeVolume"
 
 	local flatLook = Vector3.new(lookVector.X, 0, lookVector.Z)
 	if flatLook.Magnitude < 0.01 then flatLook = Vector3.new(0, 0, -1) end
 	flatLook = flatLook.Unit
 
-	-- 범위 내 샘플 포인트에서 가장 높은 지면 높이 사용
 	local halfAngleRad = math.rad(angleDeg / 2)
-	local right = Vector3.new(flatLook.Z, 0, -flatLook.X)
-	local halfW = range * math.sin(halfAngleRad)
-	local samples = {
-		origin,
-		origin + flatLook * (range * 0.5),
-		origin + flatLook * range,
-		origin + flatLook * range + right * halfW,
-		origin + flatLook * range - right * halfW,
-	}
-	local groundY = getMaxGroundY(samples)
-	local groundOrigin = Vector3.new(origin.X, groundY, origin.Z)
+	local width = range * math.sin(halfAngleRad) * 2
 
-	local sizeX = halfW * 2
-	local sizeZ = range
-	local center = groundOrigin + flatLook * (range / 2)
-
+	local groundY = getGroundY(origin)
+	local center = Vector3.new(origin.X, groundY + VOLUME_HEIGHT / 2, origin.Z) + flatLook * (range / 2)
 	local cf = CFrame.lookAt(center, center + flatLook)
-	local part = createDecalPart(decalSource, sizeX, sizeZ, groundOrigin, cf)
+
+	local part = createVolumePart(Vector3.new(width, VOLUME_HEIGHT, range), cf)
 	part.Parent = model
 
 	return model
 end
 
---- CIRCLE (원형) 인디케이터 생성
-local function createCircleIndicator(origin: Vector3, radius: number, decalSource: Decal): Model
+--- CIRCLE (원형) → 실린더
+local function createCircleVolume(origin: Vector3, radius: number): Model
 	local model = Instance.new("Model")
-	model.Name = "CircleIndicator"
+	model.Name = "CircleVolume"
 
-	local samples = {
-		origin,
-		origin + Vector3.new(radius, 0, 0),
-		origin + Vector3.new(-radius, 0, 0),
-		origin + Vector3.new(0, 0, radius),
-		origin + Vector3.new(0, 0, -radius),
-	}
-	local groundY = getMaxGroundY(samples)
-	local groundOrigin = Vector3.new(origin.X, groundY, origin.Z)
+	local groundY = getGroundY(origin)
+	local center = Vector3.new(origin.X, groundY + VOLUME_HEIGHT / 2, origin.Z)
 
-	local sizeXZ = radius * 2
-	local cf = CFrame.new(groundOrigin)
-	local part = createDecalPart(decalSource, sizeXZ, sizeXZ, groundOrigin, cf)
+	-- Cylinder: X축이 원통 축 → Z축 90° 회전으로 수직 원통
+	local cf = CFrame.new(center) * CFrame.Angles(0, 0, math.rad(90))
+	local part = createVolumePart(Vector3.new(VOLUME_HEIGHT, radius * 2, radius * 2), cf)
+	part.Shape = Enum.PartType.Cylinder
 	part.Parent = model
 
 	return model
 end
 
---- CHARGE (직선 돌진) 인디케이터 생성
-local function createChargeIndicator(origin: Vector3, lookVector: Vector3, width: number, length: number, decalSource: Decal): Model
+--- CHARGE (돌진) → 직사각형 박스
+local function createChargeVolume(origin: Vector3, lookVector: Vector3, width: number, length: number): Model
 	local model = Instance.new("Model")
-	model.Name = "ChargeIndicator"
+	model.Name = "ChargeVolume"
 
 	local flatLook = Vector3.new(lookVector.X, 0, lookVector.Z)
 	if flatLook.Magnitude < 0.01 then flatLook = Vector3.new(0, 0, -1) end
 	flatLook = flatLook.Unit
-	local right = Vector3.new(flatLook.Z, 0, -flatLook.X)
-	local halfW = width / 2
 
-	local samples = {
-		origin,
-		origin + flatLook * (length / 2),
-		origin + flatLook * length,
-		origin + flatLook * length + right * halfW,
-		origin + flatLook * length - right * halfW,
-	}
-	local groundY = getMaxGroundY(samples)
-	local groundOrigin = Vector3.new(origin.X, groundY, origin.Z)
-	local center = groundOrigin + flatLook * (length / 2)
-
+	local groundY = getGroundY(origin)
+	local center = Vector3.new(origin.X, groundY + VOLUME_HEIGHT / 2, origin.Z) + flatLook * (length / 2)
 	local cf = CFrame.lookAt(center, center + flatLook)
-	local part = createDecalPart(decalSource, width, length, groundOrigin, cf)
+
+	local part = createVolumePart(Vector3.new(width, VOLUME_HEIGHT, length), cf)
 	part.Parent = model
 
 	return model
 end
 
---- PROJECTILE (착탄) 인디케이터 생성
-local function createProjectileIndicator(targetPos: Vector3, impactRadius: number, decalSource: Decal): Model
+--- PROJECTILE (투사체 착탄) → 실린더
+local function createProjectileVolume(targetPos: Vector3, impactRadius: number): Model
 	local model = Instance.new("Model")
-	model.Name = "ProjectileIndicator"
+	model.Name = "ProjectileVolume"
 
-	local samples = {
-		targetPos,
-		targetPos + Vector3.new(impactRadius, 0, 0),
-		targetPos + Vector3.new(-impactRadius, 0, 0),
-		targetPos + Vector3.new(0, 0, impactRadius),
-		targetPos + Vector3.new(0, 0, -impactRadius),
-	}
-	local groundY = getMaxGroundY(samples)
-	local groundOrigin = Vector3.new(targetPos.X, groundY, targetPos.Z)
+	local groundY = getGroundY(targetPos)
+	local center = Vector3.new(targetPos.X, groundY + VOLUME_HEIGHT / 2, targetPos.Z)
 
-	local sizeXZ = impactRadius * 2
-	local cf = CFrame.new(groundOrigin)
-	local part = createDecalPart(decalSource, sizeXZ, sizeXZ, groundOrigin, cf)
+	local cf = CFrame.new(center) * CFrame.Angles(0, 0, math.rad(90))
+	local part = createVolumePart(Vector3.new(VOLUME_HEIGHT, impactRadius * 2, impactRadius * 2), cf)
+	part.Shape = Enum.PartType.Cylinder
 	part.Parent = model
 
 	return model
@@ -266,10 +173,19 @@ end
 -- Flash & Lifecycle
 --========================================
 
---- 데칼 깜빡임 효과 (Decal.Transparency 조작)
-local function startFlashEffect(model: Model, windupTime: number, attackTime: number)
+--- 깜빡임 효과 (Part.Transparency 조작)
+local function startFlashEffect(model: Model, windupTime: number, attackTime: number): RBXScriptConnection
 	local startTime = tick()
 	local totalTime = windupTime + attackTime
+
+	-- 페이드인
+	for _, desc in ipairs(model:GetDescendants()) do
+		if desc:IsA("BasePart") then
+			TweenService:Create(desc, TweenInfo.new(FADE_IN_TIME), {
+				Transparency = VOLUME_TRANSPARENCY
+			}):Play()
+		end
+	end
 
 	local conn
 	conn = RunService.Heartbeat:Connect(function()
@@ -289,13 +205,13 @@ local function startFlashEffect(model: Model, windupTime: number, attackTime: nu
 		local speed = isAttackPhase and (FLASH_SPEED * 2.5) or FLASH_SPEED
 		local pulse = 0.5 + 0.5 * math.sin(elapsed * speed * math.pi * 2)
 
-		-- 공격 구간에서 더 불투명하게
-		local baseTransparency = isAttackPhase and 0.2 or (1 - INDICATOR_OPACITY)
-		local flashTransparency = baseTransparency + pulse * 0.15
+		-- 공격 구간에서 더 불투명 (더 강하게 표시)
+		local baseTransparency = isAttackPhase and 0.65 or VOLUME_TRANSPARENCY
+		local flashTransparency = baseTransparency + pulse * 0.08
 
 		for _, desc in ipairs(model:GetDescendants()) do
-			if desc:IsA("Decal") then
-				desc.Transparency = math.clamp(flashTransparency, 0, 0.95)
+			if desc:IsA("BasePart") then
+				desc.Transparency = math.clamp(flashTransparency, 0.6, 0.95)
 			end
 		end
 	end)
@@ -303,116 +219,143 @@ local function startFlashEffect(model: Model, windupTime: number, attackTime: nu
 	return conn
 end
 
---- 범위 표시 생성 및 표시
-local function showIndicator(instanceId: string, data: any)
-	-- 기존 표시 제거
-	if activeIndicators[instanceId] then
-		local old = activeIndicators[instanceId]
-		if old.conn then old.conn:Disconnect() end
-		if old.model and old.model.Parent then old.model:Destroy() end
-		activeIndicators[instanceId] = nil
+--- 인디케이터 정리 (페이드아웃 + 제거)
+local function clearIndicator(instanceId: string)
+	local indicator = activeIndicators[instanceId]
+	if not indicator then return end
+
+	if indicator.conn then indicator.conn:Disconnect() end
+	if indicator.model and indicator.model.Parent then
+		for _, desc in ipairs(indicator.model:GetDescendants()) do
+			if desc:IsA("BasePart") then
+				TweenService:Create(desc, TweenInfo.new(FADE_OUT_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+					Transparency = 1
+				}):Play()
+			end
+		end
+		task.delay(FADE_OUT_TIME + 0.05, function()
+			if indicator.model and indicator.model.Parent then
+				indicator.model:Destroy()
+			end
+		end)
 	end
+	activeIndicators[instanceId] = nil
+end
+
+--========================================
+-- Show Indicators
+--========================================
+
+--- 텔레그래프(패턴) 공격 범위 표시 — 크리처 발광(flashLeadTime)과 동기화
+local function showTelegraphIndicator(instanceId: string, data: any)
+	clearIndicator(instanceId)
 
 	local pattern = data.pattern or "CONE"
-	local creatureId = data.creatureId or nil
 	local creaturePos = Vector3.new(data.creaturePos[1], data.creaturePos[2], data.creaturePos[3])
 	local creatureLook = Vector3.new(data.creatureLook[1], data.creatureLook[2], data.creatureLook[3])
 	local targetPos = Vector3.new(data.targetPos[1], data.targetPos[2], data.targetPos[3])
 	local windupTime = data.windupTime or 0.5
 	local attackTime = data.attackTime or 0.5
 
-	-- 데칼 에셋 로드
-	local decalSource = getDecalAsset(pattern, creatureId)
-	if not decalSource then
-		warn("[AttackIndicatorController] Decal not found: Decal_" .. pattern)
-		return
-	end
+	-- ★ 발광 타이밍 계산 (CreatureAnimationController와 동일)
+	local flashLeadTime = math.min(0.5, windupTime * 0.8)
+	local delayBeforeShow = math.max(0, windupTime - flashLeadTime)
 
-	-- 크리처 모델 검색 (실시간 위치 사용)
-	local creatureModel = nil
-	local creatureFolder = Workspace:FindFirstChild("Creatures")
-	if creatureFolder then
-		for _, child in ipairs(creatureFolder:GetChildren()) do
-			if child:IsA("Model") and child:GetAttribute("InstanceId") == instanceId then
-				creatureModel = child
-				break
+	-- 지연 후 볼륨 표시 (발광과 동시에 나타남)
+	task.delay(delayBeforeShow, function()
+		-- 이미 다른 인디케이터가 등록되었으면 무시
+		if activeIndicators[instanceId] then return end
+
+		-- 실시간 크리처 위치 반영
+		local creatureModel = findCreatureModel(instanceId)
+		if creatureModel then
+			local hrp = creatureModel:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				creaturePos = hrp.Position
+				creatureLook = hrp.CFrame.LookVector
 			end
 		end
-	end
 
-	-- 실시간 크리처 위치 사용
+		-- CONE 패턴: Head 위치를 시작점으로
+		local indicatorOrigin = creaturePos
+		if pattern == "CONE" and creatureModel then
+			local headPart = findHeadPart(creatureModel)
+			if headPart then
+				indicatorOrigin = headPart.Position
+			end
+		end
+
+		-- 패턴별 3D 볼륨 생성
+		local indicatorModel
+		if pattern == "CONE" then
+			local visRange = (data.range or 10) * INDICATOR_OVERSIZE
+			local visAngle = (data.angle or 60) * INDICATOR_OVERSIZE
+			indicatorModel = createConeVolume(indicatorOrigin, creatureLook, visRange, visAngle)
+		elseif pattern == "CIRCLE" then
+			local visRadius = (data.radius or 10) * INDICATOR_OVERSIZE
+			indicatorModel = createCircleVolume(creaturePos, visRadius)
+		elseif pattern == "CHARGE" then
+			local visWidth = (data.width or 6) * INDICATOR_OVERSIZE
+			local visLength = (data.length or 20) * INDICATOR_OVERSIZE
+			indicatorModel = createChargeVolume(creaturePos, creatureLook, visWidth, visLength)
+		elseif pattern == "PROJECTILE" then
+			local visRadius = (data.impactRadius or 5) * INDICATOR_OVERSIZE
+			indicatorModel = createProjectileVolume(targetPos, visRadius)
+		else
+			local visRange = (data.range or 10) * INDICATOR_OVERSIZE
+			local visAngle = (data.angle or 60) * INDICATOR_OVERSIZE
+			indicatorModel = createConeVolume(indicatorOrigin, creatureLook, visRange, visAngle)
+		end
+
+		indicatorModel.Parent = indicatorFolder
+
+		-- ★ flashLeadTime 동안만 깜빡임 (windup 0 + attack = flashLeadTime)
+		local flashConn = startFlashEffect(indicatorModel, 0, flashLeadTime)
+
+		activeIndicators[instanceId] = {
+			model = indicatorModel,
+			conn = flashConn,
+		}
+
+		-- ★ flashLeadTime 후 자동 제거 (발광 끝나면 즉시 사라짐)
+		task.delay(flashLeadTime + 0.1, function()
+			clearIndicator(instanceId)
+		end)
+	end)
+end
+
+--- 레거시(기본) 공격 범위 표시 — attackRange 기반 원형
+local function showBasicIndicator(instanceId: string, data: any)
+	clearIndicator(instanceId)
+
+	local attackRange = data.attackRange
+	if not attackRange then return end
+
+	local creaturePos = Vector3.new(data.creaturePos[1], data.creaturePos[2], data.creaturePos[3])
+
+	-- 실시간 위치 반영
+	local creatureModel = findCreatureModel(instanceId)
 	if creatureModel then
 		local hrp = creatureModel:FindFirstChild("HumanoidRootPart")
 		if hrp then
 			creaturePos = hrp.Position
-			creatureLook = hrp.CFrame.LookVector
 		end
 	end
 
-	-- CONE 패턴: Head 위치를 시작점으로
-	local indicatorOrigin = creaturePos
-	if pattern == "CONE" and creatureModel then
-		local headPart = findHeadPart(creatureModel)
-		if headPart then
-			indicatorOrigin = headPart.Position
-		end
-	end
-
-	-- 패턴별 인디케이터 생성
-	local indicatorModel
-	if pattern == "CONE" then
-		local visRange = (data.range or 10) * INDICATOR_OVERSIZE
-		local visAngle = (data.angle or 60) * INDICATOR_OVERSIZE
-		indicatorModel = createConeIndicator(indicatorOrigin, creatureLook, visRange, visAngle, decalSource)
-	elseif pattern == "CIRCLE" then
-		local visRadius = (data.radius or 10) * INDICATOR_OVERSIZE
-		indicatorModel = createCircleIndicator(creaturePos, visRadius, decalSource)
-	elseif pattern == "CHARGE" then
-		local visWidth = (data.width or 6) * INDICATOR_OVERSIZE
-		local visLength = (data.length or 20) * INDICATOR_OVERSIZE
-		indicatorModel = createChargeIndicator(creaturePos, creatureLook, visWidth, visLength, decalSource)
-	elseif pattern == "PROJECTILE" then
-		local visRadius = (data.impactRadius or 5) * INDICATOR_OVERSIZE
-		indicatorModel = createProjectileIndicator(targetPos, visRadius, decalSource)
-	else
-		local visRange = (data.range or 10) * INDICATOR_OVERSIZE
-		local visAngle = (data.angle or 60) * INDICATOR_OVERSIZE
-		indicatorModel = createConeIndicator(indicatorOrigin, creatureLook, visRange, visAngle, decalSource)
-	end
-
+	local visRange = attackRange * INDICATOR_OVERSIZE
+	local indicatorModel = createCircleVolume(creaturePos, visRange)
 	indicatorModel.Parent = indicatorFolder
 
-	-- 깜빡임 효과 시작
-	local flashConn = startFlashEffect(indicatorModel, windupTime, attackTime)
+	local attackDelay = data.attackDelay or 0.5
+	local flashConn = startFlashEffect(indicatorModel, 0, attackDelay)
 
 	activeIndicators[instanceId] = {
 		model = indicatorModel,
 		conn = flashConn,
 	}
 
-	-- 총 시간 후 자동 제거 (페이드 아웃)
-	local totalTime = windupTime + attackTime + 0.1
-	task.delay(totalTime, function()
-		local indicator = activeIndicators[instanceId]
-		if indicator then
-			if indicator.conn then indicator.conn:Disconnect() end
-			if indicator.model and indicator.model.Parent then
-				-- 데칼 페이드 아웃
-				for _, desc in ipairs(indicator.model:GetDescendants()) do
-					if desc:IsA("Decal") then
-						TweenService:Create(desc, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-							Transparency = 1
-						}):Play()
-					end
-				end
-				task.delay(0.25, function()
-					if indicator.model and indicator.model.Parent then
-						indicator.model:Destroy()
-					end
-				end)
-			end
-			activeIndicators[instanceId] = nil
-		end
+	task.delay(attackDelay + 0.15, function()
+		clearIndicator(instanceId)
 	end)
 end
 
@@ -421,22 +364,28 @@ end
 --========================================
 
 function AttackIndicatorController.Init()
-	-- ★ 바닥 범위 표시 제거됨 — 크리처 발광 효과로 대체 (CreatureAnimationController)
-	-- 크리처 사망/디스폰 시 잔여 표시 정리 (안전장치)
-	NetClient.On("Creature.Removed", function(data)
+	-- 텔레그래프 공격 (패턴 기반 3D 볼륨)
+	NetClient.On("Creature.Attack.Telegraph", function(data)
 		if data and data.instanceId then
-			local indicator = activeIndicators[data.instanceId]
-			if indicator then
-				if indicator.conn then indicator.conn:Disconnect() end
-				if indicator.model and indicator.model.Parent then
-					indicator.model:Destroy()
-				end
-				activeIndicators[data.instanceId] = nil
-			end
+			showTelegraphIndicator(data.instanceId, data)
 		end
 	end)
 
-	print("[AttackIndicatorController] Initialized (ground indicator disabled)")
+	-- 레거시 즉시 공격 (attackRange 기반 원형 볼륨)
+	NetClient.On("Creature.Attack.Play", function(data)
+		if data and data.instanceId and data.attackRange then
+			showBasicIndicator(data.instanceId, data)
+		end
+	end)
+
+	-- 크리처 사망/디스폰 시 잔여 표시 정리
+	NetClient.On("Creature.Removed", function(data)
+		if data and data.instanceId then
+			clearIndicator(data.instanceId)
+		end
+	end)
+
+	print("[AttackIndicatorController] Initialized (3D volume indicators)")
 end
 
 return AttackIndicatorController

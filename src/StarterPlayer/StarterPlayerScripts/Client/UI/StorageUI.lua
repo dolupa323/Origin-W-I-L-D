@@ -49,11 +49,21 @@ function StorageUI.Init(parent, UIManager, isMobile)
 		parent = parent
 	})
 	
+	-- 반응형 사이즈: 모바일은 거의 전체화면, 데스크톱은 적당 크기
+	local mainSize, mainPos
+	if isSmall then
+		mainSize = UDim2.new(0.96, 0, 0.88, 0)
+		mainPos = UDim2.new(0.5, 0, 0.5, 0)
+	else
+		mainSize = UDim2.new(0, 750, 0, 500)
+		mainPos = UDim2.new(0.5, 0, 0.5, 0)
+	end
+
 	-- 2. Main Window
 	local main = Utils.mkWindow({
 		name = "StorageWindow",
-		size = UDim2.new(0, 750, 0, 500),
-		pos = UDim2.new(0.5, 0, 0.5, 0),
+		size = mainSize,
+		pos = mainPos,
 		anchor = Vector2.new(0.5, 0.5),
 		bg = C.BG_PANEL,
 		bgT = T.PANEL,
@@ -62,6 +72,11 @@ function StorageUI.Init(parent, UIManager, isMobile)
 		strokeC = C.BORDER,
 		parent = StorageUI.Refs.Frame
 	})
+
+	-- 최대 크기 제한 (모바일에서 너무 커지지 않도록)
+	local sizeConstraint = Instance.new("UISizeConstraint")
+	sizeConstraint.MaxSize = Vector2.new(800, 600)
+	sizeConstraint.Parent = main
 	
 	-- [Header]
 	local header = Utils.mkFrame({name="Header", size=UDim2.new(1,0,0,45), bgT=1, parent=main})
@@ -70,47 +85,83 @@ function StorageUI.Init(parent, UIManager, isMobile)
 		ts=20, font=F.TITLE, color=C.GOLD, ax=Enum.TextXAlignment.Left, parent=header
 	})
 	
+	local closeBtnSize = isSmall and 44 or 36
 	Utils.mkBtn({
-		text="X", size=UDim2.new(0, 36, 0, 36), pos=UDim2.new(1, -10, 0.5, 0), anchor=Vector2.new(1, 0.5),
+		text="X", size=UDim2.new(0, closeBtnSize, 0, closeBtnSize), pos=UDim2.new(1, -10, 0.5, 0), anchor=Vector2.new(1, 0.5),
 		bg=C.BTN, bgT=0.5, ts=20, color=C.WHITE,
 		fn=function() UIManager.closeStorage() end,
 		parent=header
 	})
 
-	-- [Content]
+	-- [Content] — 모바일: 세로 배치, 데스크톱: 가로 배치
 	local content = Utils.mkFrame({name="Content", size=UDim2.new(1, -20, 1, -55), pos=UDim2.new(0, 10, 0, 45), bgT=1, parent=main})
 	local list = Instance.new("UIListLayout")
-	list.FillDirection = Enum.FillDirection.Horizontal
-	list.Padding = UDim.new(0, 20)
+	list.Padding = UDim.new(0, 10)
 	list.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	if isSmall then
+		list.FillDirection = Enum.FillDirection.Vertical
+		list.VerticalAlignment = Enum.VerticalAlignment.Top
+	else
+		list.FillDirection = Enum.FillDirection.Horizontal
+	end
 	list.Parent = content
 
-	-- Left: Storage (20 slots default)
-	local leftPanel = Utils.mkFrame({name="Left", size=UDim2.new(0, 340, 1, 0), bg=C.BG_PANEL, bgT=T.PANEL, r=6, parent=content})
+	-- 패널/셀 크기: 반응형
+	local panelSize, cellSize, cellPad
+	if isSmall then
+		panelSize = UDim2.new(1, 0, 0.48, 0)
+		cellSize = UDim2.new(0, 54, 0, 54)
+		cellPad = UDim2.new(0, 5, 0, 5)
+	else
+		panelSize = UDim2.new(0.5, -10, 1, 0)
+		cellSize = UDim2.new(0, 60, 0, 60)
+		cellPad = UDim2.new(0, 6, 0, 6)
+	end
+
+	-- Left: Storage
+	local leftPanel = Utils.mkFrame({name="Left", size=panelSize, bg=C.BG_PANEL, bgT=T.PANEL, r=6, parent=content})
 	Utils.mkLabel({text="보관함 아이템", size=UDim2.new(1,0,0,30), color=C.GOLD, ts=16, parent=leftPanel})
 	
 	local sScroll = Instance.new("ScrollingFrame")
 	sScroll.Size = UDim2.new(1, 0, 1, -35); sScroll.Position = UDim2.new(0,0,0,30)
 	sScroll.BackgroundTransparency=1; sScroll.BorderSizePixel=0; sScroll.ScrollBarThickness=4
 	sScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	sScroll.ClipsDescendants = true
 	sScroll.Parent = leftPanel
+
+	-- 패딩 추가: 슬롯 테두리가 잘리지 않도록
+	local sPad = Instance.new("UIPadding")
+	sPad.PaddingLeft = UDim.new(0, 4)
+	sPad.PaddingRight = UDim.new(0, 4)
+	sPad.PaddingTop = UDim.new(0, 4)
+	sPad.PaddingBottom = UDim.new(0, 4)
+	sPad.Parent = sScroll
 	
 	local sGrid = Instance.new("UIGridLayout")
-	sGrid.CellSize = UDim2.new(0, 60, 0, 60); sGrid.CellPadding = UDim2.new(0, 6, 0, 6); sGrid.Parent = sScroll
+	sGrid.CellSize = cellSize; sGrid.CellPadding = cellPad; sGrid.Parent = sScroll
 	StorageUI.Refs.StorageGrid = sScroll
 
-	-- Right: Player Inventory (For transferring)
-	local rightPanel = Utils.mkFrame({name="Right", size=UDim2.new(0, 340, 1, 0), bg=C.BG_PANEL, bgT=T.PANEL, r=6, parent=content})
+	-- Right: Player Inventory
+	local rightPanel = Utils.mkFrame({name="Right", size=panelSize, bg=C.BG_PANEL, bgT=T.PANEL, r=6, parent=content})
 	Utils.mkLabel({text="내 소지품", size=UDim2.new(1,0,0,30), color=C.WHITE, ts=16, parent=rightPanel})
 	
 	local iScroll = Instance.new("ScrollingFrame")
 	iScroll.Size = UDim2.new(1, 0, 1, -35); iScroll.Position = UDim2.new(0,0,0,30)
 	iScroll.BackgroundTransparency=1; iScroll.BorderSizePixel=0; iScroll.ScrollBarThickness=4
 	iScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	iScroll.ClipsDescendants = true
 	iScroll.Parent = rightPanel
+
+	-- 패딩 추가: 슬롯 테두리가 잘리지 않도록
+	local iPad = Instance.new("UIPadding")
+	iPad.PaddingLeft = UDim.new(0, 4)
+	iPad.PaddingRight = UDim.new(0, 4)
+	iPad.PaddingTop = UDim.new(0, 4)
+	iPad.PaddingBottom = UDim.new(0, 4)
+	iPad.Parent = iScroll
 	
 	local iGrid = Instance.new("UIGridLayout")
-	iGrid.CellSize = UDim2.new(0, 60, 0, 60); iGrid.CellPadding = UDim2.new(0, 6, 0, 6); iGrid.Parent = iScroll
+	iGrid.CellSize = cellSize; iGrid.CellPadding = cellPad; iGrid.Parent = iScroll
 	StorageUI.Refs.InventoryGrid = iScroll
 
 	-- Build Slots (Cap: 40)

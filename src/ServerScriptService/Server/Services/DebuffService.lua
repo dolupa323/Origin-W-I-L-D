@@ -6,6 +6,9 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Enums = require(Shared.Enums.Enums)
+local Balance = require(Shared.Config.Balance)
+
+local SEA_LEVEL = Balance.SEA_LEVEL or 2
 
 local DebuffService = {}
 
@@ -116,6 +119,26 @@ local function isPlayerHoldingTorch(userId: number): boolean
 	return activeItemId == "TORCH"
 end
 
+--- 플레이어가 물/바다에 있는지 체크
+local function isPlayerInWater(hrp: BasePart): boolean
+	-- Raycast로 물 Material 체크
+	local params = RaycastParams.new()
+	params.FilterDescendantsInstances = { workspace.Terrain }
+	params.FilterType = Enum.RaycastFilterType.Include
+
+	local result = workspace:Raycast(hrp.Position + Vector3.new(0, 5, 0), Vector3.new(0, -20, 0), params)
+	if result and result.Material == Enum.Material.Water then
+		return true
+	end
+
+	-- 해수면 아래이면 물로 판정
+	if hrp.Position.Y < SEA_LEVEL then
+		return true
+	end
+
+	return false
+end
+
 local function getChillyEnvironmentState(player: Player)
 	if not player then
 		return nil
@@ -132,14 +155,17 @@ local function getChillyEnvironmentState(player: Player)
 	local isNight = TimeService and TimeService.getPhase and TimeService.getPhase() == "NIGHT"
 	local nearFire = isPlayerNearCampfire(hrp)
 	local holdingTorch = isPlayerHoldingTorch(player.UserId)
+	local inWater = isPlayerInWater(hrp)
 
-	local shouldBeChilly = isNight and (not nearFire) and (not holdingTorch)
+	-- 물에 있으면 불/횃불 관계없이 무조건 쌀쌀함
+	local shouldBeChilly = inWater or (isNight and (not nearFire) and (not holdingTorch))
 	local shouldBeWarm = (not shouldBeChilly) and (nearFire or holdingTorch)
 
 	return {
 		isNight = isNight,
 		nearFire = nearFire,
 		holdingTorch = holdingTorch,
+		inWater = inWater,
 		shouldBeChilly = shouldBeChilly,
 		shouldBeWarm = shouldBeWarm,
 	}

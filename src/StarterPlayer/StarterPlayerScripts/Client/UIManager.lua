@@ -107,7 +107,7 @@ local actionContainer, hotbarFrame -- Store refs for visibility control
 local cachedStats = {}
 local pendingStats = {}
 local activeDebuffs = {} -- { [debuffId] = {id, name, startTime, duration} }
-local selectedBuildCat = "BASIC"
+local selectedBuildCat = "BUILD_T0"
 local selectedFacilityId = nil -- shared with Crafting or use separate variable
 local selectedBuildId = nil
 local currentFacilityStructureId = nil
@@ -865,19 +865,47 @@ function UIManager.checkMaterials(item, playerItemCounts)
 	playerItemCounts = playerItemCounts or InventoryController.getItemCounts()
 	local inputs = item.inputs or item.requirements
 	if not inputs then return true, "" end
-	
-	local missing = {}
-	for _, inp in ipairs(inputs) do
-		local req = inp.count or inp.amount or 0
-		local have = playerItemCounts[inp.itemId or inp.id] or 0
-		if have < req then
-			local itemName = inp.itemId or inp.id
-			local itemData = DataHelper.GetData("ItemData", itemName)
-			if itemData then itemName = itemData.name end
-			table.insert(missing, string.format("%s (%d/%d)", itemName, have, req))
+
+	-- alternateWoodIds 집합 생성
+	local altSet = {}
+	local altList = item.alternateWoodIds
+	if altList then
+		for _, id in ipairs(altList) do
+			altSet[id] = true
 		end
 	end
-	
+
+	local missing = {}
+	for _, inp in ipairs(inputs) do
+		local reqId = inp.itemId or inp.id
+		local req = inp.count or inp.amount or 0
+
+		if altSet[reqId] and altList then
+			-- 대체 재료 중 하나라도 충분하면 OK
+			local found = false
+			for _, altId in ipairs(altList) do
+				if (playerItemCounts[altId] or 0) >= req then
+					found = true
+					break
+				end
+			end
+			if not found then
+				local itemName = reqId
+				local itemData = DataHelper.GetData("ItemData", itemName)
+				if itemData then itemName = itemData.name end
+				table.insert(missing, string.format("%s (%d/%d)", itemName, playerItemCounts[reqId] or 0, req))
+			end
+		else
+			local have = playerItemCounts[reqId] or 0
+			if have < req then
+				local itemName = reqId
+				local itemData = DataHelper.GetData("ItemData", itemName)
+				if itemData then itemName = itemData.name end
+				table.insert(missing, string.format("%s (%d/%d)", itemName, have, req))
+			end
+		end
+	end
+
 	if #missing > 0 then
 		return false, "부족한 재료: " .. table.concat(missing, ", ")
 	end
@@ -1319,38 +1347,25 @@ function UIManager.toggleBuild()
 end
 
 function UIManager.refreshBuild()
-	local allFacilities = require(ReplicatedStorage.Data.FacilityData) -- 최신 데이터 로드
-	
-	local CatFacMap = {
-		BASIC = {"BUILDING", "CRAFTING_T1", "COOKING", "BASE_CORE", "RESPAWN"},
-	}
-	
-	-- [Phase 1 리소스] 초원섬 기초 시설물만 허용
-	local allowedIds = {
-		CAMPFIRE = true,
-		CAMP_TOTEM = true,
-		LEAN_TO = true,
-		BASIC_WORKBENCH = true
-	}
-	
-	local targetTypes = CatFacMap[selectedBuildCat] or {}
+	local allFacilities = require(ReplicatedStorage.Data.FacilityData)
+
+	-- buildTier 기반 필터링 (선택된 카테고리의 시설만 표시)
 	local list = {}
 	for _, f in pairs(allFacilities) do
-		if not allowedIds[f.id] then continue end -- 화이트리스트 필터링
-		
-		-- Filter by Category
-		local match = false
-		for _, tt in ipairs(targetTypes) do if f.functionType == tt then match = true; break end end
-		
-		if match then
+		if f.buildTier == selectedBuildCat then
 			local fData = table.clone(f)
-			-- 현재는 기술 해금 조건 없이 모두 해금된 것으로 처리 (사용자 요청)
-			fData.isLocked = false 
+			-- 해당 티어 스킬 해금 여부에 따라 잠금 상태 설정
+			fData.isLocked = not SkillController.isSkillUnlocked(selectedBuildCat)
 			table.insert(list, fData)
 		end
 	end
-	
-	BuildUI.Refresh(list, {}, selectedBuildCat, UIManager.getItemIcon, UIManager)
+
+	-- 스킬 해금 체크 함수를 BuildUI에 전달
+	local function isTierUnlocked(skillId)
+		return SkillController.isSkillUnlocked(skillId)
+	end
+
+	BuildUI.Refresh(list, {}, selectedBuildCat, UIManager.getItemIcon, UIManager, isTierUnlocked)
 end
 
 ----------------------------------------------------------------
@@ -1776,13 +1791,18 @@ end
 
 
 function UIManager._onBuildCategoryClick(catId)
+	-- 미해금 탭 클릭 시 알림 표시
+	if not SkillController.isSkillUnlocked(catId) then
+		UIManager.notify("건축 연구에서 해당 스킬을 먼저 해금하세요.", C.RED)
+		return
+	end
 	selectedBuildCat = catId
 	UIManager.refreshBuild()
 end
 
 function UIManager._onBuildItemClick(data)
 	selectedBuildId = data.id
-	local isUnlocked = TechController.isFacilityUnlocked(data.id) -- TechController 사용
+	local isUnlocked = UIManager.checkFacilityUnlocked(data.id)
 	local playerItemCounts = InventoryController.getItemCounts()
 	local ok, _ = UIManager.checkMaterials(data, playerItemCounts)
 	BuildUI.UpdateDetail(data, ok, UIManager.getItemIcon, isUnlocked, playerItemCounts, DataHelper)
@@ -2125,7 +2145,14 @@ function UIManager.updateStatPoints(available)
 end
 
 function UIManager.checkFacilityUnlocked(facilityId)
-	return TechController.isFacilityUnlocked(facilityId) -- TechController 사용
+	-- buildTier 기반 스킬 해금 체크
+	local allFacilities = require(ReplicatedStorage.Data.FacilityData)
+	for _, f in ipairs(allFacilities) do
+		if f.id == facilityId and f.buildTier then
+			return SkillController.isSkillUnlocked(f.buildTier)
+		end
+	end
+	return true -- buildTier 없으면 기본 해금
 end
 
 ----------------------------------------------------------------

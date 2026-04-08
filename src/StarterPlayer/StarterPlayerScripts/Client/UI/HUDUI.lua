@@ -212,81 +212,90 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 
 	local isSmall = isMobile 
 	
-	-- [Top Left Area] - HP, Stamina, Status Effects
-	local topLeftFrame = Utils.mkFrame({
-		name = "TopLeftHUD",
-		size = UDim2.new(0, isSmall and 260 or 240, 0, 110), -- 110으로 확장
-		pos = UDim2.new(0, isSmall and 60 or 180, 0, isSmall and 40 or 20), -- 로블록스 기본 UI 회피 (우측 이동)
+	-- [Bottom Center] - HP, Stamina bars above hotbar (Reference Style)
+	local statBarWidth = isSmall and 180 or 200
+	local statFrame = Utils.mkFrame({
+		name = "StatBars",
+		size = UDim2.new(0, statBarWidth, 0, 0),
+		pos = UDim2.new(0.5, 0, 1, isSmall and -112 or -92),
+		anchor = Vector2.new(0.5, 1),
 		bgT = 1,
 		parent = parent
 	})
-	HUDUI.Refs.statusPanel = topLeftFrame
+	statFrame.AutomaticSize = Enum.AutomaticSize.Y
+	HUDUI.Refs.statusPanel = statFrame
 
-	local statusList = Instance.new("UIListLayout")
-	statusList.Padding = UDim.new(0, 6) -- 간격 약간 확대
-	statusList.SortOrder = Enum.SortOrder.LayoutOrder
-	statusList.Parent = topLeftFrame
+	local statLayout = Instance.new("UIListLayout")
+	statLayout.Padding = UDim.new(0, 2)
+	statLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	statLayout.Parent = statFrame
 
-	-- HP Bar (Warm Red)
+	-- Debuff display row (above HP bar)
+	local debuffRow = Utils.mkFrame({name = "DebuffRow", size = UDim2.new(1, 0, 0, 0), bgT = 1, parent = statFrame})
+	debuffRow.LayoutOrder = 0
+	debuffRow.AutomaticSize = Enum.AutomaticSize.Y
+	local dLayout = Instance.new("UIListLayout")
+	dLayout.FillDirection = Enum.FillDirection.Horizontal
+	dLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	dLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+	dLayout.Padding = UDim.new(0, 5)
+	dLayout.Parent = debuffRow
+	HUDUI.Refs.effectList = debuffRow
+
+	-- HP Row: [===== bar 120/120 =====] 체력
+	local hpRow = Utils.mkFrame({name = "HPRow", size = UDim2.new(1, 0, 0, isSmall and 16 or 14), bgT = 1, parent = statFrame})
+	hpRow.LayoutOrder = 1
 	HUDUI.Refs.healthBar = Utils.mkBar({
 		name = "HP",
-		size = UDim2.new(1, 0, 0, 22),
+		size = UDim2.new(1, -36, 0, isSmall and 16 or 14),
 		fillC = C.HP,
 		bg = C.HP_BG,
-		r = 6,
-		parent = topLeftFrame
+		r = 3,
+		parent = hpRow
 	})
-	HUDUI.Refs.healthBar.container.LayoutOrder = 1
-	HUDUI.Refs.healthBar.label.TextXAlignment = Enum.TextXAlignment.Left
-	HUDUI.Refs.healthBar.label.Position = UDim2.new(0, 8, 0.5, 0)
-	HUDUI.Refs.healthBar.label.AnchorPoint = Vector2.new(0, 0.5)
 	HUDUI.Refs.healthBar.label.TextColor3 = C.WHITE
 	HUDUI.Refs.healthBar.label.Font = F.NUM
-	HUDUI.Refs.healthBar.label.TextSize = 13
+	HUDUI.Refs.healthBar.label.TextSize = isSmall and 10 or 9
+	Utils.mkLabel({text = "체력", size = UDim2.new(0, 32, 1, 0), pos = UDim2.new(1, -32, 0, 0), ts = isSmall and 10 or 9, font = F.TITLE, color = C.WHITE, ax = Enum.TextXAlignment.Right, parent = hpRow})
 
-	-- Stamina Bar (Warm Gold)
+	-- Stamina Row: [===== bar 100/100 =====] 스태미너
+	local staRow = Utils.mkFrame({name = "STARow", size = UDim2.new(1, 0, 0, isSmall and 14 or 12), bgT = 1, parent = statFrame})
+	staRow.LayoutOrder = 2
 	HUDUI.Refs.staminaBar = Utils.mkBar({
 		name = "STA",
-		size = UDim2.new(1, 0, 0, 20), 
+		size = UDim2.new(1, -36, 0, isSmall and 14 or 12),
 		fillC = C.STA,
 		bg = C.STA_BG,
-		r = 6,
-		parent = topLeftFrame
+		r = 3,
+		parent = staRow
 	})
-	HUDUI.Refs.staminaBar.container.LayoutOrder = 2
-	HUDUI.Refs.staminaBar.label.TextXAlignment = Enum.TextXAlignment.Left
-	HUDUI.Refs.staminaBar.label.Position = UDim2.new(0, 8, 0.5, 0)
-	HUDUI.Refs.staminaBar.label.AnchorPoint = Vector2.new(0, 0.5)
 	HUDUI.Refs.staminaBar.label.TextColor3 = C.WHITE
 	HUDUI.Refs.staminaBar.label.Font = F.NUM
-	HUDUI.Refs.staminaBar.label.TextSize = 12
+	HUDUI.Refs.staminaBar.label.TextSize = isSmall and 9 or 8
+	Utils.mkLabel({text = "스태미너", size = UDim2.new(0, 32, 1, 0), pos = UDim2.new(1, -32, 0, 0), ts = isSmall and 9 or 8, font = F.TITLE, color = C.GOLD, ax = Enum.TextXAlignment.Right, parent = staRow})
 
-	-- Hunger Bar (Warm Green)
+	-- [Below STA] - Hunger bar
 	HUDUI.Refs.hungerBar = Utils.mkBar({
 		name = "HUNGER",
-		size = UDim2.new(1, -20, 0, 8),
-		fillC = C.HUNGER, 
-		r = 4,
-		parent = topLeftFrame
+		size = UDim2.new(1, 0, 0, 5),
+		fillC = C.HUNGER,
+		r = 2,
+		parent = statFrame
 	})
 	HUDUI.Refs.hungerBar.container.LayoutOrder = 3
-	HUDUI.Refs.hungerBar.label.Visible = false -- 너무 얇아서 텍스트 숨김 (툴팁으로 확인 가능)
+	HUDUI.Refs.hungerBar.label.Visible = false
 
-	-- Status Effect Icons Container (LayoutOrder 4)
-	local effectList = Utils.mkFrame({name="EffectList", size=UDim2.new(1,0,0,30), bgT=1, parent=topLeftFrame})
-	effectList.LayoutOrder = 4
-	local eLayout = Instance.new("UIListLayout"); eLayout.FillDirection=Enum.FillDirection.Horizontal; eLayout.Padding=UDim.new(0,5); eLayout.Parent=effectList
-	HUDUI.Refs.effectList = effectList
-	
+	-- Level-up alert (below hunger)
 	HUDUI.Refs.statPointAlert = Utils.mkLabel({
 		text = "▲ 레벨업 가능",
-		size = UDim2.new(0, 120, 1, 0),
+		size = UDim2.new(1, 0, 0, 16),
 		ts = 12,
 		color = C.GOLD,
-		ax = Enum.TextXAlignment.Left,
+		ax = Enum.TextXAlignment.Center,
 		vis = false,
-		parent = effectList
+		parent = statFrame
 	})
+	HUDUI.Refs.statPointAlert.LayoutOrder = 4
 
 	-- Tutorial quest: fixed HUD panel (non-toast)
 	local tutorialFrame = Utils.mkFrame({
@@ -573,10 +582,10 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 
 	-- [X] Redundant interact prompt removed (Using InteractUI instead)
 
-	-- [Bottom Edge] - Experience Bar & Menu
+	-- [Bottom Edge] - Level & XP Bar (thin)
 	local bottomEdge = Utils.mkFrame({
 		name = "BottomEdge",
-		size = UDim2.new(1, 0, 0, isSmall and 50 or 40),
+		size = UDim2.new(1, 0, 0, isSmall and 28 or 24),
 		pos = UDim2.new(0, 0, 1, 0),
 		anchor = Vector2.new(0, 1),
 		bg = C.BG_DARK,
@@ -584,46 +593,61 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 		parent = parent
 	})
 	
-	local xpBackground = Utils.mkFrame({
-		name = "XPBG", 
-		size = UDim2.new(1, 0, 0, 2), 
-		pos = UDim2.new(0.5, 0, 0, 0), 
-		anchor = Vector2.new(0.5, 0), 
-		bgT = 0.5, 
-		bg = C.BORDER_DIM,
-		parent = bottomEdge
+	-- 레벨 바 (XP 통합) — 전체 하단바가 레벨+XP 바 역할
+	HUDUI.Refs.xpBar = Utils.mkFrame({name = "XPBar", size = UDim2.new(0, 0, 1, 0), bg = Color3.fromRGB(160, 230, 100), bgT = 0.55, r = 0, parent = bottomEdge})
+	HUDUI.Refs.bottomEdge = bottomEdge
+
+	-- 레벨 라벨 (정중앙)
+	HUDUI.Refs.levelLabel = Utils.mkLabel({text = "Lv.1", size = UDim2.new(0, isSmall and 60 or 50, 0, isSmall and 26 or 22), pos = UDim2.new(0.5, 0, 0.5, 0), anchor = Vector2.new(0.5, 0.5), ts = isSmall and 14 or 12, font = F.TITLE, color = C.WHITE, ax = Enum.TextXAlignment.Center, st = 1, parent = bottomEdge})
+
+	-- XP 퍼센트 라벨 (좌하단)
+	HUDUI.Refs.xpPctLabel = Utils.mkLabel({text = "0%", size = UDim2.new(0, 40, 1, 0), pos = UDim2.new(0, 8, 0, 0), ts = isSmall and 10 or 9, font = F.TITLE, color = Color3.fromRGB(180, 240, 120), ax = Enum.TextXAlignment.Left, st = 1, parent = bottomEdge})
+
+	-- XP 수치 라벨 (퍼센트 옆)
+	HUDUI.Refs.xpValueLabel = Utils.mkLabel({text = "0/100", size = UDim2.new(0, isSmall and 80 or 75, 1, 0), pos = UDim2.new(0, isSmall and 42 or 38, 0, 0), ts = isSmall and 9 or 8, font = F.NUM, color = C.INK, ax = Enum.TextXAlignment.Left, st = 1, parent = bottomEdge})
+
+	-- [단축키 버튼] XP바 위 별도 프레임
+	local menuRow = Utils.mkFrame({
+		name = "MenuRow",
+		size = UDim2.new(1, 0, 0, isSmall and 30 or 26),
+		pos = UDim2.new(0, 0, 1, -(isSmall and 28 or 24)),
+		anchor = Vector2.new(0, 1),
+		bgT = 1,
+		parent = parent
 	})
-	HUDUI.Refs.xpBar = Utils.mkFrame({name = "XPBar", size = UDim2.new(0, 0, 1, 0), bg = C.XP, bgT = 0, parent = xpBackground})
+	local mList = Instance.new("UIListLayout")
+	mList.FillDirection = Enum.FillDirection.Horizontal
+	mList.VerticalAlignment = Enum.VerticalAlignment.Center
+	mList.HorizontalAlignment = Enum.HorizontalAlignment.Right
+	mList.Padding = UDim.new(0, 6)
+	mList.Parent = menuRow
+	HUDUI.Refs.bagBtn = Utils.mkBtn({text = "인벤토리 Tab", size = UDim2.new(0, isSmall and 95 or 90, 0, isSmall and 26 or 24), bg = C.BG_PANEL_L, bgT = 0.35, r = 5, ts = isSmall and 11 or 10, font = F.TITLE, color = C.WHITE, fn = function() UIManager.toggleInventory() end, parent = menuRow})
+	HUDUI.Refs.buildBtn = Utils.mkBtn({text = "건설 C", size = UDim2.new(0, isSmall and 60 or 55, 0, isSmall and 26 or 24), bg = C.BG_PANEL_L, bgT = 0.35, r = 5, ts = isSmall and 11 or 10, font = F.TITLE, color = C.WHITE, fn = function() UIManager.toggleBuild() end, parent = menuRow})
+	HUDUI.Refs.equipBtn = Utils.mkBtn({text = "장비 E", size = UDim2.new(0, isSmall and 60 or 55, 0, isSmall and 26 or 24), bg = C.BG_PANEL_L, bgT = 0.35, r = 5, ts = isSmall and 11 or 10, font = F.TITLE, color = C.WHITE, fn = function() UIManager.toggleEquipment() end, parent = menuRow})
+	HUDUI.Refs.collectionBtn = Utils.mkBtn({text = "도감 P", size = UDim2.new(0, isSmall and 60 or 55, 0, isSmall and 26 or 24), bg = C.BG_PANEL_L, bgT = 0.35, r = 5, ts = isSmall and 11 or 10, font = F.TITLE, color = C.WHITE, fn = function() UIManager.toggleCollection() end, parent = menuRow})
+	HUDUI.Refs.skillBtn = Utils.mkBtn({text = "스킬 K", size = UDim2.new(0, isSmall and 60 or 55, 0, isSmall and 26 or 24), bg = C.BG_PANEL_L, bgT = 0.35, r = 5, ts = isSmall and 11 or 10, font = F.TITLE, color = C.WHITE, fn = function() UIManager.toggleSkillTree() end, parent = menuRow})
+	HUDUI.Refs.menuRow = menuRow
 
-	local menuItems = Utils.mkFrame({name="MenuButtons", size=UDim2.new(0.7, 0, 1, 0), pos=UDim2.new(1, -20, 0, 0), anchor=Vector2.new(1, 0), bgT=1, parent=bottomEdge})
-	local mList = Instance.new("UIListLayout"); mList.FillDirection=Enum.FillDirection.Horizontal; mList.VerticalAlignment=Enum.VerticalAlignment.Center; mList.HorizontalAlignment=Enum.HorizontalAlignment.Right; mList.Padding=UDim.new(0, isSmall and 6 or 12); mList.Parent=menuItems
-	
-	HUDUI.Refs.levelLabel = Utils.mkLabel({text="LV. 1 [ 0.0% ]", size=UDim2.new(0, 150, 0, 32), pos=UDim2.new(0, 20, 0.5, 0), anchor=Vector2.new(0, 0.5), ts=14, font=F.TITLE, color=C.WHITE, ax=Enum.TextXAlignment.Left, parent=bottomEdge})
-	
-	HUDUI.Refs.bagBtn = Utils.mkBtn({text="[ INV: Tab ]", size=UDim2.new(0, isSmall and 85 or 110, 0, 32), bgT=1, ts=isSmall and 13 or 14, font=F.TITLE, color=C.WHITE, fn=function() UIManager.toggleInventory() end, parent=menuItems})
-	HUDUI.Refs.buildBtn = Utils.mkBtn({text="[ BUILD: C ]", size=UDim2.new(0, isSmall and 85 or 110, 0, 32), bgT=1, ts=isSmall and 13 or 14, font=F.TITLE, color=C.WHITE, fn=function() UIManager.toggleBuild() end, parent=menuItems})
-	HUDUI.Refs.equipBtn = Utils.mkBtn({text="[ CHAR: E ]", size=UDim2.new(0, isSmall and 80 or 105, 0, 32), bgT=1, ts=isSmall and 13 or 14, font=F.TITLE, color=C.WHITE, fn=function() UIManager.toggleEquipment() end, parent=menuItems})
-	HUDUI.Refs.collectionBtn = Utils.mkBtn({text="[ LOG: P ]", size=UDim2.new(0, isSmall and 75 or 100, 0, 32), bgT=1, ts=isSmall and 13 or 14, font=F.TITLE, color=C.WHITE, fn=function() UIManager.toggleCollection() end, parent=menuItems})
-	HUDUI.Refs.skillBtn = Utils.mkBtn({text="[ SKILL: K ]", size=UDim2.new(0, isSmall and 80 or 105, 0, 32), bgT=1, ts=isSmall and 13 or 14, font=F.TITLE, color=C.WHITE, fn=function() UIManager.toggleSkillTree() end, parent=menuItems})
-
-	-- [Hotbar] (Center Bottom)
-	local hotbarSize = isSmall and 480 or 410
+	-- [Hotbar] (Center Bottom, 8 slots)
+	local slotSize = isSmall and 50 or 44
+	local slotGap = 6
+	local hotbarSize = 8 * slotSize + 7 * slotGap + 20
 	local hotbarFrame = Utils.mkFrame({
 		name = "Hotbar",
-		size = UDim2.new(0, hotbarSize, 0, isSmall and 60 or 50),
-		pos = UDim2.new(0.5, 0, 1, isSmall and -50 or -35),
+		size = UDim2.new(0, hotbarSize, 0, isSmall and 56 or 48),
+		pos = UDim2.new(0.5, 0, 1, isSmall and -46 or -38),
 		anchor = Vector2.new(0.5, 1),
 		bgT = 1,
 		parent = parent
 	})
 	HUDUI.Refs.hotbarSlots = {}
 	local hList = Instance.new("UIListLayout")
-	hList.FillDirection = Enum.FillDirection.Horizontal; hList.HorizontalAlignment = Enum.HorizontalAlignment.Center; hList.Padding = UDim.new(0, 8); hList.Parent = hotbarFrame
+	hList.FillDirection = Enum.FillDirection.Horizontal; hList.HorizontalAlignment = Enum.HorizontalAlignment.Center; hList.Padding = UDim.new(0, slotGap); hList.Parent = hotbarFrame
 
 	for i=1, 8 do
 		local slot = Utils.mkSlot({
 			name = "Slot"..i,
-			size = UDim2.new(0, isSmall and 55 or 48, 0, isSmall and 55 or 48),
+			size = UDim2.new(0, slotSize, 0, slotSize),
 			bg = C.BG_SLOT,
 			bgT = 0.4,
 			r = 6,
@@ -1104,7 +1128,8 @@ end
 
 function HUDUI.SetVisible(visible)
 	if HUDUI.Refs.statusPanel then HUDUI.Refs.statusPanel.Visible = visible end
-	if HUDUI.Refs.xpBar then HUDUI.Refs.xpBar.Parent.Parent.Visible = visible end
+	if HUDUI.Refs.bottomEdge then HUDUI.Refs.bottomEdge.Visible = visible end
+	if HUDUI.Refs.menuRow then HUDUI.Refs.menuRow.Visible = visible end
 	if HUDUI.Refs.hex_Attack then HUDUI.Refs.hex_Attack.Parent.Visible = visible end
 	if HUDUI.Refs.tutorialFrame then
 		HUDUI.Refs.tutorialFrame.Visible = visible and tutorialWantedVisible
@@ -1263,19 +1288,18 @@ function HUDUI.UpdateXP(cur, max)
 	if not bar then return end
 	local r = math.clamp(cur/max, 0, 1)
 	TweenService:Create(bar, TweenInfo.new(0.3), {Size = UDim2.new(r, 0, 1, 0)}):Play()
-	if HUDUI.Refs.levelLabel then 
-		HUDUI.Refs.levelLabel.Text = string.format("LV. %s [ %.1f%% ]", tostring(HUDUI.Refs.currentLevel or 1), r * 100)
+	if HUDUI.Refs.xpPctLabel then
+		HUDUI.Refs.xpPctLabel.Text = string.format("%d%%", math.floor(r * 100))
+	end
+	if HUDUI.Refs.xpValueLabel then
+		HUDUI.Refs.xpValueLabel.Text = string.format("%d/%d", math.floor(cur), math.floor(max))
 	end
 end
 
 function HUDUI.UpdateLevel(lv)
 	HUDUI.Refs.currentLevel = lv
-	-- 라벨 텍스트도 즉시 갱신 (UpdateXP 호출 없이도 레벨 표시 반영)
 	if HUDUI.Refs.levelLabel then
-		local bar = HUDUI.Refs.xpBar
-		local r = 0
-		if bar then r = bar.Size.X.Scale end
-		HUDUI.Refs.levelLabel.Text = string.format("LV. %s [ %.1f%% ]", tostring(lv), r * 100)
+		HUDUI.Refs.levelLabel.Text = string.format("Lv.%s", tostring(lv))
 	end
 end
 

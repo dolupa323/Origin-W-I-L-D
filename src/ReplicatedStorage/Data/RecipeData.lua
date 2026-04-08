@@ -82,6 +82,16 @@ local RecipeData = {
 		outputs = { { itemId = "PLANK", count = 3 } },
 	},
 	{
+		id = "CRAFT_SPLIT_PALM_LOG_TO_PLANK",
+		name = "야자나무 쪼개기",
+		category = "RESOURCE",
+		requiredFacility = "CRAFTING_T1",
+		craftTime = 2,
+		techLevel = 2,
+		inputs = { { itemId = "PALM_LOG", count = 1 } },
+		outputs = { { itemId = "PLANK", count = 3 } },
+	},
+	{
 		id = "CRAFT_LEATHER_ARMOR",
 		name = "가죽옷",
 		category = "ARMOR",

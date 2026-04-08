@@ -24,6 +24,15 @@ BuildUI.Refs = {
 	}
 }
 
+-- 건축 티어별 카테고리 (스킬트리 BUILD_T0~T4 연동)
+local BUILD_CATEGORIES = {
+	{ id = "BUILD_T0", name = "기초 건축",   skillId = "BUILD_T0" },
+	{ id = "BUILD_T1", name = "초급 건축",   skillId = "BUILD_T1" },
+	{ id = "BUILD_T2", name = "중급 건축",   skillId = "BUILD_T2" },
+	{ id = "BUILD_T3", name = "고급 건축",   skillId = "BUILD_T3" },
+	{ id = "BUILD_T4", name = "마스터 건축", skillId = "BUILD_T4" },
+}
+
 function BuildUI.Init(parent, UIManager, isMobile)
 	local isSmall = isMobile
 	
@@ -75,9 +84,7 @@ function BuildUI.Init(parent, UIManager, isMobile)
 	local sidebar = Utils.mkFrame({name="Sidebar", size=UDim2.new(sidebarScale, 0, 1, 0), bgT=1, parent=content})
 	local sList = Instance.new("UIListLayout"); sList.Padding=UDim.new(0, 10); sList.Parent=sidebar
 	
-	local categories = {
-		{id="BASIC", name="기초 건축"},
-	}
+	local categories = BUILD_CATEGORIES
 	
 	for _, cat in ipairs(categories) do
 		local btn = Utils.mkBtn({
@@ -165,18 +172,34 @@ function BuildUI.Init(parent, UIManager, isMobile)
 	BuildUI.Refs.Grid = scroll
 end
 
-function BuildUI.Refresh(facilityList, unlockedTech, catId, getIcon, UIManager)
+function BuildUI.Refresh(facilityList, unlockedTech, catId, getIcon, UIManager, isTierUnlocked)
 	local grid = BuildUI.Refs.Grid
 	if not grid then return end
 	
 	-- Clear
 	for _, ch in ipairs(grid:GetChildren()) do if ch:IsA("GuiObject") then ch:Destroy() end end
 	
-	-- Category Highlight
-	for cid, btn in pairs(BuildUI.Refs.CategoryBtns) do
-		local isSel = (cid == catId)
-		btn.TextColor3 = isSel and C.GOLD or C.GRAY
-		btn.BackgroundColor3 = isSel and C.BTN_H or C.BTN
+	-- Category Highlight + 스킬 해금 상태 반영
+	for _, cat in ipairs(BUILD_CATEGORIES) do
+		local btn = BuildUI.Refs.CategoryBtns[cat.id]
+		if not btn then continue end
+		local isSel = (cat.id == catId)
+		local unlocked = isTierUnlocked and isTierUnlocked(cat.skillId) or (cat.id == "BUILD_T0")
+		
+		if not unlocked then
+			-- 미해금: 회색 비활성화
+			btn.TextColor3 = Color3.fromRGB(80, 75, 65)
+			btn.BackgroundColor3 = Color3.fromRGB(30, 28, 25)
+			btn.BackgroundTransparency = 0.5
+		elseif isSel then
+			btn.TextColor3 = C.GOLD
+			btn.BackgroundColor3 = C.BTN_H
+			btn.BackgroundTransparency = 0.3
+		else
+			btn.TextColor3 = C.GRAY
+			btn.BackgroundColor3 = C.BTN
+			btn.BackgroundTransparency = 0.3
+		end
 		-- 과한 효과 제거 (UIStroke 등)
 		local stroke = btn:FindFirstChildOfClass("UIStroke")
 		if stroke then stroke.Enabled = false end
@@ -233,20 +256,57 @@ function BuildUI.UpdateDetail(data, canAfford, getIcon, isUnlocked, playerItemCo
 	
 	local matStr = UILocalizer.Localize("[ 필요 재료 ]") .. "\n"
 	if data.requirements then
-		for _, req in ipairs(data.requirements) do
-			local have = playerItemCounts[req.itemId] or 0
-			local ok = have >= req.amount
-			local color = ok and "#8CDC64" or "#ff6464"
-			local prefix = ok and "✓ " or "✗ "
-			
-			local mName = req.itemId
-			if DataHelper then
-				local md = DataHelper.GetData("ItemData", mName)
-				if md then mName = md.name end
+		-- alternateWoodIds 집합 생성
+		local altSet = {}
+		local altList = data.alternateWoodIds
+		if altList then
+			for _, id in ipairs(altList) do
+				altSet[id] = true
 			end
-			mName = UILocalizer.Localize(mName)
-			
-			matStr = matStr .. string.format("<font color='%s'>%s%s: %d / %d</font>\n", color, prefix, mName, have, req.amount)
+		end
+
+		for _, req in ipairs(data.requirements) do
+			if altSet[req.itemId] and altList then
+				-- 대체 가능 재료: 보유한 것 중 하나 찾기
+				local bestId, bestHave = req.itemId, playerItemCounts[req.itemId] or 0
+				for _, altId in ipairs(altList) do
+					local h = playerItemCounts[altId] or 0
+					if h >= req.amount then
+						bestId = altId
+						bestHave = h
+						break
+					elseif h > bestHave then
+						bestId = altId
+						bestHave = h
+					end
+				end
+				local ok = bestHave >= req.amount
+				local color = ok and "#8CDC64" or "#ff6464"
+				local prefix = ok and "✓ " or "✗ "
+
+				local mName = bestId
+				if DataHelper then
+					local md = DataHelper.GetData("ItemData", mName)
+					if md then mName = md.name end
+				end
+				mName = UILocalizer.Localize(mName)
+
+				matStr = matStr .. string.format("<font color='%s'>%s%s: %d / %d</font> <font color='#aaaaaa'>(나무류)</font>\n", color, prefix, mName, bestHave, req.amount)
+			else
+				local have = playerItemCounts[req.itemId] or 0
+				local ok = have >= req.amount
+				local color = ok and "#8CDC64" or "#ff6464"
+				local prefix = ok and "✓ " or "✗ "
+
+				local mName = req.itemId
+				if DataHelper then
+					local md = DataHelper.GetData("ItemData", mName)
+					if md then mName = md.name end
+				end
+				mName = UILocalizer.Localize(mName)
+
+				matStr = matStr .. string.format("<font color='%s'>%s%s: %d / %d</font>\n", color, prefix, mName, have, req.amount)
+			end
 		end
 	end
 	d.Mats.Text = matStr

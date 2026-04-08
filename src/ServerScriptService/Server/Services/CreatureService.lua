@@ -2291,7 +2291,13 @@ function CreatureService._updateAILoop()
 							creature.attackingUntil = now + attackDelay + NETWORK_ANIM_BUFFER
 
 							if NetController then
-								NetController.FireAllClients("Creature.Attack.Play", { instanceId = id })
+								NetController.FireAllClients("Creature.Attack.Play", {
+									instanceId = id,
+									attackRange = attackRange,
+									creaturePos = {hrp.Position.X, hrp.Position.Y, hrp.Position.Z},
+									creatureLook = {hrp.CFrame.LookVector.X, hrp.CFrame.LookVector.Y, hrp.CFrame.LookVector.Z},
+									attackDelay = creature.data.attackDelay or 0.5,
+								})
 							end
 
 							if closestPlayerHum and closestPlayerHum.Health > 0 then
@@ -2438,7 +2444,14 @@ function CreatureService._updateAILoop()
 								if sId then
 									creature.lastAttackTime = now
 									if NetController then
-										NetController.FireAllClients("Creature.Attack.Play", { instanceId = id, targetStructureId = sId })
+										NetController.FireAllClients("Creature.Attack.Play", {
+											instanceId = id,
+											targetStructureId = sId,
+											attackRange = attackRange,
+											creaturePos = {hrp.Position.X, hrp.Position.Y, hrp.Position.Z},
+											creatureLook = {hrp.CFrame.LookVector.X, hrp.CFrame.LookVector.Y, hrp.CFrame.LookVector.Z},
+											attackDelay = creature.data.attackDelay or 0.3,
+										})
 									end
 									
 									-- 구조물 공격도 딜레이 도입

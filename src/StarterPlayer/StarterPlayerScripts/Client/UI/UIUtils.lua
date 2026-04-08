@@ -81,7 +81,8 @@ function UIUtils.mkLabel(p)
 	l.TextYAlignment = p.ay or Enum.TextYAlignment.Center
 	
 	-- Clean Text: No more forced strokes/blurring effects
-	l.TextStrokeTransparency = 1 
+	l.TextStrokeTransparency = (p.st ~= nil) and (1 - p.st) or 1
+	if p.stColor then l.TextStrokeColor3 = p.stColor end
 	
 	l.TextWrapped = p.wrap or false
 	l.RichText = p.rich or false
@@ -90,6 +91,7 @@ function UIUtils.mkLabel(p)
 	
 	if p.autoSize then l.AutomaticSize = Enum.AutomaticSize.XY end
 	if p.bold then l.Font = F.TITLE end
+	if p.vis == false then l.Visible = false end
 	return l
 end
 

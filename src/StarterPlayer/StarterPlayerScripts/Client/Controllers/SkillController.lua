@@ -206,8 +206,23 @@ function SkillController.useSkill(skillId: string, targetId: string?)
 	end
 	_fireCooldownListeners()
 	
+	-- ★ aimDirection 계산: 캐릭터 정면 방향(LookVector) 사용
+	local aimDirection = nil
+	local Players = game:GetService("Players")
+	local lp = Players.LocalPlayer
+	local char = lp and lp.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	if hrp then
+		local look = hrp.CFrame.LookVector
+		aimDirection = { x = look.X, y = look.Y, z = look.Z }
+	end
+	
 	task.spawn(function()
-		local ok, data = NetClient.Request("Skill.Use.Request", { skillId = skillId, targetId = targetId })
+		local payload = { skillId = skillId, targetId = targetId }
+		if aimDirection then
+			payload.aimDirection = aimDirection
+		end
+		local ok, data = NetClient.Request("Skill.Use.Request", payload)
 		if ok and data then
 			-- 서버에서 받은 쿨다운으로 보정
 			if data.cooldowns then

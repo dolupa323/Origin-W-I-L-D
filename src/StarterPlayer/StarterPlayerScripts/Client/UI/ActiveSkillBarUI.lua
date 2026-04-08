@@ -1,6 +1,6 @@
 -- ActiveSkillBarUI.lua
--- 액티브 스킬 바 HUD (핫바 위 3슬롯)
--- 키: Q / Z / X (또는 모바일 터치)
+-- 액티브 스킬 바 HUD (우하단 6각형 역삼각형 배치)
+-- 키: Q / F / V (또는 모바일 터치)
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -33,22 +33,27 @@ local ActiveSkillBarUI = {}
 --========================================
 -- Constants
 --========================================
-local SLOT_SIZE = isMobile and 52 or 44
-local SLOT_GAP = 6
-local BAR_BOTTOM_OFFSET = isMobile and -115 or -90 -- 핫바 위쪽에 배치
+local HEX_SIZE = isMobile and 96 or 88
+local HEX_GAP = isMobile and 44 or 40
+local SLOT_COUNT = 3
 local KEY_LABELS = { "Q", "F", "V" }
 local COOLDOWN_COLOR = Color3.fromRGB(0, 0, 0)
-local READY_FLASH_COLOR = Color3.fromRGB(255, 225, 90)
+local BORDER_READY = Color3.fromRGB(80, 80, 70)
+
+-- 3-bar 합성 6각형 상수 (HarvestUI와 동일 방식)
+local HEX_BAR_ROTATIONS = { 30, 90, 150 }
+local HEX_BAR_W_RATIO = 0.88
+local HEX_BAR_H_RATIO = 0.50
 
 --========================================
 -- Refs
 --========================================
 local barFrame
-local slotRefs = {} -- { [1..3] = { frame, icon, cooldownOverlay, cooldownText, keyLabel, glowStroke } }
+local slotRefs = {}
 local updateConnection
 
 --========================================
--- Icon Helper (SkillTreeUI 동일 패턴)
+-- Icon Helper
 --========================================
 local SkillIcons = nil
 do
@@ -69,127 +74,12 @@ local function _getIconImage(iconName)
 end
 
 --========================================
--- Create UI
+-- Target Helper (createBar보다 앞에 선언 — closure 참조 필요)
 --========================================
-local function createBar(parent)
-	local totalWidth = SLOT_SIZE * 3 + SLOT_GAP * 2
-	
-	barFrame = Utils.mkFrame({
-		name = "ActiveSkillBar",
-		size = UDim2.new(0, totalWidth, 0, SLOT_SIZE + 16),
-		pos = UDim2.new(0.5, 0, 1, BAR_BOTTOM_OFFSET),
-		anchor = Vector2.new(0.5, 1),
-		bgT = 1,
-		parent = parent,
-	})
-	
-	local list = Instance.new("UIListLayout")
-	list.FillDirection = Enum.FillDirection.Horizontal
-	list.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	list.VerticalAlignment = Enum.VerticalAlignment.Center
-	list.Padding = UDim.new(0, SLOT_GAP)
-	list.Parent = barFrame
-	
-	for i = 1, 3 do
-		local slotFrame = Utils.mkFrame({
-			name = "SkillSlot" .. i,
-			size = UDim2.new(0, SLOT_SIZE, 0, SLOT_SIZE),
-			bg = C.BG_SLOT,
-			bgT = 0.35,
-			r = 6,
-			stroke = 1.5,
-			strokeC = C.BORDER_DIM,
-			parent = barFrame,
-		})
-		
-		-- 아이콘
-		local icon = Instance.new("ImageLabel")
-		icon.Name = "Icon"
-		icon.Size = UDim2.new(0.75, 0, 0.75, 0)
-		icon.Position = UDim2.new(0.5, 0, 0.5, 0)
-		icon.AnchorPoint = Vector2.new(0.5, 0.5)
-		icon.BackgroundTransparency = 1
-		icon.ScaleType = Enum.ScaleType.Fit
-		icon.ImageTransparency = 0
-		icon.ZIndex = 2
-		icon.Parent = slotFrame
-		
-		-- 쿨다운 오버레이 (검은 반투명 스윕)
-		local cdOverlay = Utils.mkFrame({
-			name = "CooldownOverlay",
-			size = UDim2.new(1, 0, 0, 0), -- 높이가 쿨다운 비율에 따라 변함
-			pos = UDim2.new(0, 0, 1, 0),
-			anchor = Vector2.new(0, 1),
-			bg = COOLDOWN_COLOR,
-			bgT = 0.45,
-			r = false,
-			parent = slotFrame,
-		})
-		cdOverlay.ZIndex = 3
-		cdOverlay.ClipsDescendants = true
-		
-		-- 쿨다운 남은 시간 텍스트
-		local cdText = Utils.mkLabel({
-			name = "CDText",
-			size = UDim2.new(1, 0, 1, 0),
-			text = "",
-			ts = isMobile and 16 or 13,
-			font = F.TITLE,
-			color = C.WHITE,
-			parent = slotFrame,
-		})
-		cdText.ZIndex = 4
-		
-		-- 키 라벨 (좌측 상단)
-		local keyLabel = Utils.mkLabel({
-			name = "KeyLabel",
-			size = UDim2.new(0, 14, 0, 14),
-			pos = UDim2.new(0, 2, 0, 1),
-			text = KEY_LABELS[i],
-			ts = isMobile and 11 or 9,
-			font = F.TITLE,
-			color = C.GRAY,
-			ax = Enum.TextXAlignment.Left,
-			ay = Enum.TextYAlignment.Top,
-			parent = slotFrame,
-		})
-		keyLabel.ZIndex = 5
-		if isMobile then keyLabel.Visible = false end
-		
-		-- 터치 버튼 (모바일)
-		if isMobile then
-			local touchBtn = Instance.new("TextButton")
-			touchBtn.Name = "TouchBtn"
-			touchBtn.Size = UDim2.new(1, 0, 1, 0)
-			touchBtn.BackgroundTransparency = 1
-			touchBtn.Text = ""
-			touchBtn.ZIndex = 10
-			touchBtn.Parent = slotFrame
-			touchBtn.MouseButton1Click:Connect(function()
-				SkillController.useSkillBySlot(i, _getCurrentTarget())
-			end)
-		end
-		
-		-- 글로우 스트로크 (스킬 준비 시 반짝)
-		local glowStroke = slotFrame:FindFirstChildOfClass("UIStroke")
-		
-		slotRefs[i] = {
-			frame = slotFrame,
-			icon = icon,
-			cooldownOverlay = cdOverlay,
-			cooldownText = cdText,
-			keyLabel = keyLabel,
-			glowStroke = glowStroke,
-			wasOnCooldown = false,
-		}
-	end
-end
+local InputManager = require(Client.InputManager)
 
---========================================
--- Target Helper (전투 중인 크리처 조회)
---========================================
-local function _getCurrentTarget(): string?
-	-- CombatController의 현재 타겟을 참조 (없으면 nil)
+--- 스킬 사용 전: 정면 방향으로 타겟 탐색 (캠릭터 회전 없음)
+local function _orientAndGetTarget(): string?
 	local ok, CombatController = pcall(function()
 		return require(Controllers.CombatController)
 	end)
@@ -200,22 +90,185 @@ local function _getCurrentTarget(): string?
 end
 
 --========================================
+-- Hex Helper: 3-bar 합성으로 6각형 생성 (HarvestUI와 동일)
+--========================================
+local function _createHexShape(parent, hexSize, color, transparency, zIndex, padding)
+	padding = padding or 0
+	local barW = hexSize * HEX_BAR_W_RATIO - padding * 2
+	local barH = hexSize * HEX_BAR_H_RATIO - padding
+	local bars = {}
+	for _, rot in ipairs(HEX_BAR_ROTATIONS) do
+		local bar = Instance.new("Frame")
+		bar.Size = UDim2.new(0, barW, 0, barH)
+		bar.Position = UDim2.fromScale(0.5, 0.5)
+		bar.AnchorPoint = Vector2.new(0.5, 0.5)
+		bar.Rotation = rot
+		bar.BackgroundColor3 = color
+		bar.BackgroundTransparency = transparency
+		bar.BorderSizePixel = 0
+		bar.ZIndex = zIndex
+		bar.Parent = parent
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(0, 4)
+		c.Parent = bar
+		table.insert(bars, bar)
+	end
+	return bars
+end
+
+local function _setHexBarsColor(bars, color)
+	for _, bar in ipairs(bars) do
+		bar.BackgroundColor3 = color
+	end
+end
+
+local function _setHexBarsTransparency(bars, t)
+	for _, bar in ipairs(bars) do
+		bar.BackgroundTransparency = t
+	end
+end
+
+--========================================
+-- Create Hexagonal Skill Cluster
+--========================================
+local function createBar(parent)
+	local areaSize = HEX_SIZE * 2 + HEX_GAP + 40
+	local offset = (HEX_SIZE + HEX_GAP) / 2
+	local cx, cy = areaSize / 2, areaSize / 2
+
+	barFrame = Utils.mkFrame({
+		name = "ActiveSkillBar",
+		size = UDim2.new(0, areaSize, 0, areaSize),
+		pos = UDim2.new(1, isMobile and -10 or -8, 1, isMobile and -30 or -25),
+		anchor = Vector2.new(1, 1),
+		bgT = 1,
+		parent = parent,
+	})
+
+	-- 역삼각형 배치: 좌상, 우상, 하중
+	local positions = {
+		{x = cx - offset, y = cy - offset * 0.5},
+		{x = cx + offset, y = cy - offset * 0.5},
+		{x = cx,           y = cy + offset * 0.5},
+	}
+
+	for i = 1, SLOT_COUNT do
+		local pos = positions[i]
+
+		-- 슬롯 컨테이너 (채집 UI와 동일하게 HEX_SIZE 정확히 일치)
+		local slotFrame = Instance.new("TextButton")
+		slotFrame.Name = "SkillSlot" .. i
+		slotFrame.Size = UDim2.new(0, HEX_SIZE, 0, HEX_SIZE)
+		slotFrame.Position = UDim2.new(0, pos.x, 0, pos.y)
+		slotFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+		slotFrame.BackgroundTransparency = 1
+		slotFrame.Text = ""
+		slotFrame.AutoButtonColor = false
+		slotFrame.ZIndex = 0
+		slotFrame.Parent = barFrame
+
+		-- [층1] 보더 (HarvestUI 동일: BORDER_DIM, padding=0)
+		local strokeBars = _createHexShape(slotFrame, HEX_SIZE, C.BORDER_DIM, 0, 1, 0)
+
+		-- [층1.5] 별모양 틈 채움 (bg와 같은 padding=3, UICorner 없이 → 직각 바가 별틈을 메움)
+		do
+			local p = 3
+			local bw = HEX_SIZE * HEX_BAR_W_RATIO - p * 2
+			local bh = HEX_SIZE * HEX_BAR_H_RATIO - p
+			for _, rot in ipairs(HEX_BAR_ROTATIONS) do
+				local bar = Instance.new("Frame")
+				bar.Size = UDim2.new(0, bw, 0, bh)
+				bar.Position = UDim2.fromScale(0.5, 0.5)
+				bar.AnchorPoint = Vector2.new(0.5, 0.5)
+				bar.Rotation = rot
+				bar.BackgroundColor3 = C.BG_PANEL
+				bar.BackgroundTransparency = 0
+				bar.BorderSizePixel = 0
+				bar.ZIndex = 1
+				bar.Parent = slotFrame
+			end
+		end
+
+		-- [층2] 배경 채움 (HarvestUI 동일: BG_PANEL, padding=3)
+		local bgBars = _createHexShape(slotFrame, HEX_SIZE, C.BG_PANEL, 0, 2, 3)
+
+		-- [층3] 스킬 아이콘
+		local icon = Instance.new("ImageLabel")
+		icon.Name = "Icon"
+		icon.Size = UDim2.new(0.5, 0, 0.5, 0)
+		icon.Position = UDim2.new(0.5, 0, 0.5, 0)
+		icon.AnchorPoint = Vector2.new(0.5, 0.5)
+		icon.BackgroundTransparency = 1
+		icon.ScaleType = Enum.ScaleType.Fit
+		icon.ImageTransparency = 0
+		icon.ZIndex = 3
+		icon.Parent = slotFrame
+
+		-- [층4] 쿨다운 오버레이 (HarvestUI 동일: padding=3)
+		local cdBars = _createHexShape(slotFrame, HEX_SIZE, COOLDOWN_COLOR, 1, 4, 3)
+
+		-- [층5] 쿨다운 텍스트
+		local cdText = Utils.mkLabel({
+			name = "CDText",
+			size = UDim2.new(1, 0, 1, 0),
+			text = "",
+			ts = isMobile and 18 or 15,
+			font = F.TITLE,
+			color = C.WHITE,
+			z = 5,
+			parent = slotFrame,
+		})
+
+		-- [층6] 키 라벨 (좌측 상단)
+		local keyLabel = Utils.mkLabel({
+			name = "KeyLabel",
+			size = UDim2.new(0, 24, 0, 24),
+			pos = UDim2.new(0.15, 0, 0.12, 0),
+			text = KEY_LABELS[i],
+			ts = isMobile and 15 or 13,
+			font = F.TITLE,
+			color = C.WHITE,
+			st = 0,
+			ax = Enum.TextXAlignment.Left,
+			ay = Enum.TextYAlignment.Top,
+			z = 6,
+			parent = slotFrame,
+		})
+		if isMobile then keyLabel.Visible = false end
+
+		-- 터치/클릭 이벤트
+		slotFrame.MouseButton1Click:Connect(function()
+			SkillController.useSkillBySlot(i, _orientAndGetTarget())
+		end)
+
+		slotRefs[i] = {
+			frame = slotFrame,
+			icon = icon,
+			cooldownBars = cdBars,
+			cooldownText = cdText,
+			keyLabel = keyLabel,
+			strokeBars = strokeBars,
+			bgBars = bgBars,
+			wasOnCooldown = false,
+		}
+	end
+end
+
+--========================================
 -- Update Loop
 --========================================
 local function refreshSlots()
 	local slots = SkillController.getActiveSkillSlots()
-	
-	for i = 1, 3 do
+
+	for i = 1, SLOT_COUNT do
 		local ref = slotRefs[i]
 		if not ref then continue end
-		
+
 		local skillId = slots[i]
-		
+
 		if skillId then
-			-- 스킬 데이터 조회
 			local skill = SkillTreeData.GetSkill(skillId)
 			if skill then
-				-- 아이콘 설정
 				local img = _getIconImage(skill.icon)
 				if img then
 					ref.icon.Image = img
@@ -224,41 +277,31 @@ local function refreshSlots()
 					ref.icon.Image = ""
 					ref.icon.ImageTransparency = 0.5
 				end
-				
-				-- 쿨다운 업데이트
+
 				local remaining = SkillController.getSlotCooldownRemaining(i)
 				if remaining > 0 then
-					local ratio = math.clamp(remaining / skill.cooldown, 0, 1)
-					ref.cooldownOverlay.Size = UDim2.new(1, 0, ratio, 0)
+					_setHexBarsTransparency(ref.cooldownBars, 0.45)
 					ref.cooldownText.Text = tostring(math.ceil(remaining))
 					ref.icon.ImageTransparency = 0.5
 					ref.wasOnCooldown = true
-					
-					-- 보더 어둡게
-					if ref.glowStroke then
-						ref.glowStroke.Color = C.BORDER_DIM
-					end
+					_setHexBarsColor(ref.strokeBars, C.BORDER_DIM)
 				else
-					ref.cooldownOverlay.Size = UDim2.new(1, 0, 0, 0)
+					_setHexBarsTransparency(ref.cooldownBars, 1)
 					ref.cooldownText.Text = ""
 					ref.icon.ImageTransparency = 0
-					
-					-- 쿨다운 끝났을 때 반짝 효과
 					if ref.wasOnCooldown then
 						ref.wasOnCooldown = false
-						if ref.glowStroke then
-							ref.glowStroke.Color = READY_FLASH_COLOR
-							TweenService:Create(ref.glowStroke, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-								Color = C.BORDER,
+						_setHexBarsColor(ref.strokeBars, BORDER_READY)
+						for _, bar in ipairs(ref.strokeBars) do
+							TweenService:Create(bar, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+								BackgroundColor3 = C.BORDER_DIM,
 							}):Play()
 						end
 					else
-						if ref.glowStroke then
-							ref.glowStroke.Color = C.BORDER
-						end
+						_setHexBarsColor(ref.strokeBars, C.BORDER_DIM)
 					end
 				end
-				
+
 				ref.frame.Visible = true
 			else
 				ref.frame.Visible = false
@@ -267,13 +310,11 @@ local function refreshSlots()
 			-- 빈 슬롯
 			ref.icon.Image = ""
 			ref.icon.ImageTransparency = 0.8
-			ref.cooldownOverlay.Size = UDim2.new(1, 0, 0, 0)
+			_setHexBarsTransparency(ref.cooldownBars, 1)
 			ref.cooldownText.Text = ""
 			ref.frame.Visible = true
-			ref.frame.BackgroundTransparency = 0.7
-			if ref.glowStroke then
-				ref.glowStroke.Color = C.BORDER_DIM
-			end
+			_setHexBarsColor(ref.strokeBars, C.BORDER_DIM)
+			_setHexBarsTransparency(ref.bgBars, 0.3)
 		end
 	end
 end
@@ -284,22 +325,18 @@ end
 
 function ActiveSkillBarUI.Init(parent)
 	createBar(parent)
-	
-	-- 슬롯 데이터 변경 시 리프레시
+
 	SkillController.onSkillDataUpdated(function()
 		refreshSlots()
 	end)
-	
-	-- 쿨다운 변경 시 리프레시
+
 	SkillController.onCooldownUpdated(function()
 		refreshSlots()
 	end)
-	
-	-- 주기적 쿨다운 UI 업데이트 (0.1초 간격)
+
 	updateConnection = RunService.Heartbeat:Connect(function()
-		-- 쿨다운 중인 슬롯만 업데이트
 		local slots = SkillController.getActiveSkillSlots()
-		for i = 1, 3 do
+		for i = 1, SLOT_COUNT do
 			local ref = slotRefs[i]
 			local skillId = slots[i]
 			if ref and skillId then
@@ -307,42 +344,37 @@ function ActiveSkillBarUI.Init(parent)
 				if remaining > 0 then
 					local skill = SkillTreeData.GetSkill(skillId)
 					if skill then
-						local ratio = math.clamp(remaining / skill.cooldown, 0, 1)
-						ref.cooldownOverlay.Size = UDim2.new(1, 0, ratio, 0)
+						_setHexBarsTransparency(ref.cooldownBars, 0.45)
 						ref.cooldownText.Text = tostring(math.ceil(remaining))
 						ref.icon.ImageTransparency = 0.5
 					end
 				elseif ref.wasOnCooldown then
-					-- 쿨다운 방금 끝남
-					ref.cooldownOverlay.Size = UDim2.new(1, 0, 0, 0)
+					_setHexBarsTransparency(ref.cooldownBars, 1)
 					ref.cooldownText.Text = ""
 					ref.icon.ImageTransparency = 0
 					ref.wasOnCooldown = false
-					if ref.glowStroke then
-						ref.glowStroke.Color = READY_FLASH_COLOR
-						TweenService:Create(ref.glowStroke, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-							Color = C.BORDER,
+					_setHexBarsColor(ref.strokeBars, BORDER_READY)
+					for _, bar in ipairs(ref.strokeBars) do
+						TweenService:Create(bar, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+							BackgroundColor3 = C.BORDER_DIM,
 						}):Play()
 					end
 				end
 			end
 		end
 	end)
-	
-	-- 초기 리프레시
+
 	task.defer(refreshSlots)
 end
 
---- 스킬 바 표시/숨기기
 function ActiveSkillBarUI.SetVisible(visible: boolean)
 	if barFrame then
 		barFrame.Visible = visible
 	end
 end
 
---- 키 입력으로 스킬 사용 (ClientInit에서 호출)
 function ActiveSkillBarUI.UseSlot(slotIndex: number)
-	SkillController.useSkillBySlot(slotIndex, _getCurrentTarget())
+	SkillController.useSkillBySlot(slotIndex, _orientAndGetTarget())
 end
 
 return ActiveSkillBarUI

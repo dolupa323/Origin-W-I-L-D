@@ -262,6 +262,9 @@ local function getWeaponTreeId(itemData): string?
 	return nil
 end
 
+local BOW_HIT_CONE_HALF_ANGLE = 5   -- 화살 판정 원뿔 반각 (도) — 거의 직선에 가까운 보정만
+local BOW_HIT_SCAN_RADIUS = 6       -- 발사 경로 주변 탐색 반경 (스터드)
+
 local function findAttackTargetByRay(player: Player, direction: Vector3, range: number, originOverride: Vector3?)
 	local char = player.Character
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -269,29 +272,80 @@ local function findAttackTargetByRay(player: Player, direction: Vector3, range: 
 
 	if direction.Magnitude <= 0.001 then return nil, nil end
 	local dirUnit = direction.Unit
-	local origin = hrp.Position + Vector3.new(0, 1.6, 0)
+	local origin = originOverride or (hrp.Position + Vector3.new(0, 1.6, 0))
 
+	-- 1차: 레이캐스트 직격
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = { char }
 
 	local result = workspace:Raycast(origin, dirUnit * range, params)
-	if not result or not result.Instance then
-		return nil, origin + (dirUnit * range)
+	if result and result.Instance then
+		local current = result.Instance
+		while current and current ~= workspace do
+			if current:IsA("Model") then
+				local instanceId = current:GetAttribute("InstanceId")
+				if instanceId then
+					return instanceId, result.Position
+				end
+			end
+			current = current.Parent
+		end
 	end
 
-	local current = result.Instance
-	while current and current ~= workspace do
-		if current:IsA("Model") then
-			local instanceId = current:GetAttribute("InstanceId")
-			if instanceId then
-				return instanceId, result.Position
+	-- 2차: 레이 직격 실패 → 발사 경로 주변 원뿽 탐색 (널널한 판정)
+	local creaturesFolder = workspace:FindFirstChild("ActiveCreatures") or workspace:FindFirstChild("Creatures")
+	if not creaturesFolder then return nil, origin + (dirUnit * range) end
+
+	local overlap = OverlapParams.new()
+	overlap.FilterType = Enum.RaycastFilterType.Include
+	overlap.FilterDescendantsInstances = { creaturesFolder }
+
+	-- 발사 경로 중간 지점을 중심으로 탐색
+	local scanCenter = origin + dirUnit * math.min(range * 0.5, 60)
+	local scanRadius = math.max(range * 0.5, 30)
+	local parts = workspace:GetPartBoundsInRadius(scanCenter, scanRadius, overlap)
+
+	local bestId = nil
+	local bestScore = math.huge
+	local bestPos = nil
+	local seen = {}
+
+	for _, p in ipairs(parts) do
+		local model = p:FindFirstAncestorWhichIsA("Model")
+		if model then
+			local instanceId = model:GetAttribute("InstanceId")
+			if instanceId and not seen[instanceId] then
+				seen[instanceId] = true
+				local targetPos = (model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart")).Position
+				local toTarget = targetPos - origin
+				local dist = toTarget.Magnitude
+
+				if dist <= range + BOW_HIT_SCAN_RADIUS and dist > 0.1 then
+					-- 방향 각도 차이 계산
+					local dot = dirUnit:Dot(toTarget.Unit)
+					local angleDeg = math.deg(math.acos(math.clamp(dot, -1, 1)))
+
+					-- 각도가 원뿽 반각 이내이면 히트 후보
+					if angleDeg <= BOW_HIT_CONE_HALF_ANGLE then
+						-- 점수: 각도 * 거리 (작을수록 좋음)
+						local score = angleDeg * 2 + dist * 0.1
+						if score < bestScore then
+							bestScore = score
+							bestId = instanceId
+							bestPos = targetPos
+						end
+					end
+				end
 			end
 		end
-		current = current.Parent
 	end
 
-	return nil, result.Position
+	if bestId then
+		return bestId, bestPos
+	end
+
+	return nil, result and result.Position or (origin + (dirUnit * range))
 end
 
 --========================================

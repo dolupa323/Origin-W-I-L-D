@@ -72,12 +72,18 @@ MaterialAttributeData.ItemCategory = {
 	WOOD           = "HANDLE",
 	LOG            = "HANDLE",
 	PLANK          = "HANDLE",
+	PALM_LOG       = "HANDLE",
+	REED           = "HANDLE",
 	SMALL_BONE     = "HANDLE",
 	BONE           = "HANDLE",
 
 	-- Leather 카테고리 (가죽, 깃털)
-	LEATHER        = "LEATHER",
-	DODO_FEATHER   = "LEATHER",
+	LEATHER            = "LEATHER",
+	TROPICAL_LEATHER   = "LEATHER",
+	DODO_FEATHER       = "LEATHER",
+
+	-- Blade 추가 (열대 광석)
+	OBSIDIAN       = "BLADE",
 
 	-- 속성 미부여 (FIBER, RESIN, DURABLE_LEAF 등은 속성 없음)
 	-- FIBER       = nil (매핑 없으면 속성 부여 안 됨)

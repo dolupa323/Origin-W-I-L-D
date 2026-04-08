@@ -348,7 +348,7 @@ local function executeSingleTarget(player, skill, targetId, baseDamage, itemData
 end
 
 --- AOE 스킬 (회전 베기, 폭렬 사격)
-local function executeAOE(player, skill, targetId, baseDamage, itemData)
+local function executeAOE(player, skill, targetId, baseDamage, itemData, aimDirection)
 	local damageMult = getEffectValue(skill, "SKILL_DAMAGE_MULT")
 	if damageMult <= 0 then damageMult = 1.0 end
 	local aoeRadius = getEffectValue(skill, "SKILL_AOE_RADIUS")
@@ -377,6 +377,16 @@ local function executeAOE(player, skill, targetId, baseDamage, itemData)
 		local targetCreature = CreatureService.getCreatureRuntime(targetId)
 		if targetCreature and targetCreature.rootPart then
 			center = targetCreature.rootPart.Position
+		else
+			center = hrp.Position
+		end
+	elseif aimDirection and type(aimDirection) == "table" then
+		-- ★ 타겟 없을 때: 마우스 커서 방향으로 AOE 반경만큼 전방에 중심점 설정
+		local dirX = tonumber(aimDirection.x) or 0
+		local dirZ = tonumber(aimDirection.z) or 0
+		local dir = Vector3.new(dirX, 0, dirZ)
+		if dir.Magnitude > 0.01 then
+			center = hrp.Position + dir.Unit * math.min(aoeRadius, 15)
 		else
 			center = hrp.Position
 		end
@@ -529,6 +539,7 @@ local function handleUseSkill(player: Player, payload: any)
 	-- 1. payload 검증
 	local skillId = payload and payload.skillId
 	local targetId = payload and payload.targetId
+	local aimDirection = payload and payload.aimDirection  -- ★ 마우스 커서 방향 (클라이언트에서 전송)
 	if type(skillId) ~= "string" or skillId == "" then
 		return { success = false, errorCode = "BAD_REQUEST" }
 	end
@@ -669,7 +680,7 @@ local function handleUseSkill(player: Player, payload: any)
 			_, execResult = executeMultiHit(player, skill, targetId, baseDamage, itemData)
 		elseif hasAOE then
 			-- 순수 AOE (폭렬 사격 등) — 타겟 없어도 주변 적에게 피해
-			_, execResult = executeAOE(player, skill, targetId, baseDamage, itemData)
+			_, execResult = executeAOE(player, skill, targetId, baseDamage, itemData, aimDirection)
 		elseif targetId and targetId ~= "" then
 			-- 단일 타겟 — 유효한 타겟이 있을 때만 데미지
 			_, execResult = executeSingleTarget(player, skill, targetId, baseDamage, itemData)
