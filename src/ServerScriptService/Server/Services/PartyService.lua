@@ -340,72 +340,188 @@ function PartyService._recallPal(userId: number)
 	end
 end
 
---- 팰 모델 생성
+--- 팰 모델 생성 (CreatureData 기반 + 실제 모델 Clone)
 function PartyService._createPalModel(palData, position: Vector3, ownerUserId: number)
-	local creatureFolder = workspace:FindFirstChild("Creatures") or Instance.new("Folder", workspace)
-	creatureFolder.Name = "Creatures"
-	
-	local PalDataModule = require(ReplicatedStorage.Data.PalData)
-	local palDef = PalDataModule[palData.creatureId]
-	if not palDef then return nil end
-	
-	local model = Instance.new("Model")
-	model.Name = "Pal_" .. palData.creatureId
-	
-	local rootPart = Instance.new("Part")
-	rootPart.Name = "HumanoidRootPart"
-	rootPart.Size = Vector3.new(2, 2, 2)
-	rootPart.Position = position + Vector3.new(0, 2, 0)
-	rootPart.BrickColor = BrickColor.new("Bright green") -- 소환된 팰은 초록
-	rootPart.Transparency = 0.3
-	rootPart.Anchored = false
-	rootPart.Parent = model
-	model.PrimaryPart = rootPart
-	
-	local humanoid = Instance.new("Humanoid")
-	humanoid.WalkSpeed = palData.stats.speed or 16
-	humanoid.MaxHealth = palData.stats.hp
-	humanoid.Health = palData.stats.hp
-	humanoid.Parent = model
-	
+	local creatureFolder = workspace:FindFirstChild("Creatures")
+	if not creatureFolder then
+		creatureFolder = Instance.new("Folder")
+		creatureFolder.Name = "Creatures"
+		creatureFolder.Parent = workspace
+	end
+
+	-- CreatureData에서 크리처 정의 조회
+	local CreatureDataModule = require(ReplicatedStorage.Data.CreatureData)
+	local cData = nil
+	for _, entry in ipairs(CreatureDataModule) do
+		if entry.id == palData.creatureId then
+			cData = entry
+			break
+		end
+	end
+	if not cData then
+		warn("[PartyService] CreatureData not found:", palData.creatureId)
+		return nil
+	end
+
+	-- 모델 템플릿 검색 (Assets 폴더에서)
+	local modelName = cData.modelName or palData.creatureId
+	local template = nil
+	local assets = ReplicatedStorage:FindFirstChild("Assets")
+	if assets then
+		local searchFolders = {
+			assets:FindFirstChild("CreatureModels"),
+			assets:FindFirstChild("Creatures"),
+			assets:FindFirstChild("Models"),
+			assets,
+		}
+		for _, folder in ipairs(searchFolders) do
+			if folder then
+				local found = folder:FindFirstChild(modelName, true)
+				if found and found:IsA("Model") then
+					template = found
+					break
+				end
+			end
+		end
+	end
+
+	local model
+	local rootPart
+	local humanoid
+
+	if template then
+		model = template:Clone()
+		model.Name = "Pal_" .. palData.creatureId
+
+		-- 불필요한 스크립트/사운드/GUI 제거
+		for _, child in ipairs(model:GetDescendants()) do
+			if child:IsA("Script") or child:IsA("LocalScript") or child:IsA("ModuleScript")
+				or child:IsA("Sound") or child:IsA("BillboardGui") or child:IsA("SurfaceGui") then
+				child:Destroy()
+			end
+		end
+
+		-- HumanoidRootPart 확인/생성
+		rootPart = model:FindFirstChild("HumanoidRootPart")
+		if not rootPart then
+			local cf = model:GetBoundingBox()
+			rootPart = Instance.new("Part")
+			rootPart.Name = "HumanoidRootPart"
+			rootPart.Size = Vector3.new(2, 2, 2)
+			rootPart.Transparency = 1
+			rootPart.CanCollide = false
+			rootPart.Position = cf.Position
+			rootPart.Parent = model
+
+			for _, part in ipairs(model:GetDescendants()) do
+				if part:IsA("BasePart") and part ~= rootPart then
+					part.Anchored = false
+					local hasConstraint = false
+					for _, c in ipairs(part:GetChildren()) do
+						if c:IsA("WeldConstraint") or c:IsA("Weld") or c:IsA("Motor6D") then
+							hasConstraint = true
+							break
+						end
+					end
+					if not hasConstraint then
+						local weld = Instance.new("WeldConstraint")
+						weld.Part0 = rootPart
+						weld.Part1 = part
+						weld.Parent = rootPart
+					end
+				end
+			end
+		end
+
+		-- 모든 파트 설정
+		for _, part in ipairs(model:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.Anchored = false
+				part.CollisionGroup = "Creatures"
+			end
+		end
+
+		model.PrimaryPart = rootPart
+		model:PivotTo(CFrame.new(position + Vector3.new(0, 3, 0)))
+
+		-- Humanoid 설정
+		humanoid = model:FindFirstChildOfClass("Humanoid")
+		if not humanoid then
+			humanoid = Instance.new("Humanoid")
+			humanoid.Parent = model
+		end
+		humanoid.WalkSpeed = palData.stats and palData.stats.speed or cData.walkSpeed or 16
+		humanoid.MaxHealth = palData.stats and palData.stats.hp or cData.maxHealth or 100
+		humanoid.Health = humanoid.MaxHealth
+		humanoid.MaxSlopeAngle = 89
+		humanoid.AutoJumpEnabled = true
+		humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+		humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+		humanoid.UseJumpPower = true
+		humanoid.JumpPower = 40
+	else
+		-- 폴백: 모델 템플릿 없을 경우 임시 모델
+		warn("[PartyService] Model template not found:", modelName, "- using fallback")
+		model = Instance.new("Model")
+		model.Name = "Pal_" .. palData.creatureId
+
+		rootPart = Instance.new("Part")
+		rootPart.Name = "HumanoidRootPart"
+		rootPart.Size = Vector3.new(2, 2, 2)
+		rootPart.Position = position + Vector3.new(0, 2, 0)
+		rootPart.BrickColor = BrickColor.new("Bright green")
+		rootPart.Transparency = 0.3
+		rootPart.Anchored = false
+		rootPart.CanCollide = false
+		rootPart.Parent = model
+		model.PrimaryPart = rootPart
+
+		humanoid = Instance.new("Humanoid")
+		humanoid.WalkSpeed = palData.stats and palData.stats.speed or 16
+		humanoid.MaxHealth = palData.stats and palData.stats.hp or 100
+		humanoid.Health = humanoid.MaxHealth
+		humanoid.Parent = model
+	end
+
+	-- 팰 속성 설정
+	rootPart:SetAttribute("IsPal", true)
+	rootPart:SetAttribute("OwnerUserId", ownerUserId)
+	model:SetAttribute("CreatureId", palData.creatureId)
+	model:SetAttribute("State", "FOLLOW")
+
 	-- 이름표 (팰 닉네임 표시)
 	local bg = Instance.new("BillboardGui")
 	bg.Size = UDim2.new(0, 120, 0, 40)
 	bg.StudsOffset = Vector3.new(0, 3, 0)
-	bg.AlwaysOnTop = true -- 파트 몸체에 안 묻히게 수정
+	bg.AlwaysOnTop = true
 	bg.MaxDistance = 60
 	bg.Parent = rootPart
-	
-	-- 배경 (이름표 전체 테마 레이아웃)
+
 	local mainFrame = Instance.new("Frame")
 	mainFrame.Size = UDim2.new(1, 0, 0.4, 0)
 	mainFrame.Position = UDim2.new(0, 0, 0.3, 0)
 	mainFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	mainFrame.BackgroundTransparency = 0.95 -- 유리 수준으로 매우 투명하게 변경
+	mainFrame.BackgroundTransparency = 0.95
 	mainFrame.BorderSizePixel = 0
 	mainFrame.Parent = bg
-	
+
 	local cornerMain = Instance.new("UICorner")
 	cornerMain.CornerRadius = UDim.new(0, 4)
 	cornerMain.Parent = mainFrame
-	
+
 	local txt = Instance.new("TextLabel")
 	txt.Size = UDim2.new(1, 0, 1, 0)
 	txt.BackgroundTransparency = 1
-	txt.Text = string.format("🐾 %s (Lv.%d)", palData.nickname, palData.level)
-	txt.TextColor3 = Color3.fromRGB(150, 255, 150) -- 부드러운 파스텔 연두색 유지
+	txt.Text = string.format("🐾 %s (Lv.%d)", palData.nickname or palData.creatureId, palData.level or 1)
+	txt.TextColor3 = Color3.fromRGB(150, 255, 150)
 	txt.TextTransparency = 0.2
 	txt.TextStrokeTransparency = 0.8
 	txt.Font = Enum.Font.GothamMedium
 	txt.TextSize = 10
 	txt.Parent = mainFrame
-	
-	-- 팰임을 표시하는 속성
-	rootPart:SetAttribute("IsPal", true)
-	rootPart:SetAttribute("OwnerUserId", ownerUserId)
-	
+
 	model.Parent = creatureFolder
-	
+
 	return model, rootPart, humanoid
 end
 

@@ -12,6 +12,7 @@ local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Balance = require(Shared.Config.Balance)
 local Data = ReplicatedStorage:WaitForChild("Data")
 local SkillTreeData = require(Data.SkillTreeData)
 
@@ -40,6 +41,11 @@ local KEY_LABELS = { "Q", "F", "V" }
 local COOLDOWN_COLOR = Color3.fromRGB(0, 0, 0)
 local BORDER_READY = Color3.fromRGB(80, 80, 70)
 
+local CAPTURE_KEY = "G"
+local CAPTURE_SCAN_RANGE = Balance and Balance.CAPTURE_RANGE or 30
+local CAPTURE_DISABLED_TRANSPARENCY = 0.7
+local CAPTURE_ACTIVE_COLOR = Color3.fromRGB(255, 200, 40) -- 활성화 시 보더 색 (노란색)
+
 -- 3-bar 합성 6각형 상수 (HarvestUI와 동일 방식)
 local HEX_BAR_ROTATIONS = { 30, 90, 150 }
 local HEX_BAR_W_RATIO = 0.88
@@ -51,6 +57,10 @@ local HEX_BAR_H_RATIO = 0.50
 local barFrame
 local slotRefs = {}
 local updateConnection
+local captureRef = nil  -- 포획 버튼 참조
+local captureTarget = nil -- 현재 포획 가능한 크리처 모델
+local captureBlinkTweens = {} -- 깜빡임 트윈 참조
+local NetClient = require(Client.NetClient)
 
 --========================================
 -- Icon Helper
@@ -252,6 +262,221 @@ local function createBar(parent)
 			wasOnCooldown = false,
 		}
 	end
+
+	--========================================
+	-- 포획 버튼 (스킬 클러스터 좌측)
+	--========================================
+	do
+		local capturePos = positions[1] -- 좌상 슬롯 기준
+		local capX = capturePos.x - (HEX_SIZE + HEX_GAP) -- 좌측으로 한 칸
+		local capY = capturePos.y
+
+		local capFrame = Instance.new("TextButton")
+		capFrame.Name = "CaptureButton"
+		capFrame.Size = UDim2.new(0, HEX_SIZE, 0, HEX_SIZE)
+		capFrame.Position = UDim2.new(0, capX, 0, capY)
+		capFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+		capFrame.BackgroundTransparency = 1
+		capFrame.Text = ""
+		capFrame.AutoButtonColor = false
+		capFrame.ZIndex = 0
+		capFrame.Visible = false
+		capFrame.Parent = barFrame
+
+		-- [층1] 보더
+		local capStrokeBars = _createHexShape(capFrame, HEX_SIZE, C.BORDER_DIM, 0, 1, 0)
+
+		-- [층1.5] 틈 채움
+		do
+			local p = 3
+			local bw = HEX_SIZE * HEX_BAR_W_RATIO - p * 2
+			local bh = HEX_SIZE * HEX_BAR_H_RATIO - p
+			for _, rot in ipairs(HEX_BAR_ROTATIONS) do
+				local bar = Instance.new("Frame")
+				bar.Size = UDim2.new(0, bw, 0, bh)
+				bar.Position = UDim2.fromScale(0.5, 0.5)
+				bar.AnchorPoint = Vector2.new(0.5, 0.5)
+				bar.Rotation = rot
+				bar.BackgroundColor3 = C.BG_PANEL
+				bar.BackgroundTransparency = 0
+				bar.BorderSizePixel = 0
+				bar.ZIndex = 1
+				bar.Parent = capFrame
+			end
+		end
+
+		-- [층2] 배경
+		local capBgBars = _createHexShape(capFrame, HEX_SIZE, C.BG_PANEL, 0, 2, 3)
+
+		-- [층3] 아이콘 (TAMING_TIER)
+		local capIcon = Instance.new("ImageLabel")
+		capIcon.Name = "Icon"
+		capIcon.Size = UDim2.new(0.5, 0, 0.5, 0)
+		capIcon.Position = UDim2.new(0.5, 0, 0.5, 0)
+		capIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+		capIcon.BackgroundTransparency = 1
+		capIcon.ScaleType = Enum.ScaleType.Fit
+		capIcon.ZIndex = 3
+		capIcon.Parent = capFrame
+		local tamingImg = _getIconImage("TAMING_TIER")
+		capIcon.Image = tamingImg or ""
+
+		-- [층6] 키 라벨
+		local capKeyLabel = Utils.mkLabel({
+			name = "KeyLabel",
+			size = UDim2.new(0, 24, 0, 24),
+			pos = UDim2.new(0.15, 0, 0.12, 0),
+			text = CAPTURE_KEY,
+			ts = isMobile and 15 or 13,
+			font = F.TITLE,
+			color = C.WHITE,
+			st = 0,
+			ax = Enum.TextXAlignment.Left,
+			ay = Enum.TextYAlignment.Top,
+			z = 6,
+			parent = capFrame,
+		})
+		if isMobile then capKeyLabel.Visible = false end
+
+		-- 클릭 이벤트
+		capFrame.MouseButton1Click:Connect(function()
+			ActiveSkillBarUI._tryCapture()
+		end)
+
+		captureRef = {
+			frame = capFrame,
+			icon = capIcon,
+			strokeBars = capStrokeBars,
+			bgBars = capBgBars,
+			keyLabel = capKeyLabel,
+			active = false,
+		}
+	end
+end
+
+--========================================
+-- Capture: 포획 가능 크리처 탐색
+--========================================
+local function _getUnlockedCreatureSet()
+	local unlocked = SkillController.getUnlockedSkills()
+	local tamingSkills = {}
+	for skillId, _ in pairs(unlocked) do
+		if tostring(skillId):sub(1, 7) == "TAMING_" then
+			table.insert(tamingSkills, skillId)
+		end
+	end
+	if #tamingSkills == 0 then return nil end
+	return SkillTreeData.GetUnlockedCreatures(tamingSkills)
+end
+
+local function _findCaptureTarget()
+	local char = player.Character
+	if not char then return nil end
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return nil end
+
+	local creatureSet = _getUnlockedCreatureSet()
+	if not creatureSet then return nil end
+
+	local creaturesFolder = workspace:FindFirstChild("ActiveCreatures") or workspace:FindFirstChild("Creatures")
+	if not creaturesFolder then return nil end
+
+	local bestModel = nil
+	local bestDist = CAPTURE_SCAN_RANGE + 1
+
+	for _, model in ipairs(creaturesFolder:GetChildren()) do
+		if not model:IsA("Model") then continue end
+		local state = model:GetAttribute("State")
+		local isDead = model:GetAttribute("IsDead")
+		local hasCollapsed = model:GetAttribute("HasCollapsed")
+		local creatureId = model:GetAttribute("CreatureId")
+
+		local captureAttempted = model:GetAttribute("CaptureAttempted")
+
+		-- 쓰러짐 상태 + 실제 사망 아님 + 포획 미시도 + 포획 해금된 크리처
+		if state == "DEAD" and hasCollapsed == true and isDead ~= true and captureAttempted ~= true and creatureId then
+			if creatureSet[creatureId] then
+				local rootPart = model.PrimaryPart or model:FindFirstChild("HumanoidRootPart")
+				if rootPart then
+					local dist = (rootPart.Position - hrp.Position).Magnitude
+					if dist <= CAPTURE_SCAN_RANGE and dist < bestDist then
+						bestDist = dist
+						bestModel = model
+					end
+				end
+			end
+		end
+	end
+
+	return bestModel
+end
+
+local function _updateCaptureButton()
+	if not captureRef then return end
+
+	-- 포획 스킬 하나도 없으면 아예 숨김
+	local creatureSet = _getUnlockedCreatureSet()
+	if not creatureSet then
+		captureRef.frame.Visible = false
+		captureRef.active = false
+		captureTarget = nil
+		return
+	end
+
+	-- 쓰러진 포획 가능 크리처 탐색
+	local target = _findCaptureTarget()
+	captureTarget = target
+
+	if target then
+		-- 활성화 (노란색 깜빡임)
+		captureRef.frame.Visible = true
+		captureRef.active = true
+		captureRef.icon.ImageTransparency = 0
+		_setHexBarsTransparency(captureRef.bgBars, 0)
+		-- 깜빡임 트윈 시작 (이미 실행 중이면 스킵)
+		if #captureBlinkTweens == 0 then
+			for _, bar in ipairs(captureRef.strokeBars) do
+				bar.BackgroundColor3 = CAPTURE_ACTIVE_COLOR
+				local tw = TweenService:Create(bar, TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {
+					BackgroundColor3 = C.BORDER_DIM,
+				})
+				tw:Play()
+				table.insert(captureBlinkTweens, tw)
+			end
+		end
+	else
+		-- 비활성 (회색) + 깜빡임 정지
+		captureRef.frame.Visible = true
+		captureRef.active = false
+		captureRef.icon.ImageTransparency = CAPTURE_DISABLED_TRANSPARENCY
+		for _, tw in ipairs(captureBlinkTweens) do
+			tw:Cancel()
+		end
+		captureBlinkTweens = {}
+		_setHexBarsColor(captureRef.strokeBars, C.BORDER_DIM)
+		_setHexBarsTransparency(captureRef.bgBars, 0.3)
+	end
+end
+
+function ActiveSkillBarUI._tryCapture()
+	if not captureRef or not captureRef.active then return end
+	if not captureTarget then return end
+
+	local instanceId = captureTarget:GetAttribute("InstanceId")
+	if not instanceId then return end
+
+	-- 서버에 포획 시도 요청
+	local ok, result = NetClient.Request("Capture.Attempt.Request", {
+		targetId = instanceId,
+	})
+
+	if ok and result then
+		if result.success then
+			-- 포획 성공 시 버튼 즉시 비활성화
+			captureTarget = nil
+			_updateCaptureButton()
+		end
+	end
 end
 
 --========================================
@@ -328,11 +553,23 @@ function ActiveSkillBarUI.Init(parent)
 
 	SkillController.onSkillDataUpdated(function()
 		refreshSlots()
+		_updateCaptureButton()
 	end)
 
 	SkillController.onCooldownUpdated(function()
 		refreshSlots()
 	end)
+
+	-- G 키: 포획 시도
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed then return end
+		if input.KeyCode == Enum.KeyCode.G then
+			ActiveSkillBarUI._tryCapture()
+		end
+	end)
+
+	-- 포획 버튼 상태 업데이트 (0.2초 간격)
+	local lastCaptureScan = 0
 
 	updateConnection = RunService.Heartbeat:Connect(function()
 		local slots = SkillController.getActiveSkillSlots()
@@ -362,9 +599,17 @@ function ActiveSkillBarUI.Init(parent)
 				end
 			end
 		end
+
+		-- ★ 포획 버튼 상태 업데이트 (0.2초 간격으로 부하 절감)
+		local now = tick()
+		if now - lastCaptureScan >= 0.2 then
+			lastCaptureScan = now
+			_updateCaptureButton()
+		end
 	end)
 
 	task.defer(refreshSlots)
+	task.defer(_updateCaptureButton)
 end
 
 function ActiveSkillBarUI.SetVisible(visible: boolean)

@@ -1040,6 +1040,9 @@ function HarvestService.registerCorpseNode(creatureId: string, position: Vector3
 	-- 클라이언트 ChildRemoved 처리 대기 → 클라이언트 애니메이션 루프 정지
 	task.wait(0.3)
 
+	-- ★ 이미 쓰러진(HasCollapsed) 크리처는 사망 포즈가 이미 고정되어 있으므로 데스 애니 재생 스킵
+	local hasCollapsed = model:GetAttribute("HasCollapsed") == true
+
 	-- 사망 애니메이션 재생 (Humanoid + Animator 유지)
 	local humanoid = model:FindFirstChildOfClass("Humanoid")
 	local deathTrack = nil
@@ -1055,15 +1058,72 @@ function HarvestService.registerCorpseNode(creatureId: string, position: Vector3
 		humanoid.MaxHealth = 100
 		humanoid.Health = 1
 
-		-- 기존 애니메이션 전부 중지 (fade 적용)
-		local animator = humanoid:FindFirstChildOfClass("Animator")
-		if not animator then
-			animator = Instance.new("Animator")
-			animator.Parent = humanoid
-		end
-		for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-			track:Stop(0.2)
-		end
+		if hasCollapsed then
+			-- ★ 쓰러진 크리처: 클라이언트 애니메이션은 모델 이동으로 소실되므로
+			-- 서버에서 데스 애니를 다시 로드 → 95% 지점으로 즉시 점프 → 프리즈
+			local animator = humanoid:FindFirstChildOfClass("Animator")
+			if not animator then
+				animator = Instance.new("Animator")
+				animator.Parent = humanoid
+			end
+
+			-- 데스 애니메이션 로드 (기존 트랙은 아직 유지 — 포즈 보존)
+			local animSet = CreatureAnimationIds[creatureId] or CreatureAnimationIds.DEFAULT or {}
+			local deathAnimName = animSet.DEATH or (creatureId .. "_Death")
+			local animObj = nil
+			local assetsFolder = ReplicatedStorage:FindFirstChild("Assets")
+			if assetsFolder then
+				local animFolder = assetsFolder:FindFirstChild("Animations")
+				if animFolder then
+					animObj = animFolder:FindFirstChild(deathAnimName, true)
+				end
+			end
+			if not animObj then
+				animObj = ReplicatedStorage:FindFirstChild(deathAnimName, true)
+			end
+
+			if animObj and animObj:IsA("Animation") then
+				local collapseTrack = animator:LoadAnimation(animObj)
+				collapseTrack.Looped = false
+				collapseTrack.Priority = Enum.AnimationPriority.Action4
+
+				-- ★ Length 로딩 대기 (Play 전 — 기존 트랙이 포즈를 유지하는 동안)
+				local waited = 0
+				while collapseTrack.Length <= 0 and waited < 2 do
+					task.wait(0.1)
+					waited = waited + 0.1
+				end
+
+				-- ★ 기존 트랙 정지 + 새 트랙 Play + 95% 점프 + 프리즈를 한 프레임에 수행
+				-- → 일어서는 모션 없이 즉시 눕기 포즈 적용
+				for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+					track:Stop(0)
+				end
+				collapseTrack:Play(0)
+				if collapseTrack.Length > 0 then
+					collapseTrack.TimePosition = collapseTrack.Length * 0.95
+				end
+				collapseTrack:AdjustSpeed(0)
+				deathTrack = collapseTrack
+				print(string.format("[HarvestService] Collapsed death anim frozen: %s (%.2fs → %.2fs)", deathAnimName, collapseTrack.Length, collapseTrack.TimePosition))
+			else
+				-- 애니메이션 못 찾을 경우 기존 트랙만 정지
+				for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+					track:Stop(0)
+				end
+			end
+			-- PlatformStand 설정하여 물리 간섭 제거
+			humanoid.PlatformStand = true
+		else
+			-- 기존 애니메이션 전부 중지 (fade 적용)
+			local animator = humanoid:FindFirstChildOfClass("Animator")
+			if not animator then
+				animator = Instance.new("Animator")
+				animator.Parent = humanoid
+			end
+			for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+				track:Stop(0.2)
+			end
 
 		-- 데스 애니메이션 검색 (CreatureAnimationIds 우선, 폴백으로 creatureId_Death)
 		local animSet = CreatureAnimationIds[creatureId] or CreatureAnimationIds.DEFAULT or {}
@@ -1107,6 +1167,7 @@ function HarvestService.registerCorpseNode(creatureId: string, position: Vector3
 				tostring(animObj), 
 				animObj and animObj.ClassName or "nil"))
 		end
+		end -- hasCollapsed else end
 	end
 
 	local rootPart = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
@@ -1164,7 +1225,11 @@ function HarvestService.registerCorpseNode(creatureId: string, position: Vector3
 	snapToGround()
 
 	-- 데스 애니메이션: 재생 → 프리즈
-	if deathTrack then
+	if hasCollapsed and deathTrack then
+		-- ★ 쓰러진 크리처: 이미 95%에서 프리즈 완료 → 포즈 반영 후 지면 재스냅만 수행
+		task.wait(0.1) -- Motor6D 위치 반영 대기
+		snapToGround()
+	elseif deathTrack then
 		task.spawn(function()
 			-- Length가 비동기 로딩일 수 있으므로 0이면 대기
 			local waited = 0

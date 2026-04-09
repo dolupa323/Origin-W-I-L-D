@@ -88,6 +88,8 @@ Protocol.Commands = {
 	["Palbox.List.Request"] = true,            -- 보관함 목록 조회
 	["Palbox.Rename.Request"] = true,          -- 팰 닉네임 변경
 	["Palbox.Release.Request"] = true,         -- 팰 해방 (삭제)
+	["Palbox.QuickSummon.Request"] = true,     -- 동물관리 탭 원클릭 소환/회수
+	["Palbox.QuickRelease.Request"] = true,    -- 동물관리 탭 풀어주기
 	
 	-- Party 명령어 (Phase 5-4)
 	["Party.List.Request"] = true,             -- 파티 목록 조회

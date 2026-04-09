@@ -1,7 +1,7 @@
 -- SkillTreeData.lua
--- 스킬 트리 데이터 정의 (전투 택1 + 건축 자동해금)
+-- 스킬 트리 데이터 정의 (전투 택1 + 건축/포획 자동해금)
 -- 전투 계열: SWORD, BOW, AXE (택 1)
--- 건축 계열: BUILD (SP 불요, 레벨 자동 해금)
+-- 비전투 계열: BUILD, TAMING (SP 불요, 레벨 자동 해금)
 
 local SkillTreeData = {}
 
@@ -13,6 +13,7 @@ SkillTreeData.TABS = {
 	{ id = "BOW",   name = "궁술 연마", isCombat = true },
 	{ id = "AXE",   name = "도끼 연마", isCombat = true },
 	{ id = "BUILD", name = "건축 연구", isCombat = false },
+	{ id = "TAMING", name = "포획 연구", isCombat = false },
 }
 
 -- 전투 계열 ID 목록 (택1 잠금용)
@@ -451,12 +452,88 @@ SkillTreeData.BUILD = {
 }
 
 --========================================
+-- 포획 연구 (TAMING) — SP 필요, 레벨 도달 + SP 투자
+--========================================
+SkillTreeData.TAMING = {
+	{
+		id = "TAMING_T1",
+		name = "초급 포획",
+		type = "PASSIVE",
+		icon = "TAMING_TIER",
+		reqLevel = 10,
+		spCost = 2,
+		prereqs = {},
+		effects = {
+			{ stat = "TAMING_RATE_BONUS", value = 0.02 },
+		},
+		unlockCreatures = { "DODO", "COMPY" },
+		description = "포획 확률 +2%\n도도새, 콤프소그나투스 포획 해금",
+	},
+	{
+		id = "TAMING_T2",
+		name = "중급 포획",
+		type = "PASSIVE",
+		icon = "TAMING_TIER",
+		reqLevel = 20,
+		spCost = 3,
+		prereqs = { "TAMING_T1" },
+		effects = {
+			{ stat = "TAMING_RATE_BONUS", value = 0.03 },
+		},
+		unlockCreatures = { "RAPTOR" },
+		description = "포획 확률 +3%\n랩터 포획 해금",
+	},
+	{
+		id = "TAMING_T3",
+		name = "고급 포획",
+		type = "PASSIVE",
+		icon = "TAMING_TIER",
+		reqLevel = 30,
+		spCost = 4,
+		prereqs = { "TAMING_T2" },
+		effects = {
+			{ stat = "TAMING_RATE_BONUS", value = 0.04 },
+		},
+		unlockCreatures = { "PARASAUR", "TRICERATOPS" },
+		description = "포획 확률 +4%\n파라사우롤로푸스, 트리케라톱스 포획 해금",
+	},
+	{
+		id = "TAMING_T4",
+		name = "전문 포획",
+		type = "PASSIVE",
+		icon = "TAMING_TIER",
+		reqLevel = 40,
+		spCost = 4,
+		prereqs = { "TAMING_T3" },
+		effects = {
+			{ stat = "TAMING_RATE_BONUS", value = 0.05 },
+		},
+		unlockCreatures = {},
+		description = "포획 확률 +5%\n(추후 확장 패치 예정)",
+	},
+	{
+		id = "TAMING_T5",
+		name = "마스터 포획",
+		type = "PASSIVE",
+		icon = "TAMING_TIER",
+		reqLevel = 50,
+		spCost = 5,
+		prereqs = { "TAMING_T4" },
+		effects = {
+			{ stat = "TAMING_RATE_BONUS", value = 0.06 },
+		},
+		unlockCreatures = {},
+		description = "포획 확률 +6%\n(추후 확장 패치 예정)",
+	},
+}
+
+--========================================
 -- 유틸리티 함수
 --========================================
 
 --- 스킬 ID로 스킬 데이터 조회
 function SkillTreeData.GetSkill(skillId: string)
-	for _, treeId in ipairs({ "SWORD", "BOW", "AXE", "BUILD" }) do
+	for _, treeId in ipairs({ "SWORD", "BOW", "AXE", "BUILD", "TAMING" }) do
 		local tree = SkillTreeData[treeId]
 		if tree then
 			for _, skill in ipairs(tree) do
@@ -482,7 +559,7 @@ end
 
 --- 스킬 ID가 속한 트리 ID 반환
 function SkillTreeData.GetTreeIdForSkill(skillId: string): string?
-	for _, treeId in ipairs({ "SWORD", "BOW", "AXE", "BUILD" }) do
+	for _, treeId in ipairs({ "SWORD", "BOW", "AXE", "BUILD", "TAMING" }) do
 		local tree = SkillTreeData[treeId]
 		if tree then
 			for _, skill in ipairs(tree) do
@@ -503,6 +580,38 @@ function SkillTreeData.IsCombatTree(treeId: string): boolean
 		end
 	end
 	return false
+end
+
+--- 학습된 스킬 목록으로 포획 가능한 크리처 ID 집합 반환
+function SkillTreeData.GetUnlockedCreatures(learnedSkills: {string}): {[string]: boolean}
+	local set = {}
+	for _, skillId in ipairs(learnedSkills) do
+		for _, skill in ipairs(SkillTreeData.TAMING) do
+			if skill.id == skillId and skill.unlockCreatures then
+				for _, creatureId in ipairs(skill.unlockCreatures) do
+					set[creatureId] = true
+				end
+			end
+		end
+	end
+	return set
+end
+
+--- 학습된 스킬 목록으로 포획 확률 보너스 합산 반환
+function SkillTreeData.GetTamingRateBonus(learnedSkills: {string}): number
+	local bonus = 0
+	for _, skillId in ipairs(learnedSkills) do
+		for _, skill in ipairs(SkillTreeData.TAMING) do
+			if skill.id == skillId and skill.effects then
+				for _, eff in ipairs(skill.effects) do
+					if eff.stat == "TAMING_RATE_BONUS" then
+						bonus = bonus + eff.value
+					end
+				end
+			end
+		end
+	end
+	return bonus
 end
 
 return SkillTreeData

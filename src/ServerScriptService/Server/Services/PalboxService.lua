@@ -38,10 +38,26 @@ function PalboxService.Init(_NetController, _DataService, _SaveService)
 	DataService = _DataService
 	SaveService = _SaveService
 	
-	-- 플레이어 로그인 시 팰 데이터 로드
+	-- 플레이어 로그인 시 팰 데이터 로드 (SaveService 로드 완료 대기)
 	Players.PlayerAdded:Connect(function(player)
+		-- SaveService가 DataStore에서 데이터를 로드할 때까지 대기
+		if not player:GetAttribute("DataLoaded") then
+			player:GetAttributeChangedSignal("DataLoaded"):Wait()
+		end
 		PalboxService._loadPlayerPals(player)
 	end)
+
+	-- 이미 접속해 있는 플레이어 처리
+	for _, player in ipairs(Players:GetPlayers()) do
+		task.spawn(function()
+			if not player:GetAttribute("DataLoaded") then
+				player:GetAttributeChangedSignal("DataLoaded"):Wait()
+			end
+			if not playerPalboxes[player.UserId] then
+				PalboxService._loadPlayerPals(player)
+			end
+		end)
+	end
 	
 	print("[PalboxService] Initialized")
 end
@@ -67,6 +83,14 @@ function PalboxService.addPal(userId: number, palData: any): boolean
 	
 	-- 등록
 	palbox[palData.uid] = palData
+	
+	-- 즉시 SaveService에 동기화
+	if SaveService and SaveService.updatePlayerState then
+		SaveService.updatePlayerState(userId, function(state)
+			state.palbox = palbox
+			return state
+		end)
+	end
 	
 	print(string.format("[PalboxService] Added pal %s (%s) for player %d", palData.uid, palData.creatureId, userId))
 	
@@ -99,6 +123,14 @@ function PalboxService.removePal(userId: number, palUID: string): boolean
 	end
 	
 	palbox[palUID] = nil
+	
+	-- 즉시 SaveService에 동기화
+	if SaveService and SaveService.updatePlayerState then
+		SaveService.updatePlayerState(userId, function(state)
+			state.palbox = palbox
+			return state
+		end)
+	end
 	
 	print(string.format("[PalboxService] Removed pal %s for player %d", palUID, userId))
 	
@@ -299,7 +331,7 @@ local function handleListRequest(player: Player, _payload)
 	local palList = {}
 	for uid, pal in pairs(palbox) do
 		table.insert(palList, {
-			uid = uid,
+			palUID = uid,
 			creatureId = pal.creatureId,
 			nickname = pal.nickname,
 			level = pal.level,
@@ -351,11 +383,112 @@ local function handleReleaseRequest(player: Player, payload)
 	return { success = true }
 end
 
+-- 동물 관리 탭 전용: 원클릭 소환 (파티 추가 + 소환 자동 처리)
+local function handleQuickSummonRequest(player: Player, payload)
+	local palUID = payload.palUID
+	if not palUID then
+		return { success = false, errorCode = Enums.ErrorCode.BAD_REQUEST }
+	end
+
+	local userId = player.UserId
+	local pal = PalboxService.getPal(userId, palUID)
+	if not pal then
+		return { success = false, errorCode = Enums.ErrorCode.NOT_FOUND }
+	end
+
+	-- PartyService 참조
+	local PartyService = require(game:GetService("ServerScriptService").Server.Services.PartyService)
+
+	-- 이미 소환 중이면 회수
+	if pal.state == Enums.PalState.SUMMONED then
+		PartyService._recallPal(userId)
+		-- 파티에서도 제거
+		PartyService.removeFromParty(userId, palUID)
+		return { success = true, data = { action = "RECALLED" } }
+	end
+
+	-- 기존 소환 중인 팰이 있으면 먼저 회수
+	PartyService._recallPal(userId)
+
+	-- 파티에 추가 (이미 있으면 무시)
+	if pal.state == Enums.PalState.STORED then
+		local addOk, addErr = PartyService.addToParty(userId, palUID)
+		if not addOk and addErr ~= Enums.ErrorCode.PAL_IN_PARTY then
+			return { success = false, errorCode = addErr or "PARTY_ADD_FAILED" }
+		end
+	end
+
+	-- 파티에서 슬롯 번호 찾기
+	local partySlots = PartyService.getParty(userId)
+	if not partySlots then
+		return { success = false, errorCode = "NO_PARTY" }
+	end
+
+	local targetSlot
+	for slot, uid in pairs(partySlots) do
+		if uid == palUID then
+			targetSlot = slot
+			break
+		end
+	end
+
+	if not targetSlot then
+		return { success = false, errorCode = "NOT_IN_PARTY" }
+	end
+
+	-- 소환
+	local summonOk, summonErr = PartyService.summon(userId, targetSlot)
+	if not summonOk then
+		return { success = false, errorCode = summonErr or "SUMMON_FAILED" }
+	end
+
+	return { success = true, data = { action = "SUMMONED" } }
+end
+
+-- 동물 관리 탭 전용: 풀어주기 (소환 중이면 회수 후 릴리즈)
+local function handleQuickReleaseRequest(player: Player, payload)
+	local palUID = payload.palUID
+	if not palUID then
+		return { success = false, errorCode = Enums.ErrorCode.BAD_REQUEST }
+	end
+
+	local userId = player.UserId
+	local pal = PalboxService.getPal(userId, palUID)
+	if not pal then
+		return { success = false, errorCode = Enums.ErrorCode.NOT_FOUND }
+	end
+
+	local PartyService = require(game:GetService("ServerScriptService").Server.Services.PartyService)
+
+	-- 소환 중이면 먼저 회수
+	if pal.state == Enums.PalState.SUMMONED then
+		PartyService._recallPal(userId)
+		task.wait(0.1)
+	end
+
+	-- 파티에 있으면 파티에서 제거
+	if pal.state == Enums.PalState.IN_PARTY or pal.state == Enums.PalState.STORED then
+		PartyService.removeFromParty(userId, palUID)
+	end
+
+	-- 상태를 STORED로 강제 복원 후 제거
+	PalboxService.updatePalState(userId, palUID, Enums.PalState.STORED)
+
+	local ok = PalboxService.removePal(userId, palUID)
+	if not ok then
+		return { success = false, errorCode = Enums.ErrorCode.INVALID_STATE }
+	end
+
+	return { success = true }
+end
+
 function PalboxService.GetHandlers()
 	return {
 		["Palbox.List.Request"] = handleListRequest,
 		["Palbox.Rename.Request"] = handleRenameRequest,
 		["Palbox.Release.Request"] = handleReleaseRequest,
+		["Palbox.QuickSummon.Request"] = handleQuickSummonRequest,
+		["Palbox.QuickRelease.Request"] = handleQuickReleaseRequest,
 	}
 end
 

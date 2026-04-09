@@ -122,7 +122,20 @@ local function processGatheringFacility(structureId: string, facilityData: any, 
 	local palInstance = PalboxService and PalboxService.getPal(ownerId, assignedPalUID)
 	if not palInstance then return end
 	
-	local palData = DataService and DataService.getById("PalData", palInstance.creatureId)
+	-- CreatureData에서 크리처 정의 조회 (workTypes 등)
+	local CreatureDataModule = require(game:GetService("ReplicatedStorage").Data.CreatureData)
+	local palData = nil
+	for _, entry in ipairs(CreatureDataModule) do
+		if entry.id == palInstance.creatureId then
+			palData = entry
+			break
+		end
+	end
+	-- palInstance 자체에 workTypes가 있으면 우선 사용
+	if palInstance.workTypes and #palInstance.workTypes > 0 then
+		palData = palData or {}
+		palData.workTypes = palInstance.workTypes
+	end
 	if not palData then return end
 	
 	-- [추가] 팰 유지비 체크 (Hunger, SAN)

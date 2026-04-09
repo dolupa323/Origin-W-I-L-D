@@ -579,6 +579,8 @@ function UIManager._onOpenInventory(startTab)
 	UIManager.refreshInventory()
 	if startTab == "CRAFT" then
 		UIManager.refreshPersonalCrafting(true)
+	elseif startTab == "ANIMAL" then
+		UIManager.refreshAnimalManagement()
 	end
 end
 
@@ -2314,6 +2316,11 @@ local function setupEventListeners()
 				UIManager.notify("🐾 " .. displayName .. " 펫이 재소환되었습니다!", Color3.fromRGB(100, 255, 150))
 			end
 		end)
+
+		-- 팰박스 업데이트 시 동물 관리 탭 자동 갱신
+		NetClient.On("Palbox.Updated", function(data)
+			UIManager.refreshAnimalManagement()
+		end)
 	end
 
 	-- Debuff Events
@@ -2554,6 +2561,17 @@ local function setupEventListeners()
 			UIManager.stopCraftingProgress()
 			UIManager.notify("제작이 취소되었습니다.", C.WHITE)
 		end)
+
+		-- 범용 서버 알림 메시지
+		NetClient.On("Notify.Message", function(data)
+			if data and data.text then
+				local color = C.WHITE
+				if data.color then
+					color = Color3.fromRGB(data.color.r or 255, data.color.g or 255, data.color.b or 255)
+				end
+				UIManager.notify(data.text, color)
+			end
+		end)
 	end
 
 	-- Drag & Drop global listeners
@@ -2746,5 +2764,59 @@ RunService.RenderStepped:Connect(function()
 		end
 	end
 end)
+
+----------------------------------------------------------------
+-- 동물 관리 (Animal Management)
+----------------------------------------------------------------
+
+--- 팰 박스 목록을 서버에서 가져와 UI 갱신
+function UIManager.refreshAnimalManagement()
+	local ok, data = NetClient.Request("Palbox.List.Request", {})
+	if ok and data then
+		local palList = data.pals or {}
+		InventoryUI.RefreshAnimalTab(palList)
+	else
+		InventoryUI.RefreshAnimalTab({})
+	end
+end
+
+--- 소환하기 / 회수하기 버튼 콜백
+function UIManager.onSummonPal()
+	local uid = InventoryUI.GetSelectedPalUID()
+	if not uid then
+		UIManager.notify("소환할 동물을 선택하세요.", Color3.fromRGB(255, 200, 80))
+		return
+	end
+
+	local ok, data = NetClient.Request("Palbox.QuickSummon.Request", { palUID = uid })
+	if ok and data then
+		local action = data.action
+		if action == "RECALLED" then
+			UIManager.notify("동물을 회수했습니다.", Color3.fromRGB(100, 200, 255))
+		else
+			UIManager.notify("동물을 소환했습니다!", Color3.fromRGB(100, 255, 180))
+		end
+	else
+		UIManager.notify("소환에 실패했습니다: " .. tostring(data or "UNKNOWN"), Color3.fromRGB(255, 100, 100))
+	end
+
+	UIManager.refreshAnimalManagement()
+end
+
+--- 풀어주기 버튼 콜백
+function UIManager.onReleasePal()
+	local uid = InventoryUI.GetSelectedPalUID()
+	if not uid then
+		UIManager.notify("풀어줄 동물을 선택하세요.", Color3.fromRGB(255, 200, 80))
+		return
+	end
+	local ok, data = NetClient.Request("Palbox.QuickRelease.Request", { palUID = uid })
+	if ok then
+		UIManager.notify("동물을 풀어주었습니다.", Color3.fromRGB(180, 180, 180))
+		UIManager.refreshAnimalManagement()
+	else
+		UIManager.notify("풀어주기에 실패했습니다: " .. tostring(data or "UNKNOWN"), Color3.fromRGB(255, 100, 100))
+	end
+end
 
 return UIManager

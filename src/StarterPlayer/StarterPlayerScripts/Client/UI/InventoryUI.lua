@@ -41,8 +41,20 @@ InventoryUI.Refs = {
 	},
 	TabBag = nil,
 	TabCraft = nil,
+	TabAnimal = nil,
 	CraftFrame = nil,
 	CraftGrid = nil,
+	AnimalFrame = nil,
+	Animal = {
+		PalList = nil,
+		Viewport = nil,
+		StatsFrame = nil,
+		NameLabel = nil,
+		NicknameLabel = nil,
+		BtnSummon = nil,
+		BtnRelease = nil,
+		SelectedPalUID = nil,
+	},
 }
 
 function InventoryUI.Init(parent, UIManager, isMobile)
@@ -103,6 +115,7 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	
 	InventoryUI.Refs.TabBag = Utils.mkBtn({text="INVENTORY [Tab]", size=UDim2.new(0, isSmall and 120 or 150, 0, isSmall and 32 or 35), bgT=1, font=F.TITLE, ts=TS_TAB, color=C.GOLD_SEL, parent=leftHeader})
 	InventoryUI.Refs.TabCraft = Utils.mkBtn({text="간이제작", size=UDim2.new(0, isSmall and 80 or 140, 0, isSmall and 32 or 35), bgT=1, font=F.TITLE, ts=TS_TAB, color=C.GRAY, parent=leftHeader})
+	InventoryUI.Refs.TabAnimal = Utils.mkBtn({text="동물 관리", size=UDim2.new(0, isSmall and 80 or 140, 0, isSmall and 32 or 35), bgT=1, font=F.TITLE, ts=TS_TAB, color=C.GRAY, parent=leftHeader})
 	
 	InventoryUI.Refs.WeightText = Utils.mkLabel({text="0 / 60", size=UDim2.new(0, isSmall and 60 or 80, 1, 0), ts=TS_SMALL, color=C.GRAY, parent=leftHeader})
 
@@ -123,6 +136,10 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	InventoryUI.Refs.TabCraft.MouseButton1Click:Connect(function() 
 		InventoryUI.SetTab("CRAFT")
 		if UIManager.refreshPersonalCrafting then UIManager.refreshPersonalCrafting(true) end
+	end)
+	InventoryUI.Refs.TabAnimal.MouseButton1Click:Connect(function()
+		InventoryUI.SetTab("ANIMAL")
+		if UIManager.refreshAnimalManagement then UIManager.refreshAnimalManagement() end
 	end)
 
 	-- [Content Area]
@@ -419,6 +436,99 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	
 	InventoryUI.Refs.CraftGrid = craftScroll
 	
+	--========================================
+	-- 동물 관리 탭 (AnimalFrame)
+	--========================================
+	local animalArea = Utils.mkFrame({name="AnimalFrame", size=UDim2.new(1, 0, 1, 0), bgT=1, vis=false, parent=content})
+	InventoryUI.Refs.AnimalFrame = animalArea
+
+	-- 좌측: 뷰포트 + 이름 + 스탯 영역
+	local animalLeftW = isSmall and 0.55 or 0.5
+	local animalLeft = Utils.mkFrame({name="AnimalLeft", size=UDim2.new(animalLeftW, -8, 1, 0), bgT=1, parent=animalArea})
+
+	-- 크리처 이름 (상단)
+	local anNameLabel = Utils.mkLabel({name="AnimalName", text="", size=UDim2.new(1, -16, 0, isSmall and 28 or 32), pos=UDim2.new(0, 8, 0, 4), ts=isSmall and 16 or 20, font=F.TITLE, color=C.GOLD, ax=Enum.TextXAlignment.Left, parent=animalLeft})
+	InventoryUI.Refs.Animal.NameLabel = anNameLabel
+
+	local anNickLabel = Utils.mkLabel({name="AnimalNick", text="", size=UDim2.new(1, -16, 0, isSmall and 18 or 22), pos=UDim2.new(0, 8, 0, isSmall and 30 or 34), ts=isSmall and 12 or 14, color=C.GRAY, ax=Enum.TextXAlignment.Left, parent=animalLeft})
+	InventoryUI.Refs.Animal.NicknameLabel = anNickLabel
+
+	-- ViewportFrame (크리처 3D 미리보기)
+	local vpSize = isSmall and 180 or 240
+	local vpFrame = Instance.new("ViewportFrame")
+	vpFrame.Name = "CreatureViewport"
+	vpFrame.Size = UDim2.new(1, -16, 0, vpSize)
+	vpFrame.Position = UDim2.new(0, 8, 0, isSmall and 52 or 60)
+	vpFrame.AnchorPoint = Vector2.new(0, 0)
+	vpFrame.BackgroundTransparency = 1
+	vpFrame.BorderSizePixel = 0
+	vpFrame.Parent = animalLeft
+
+	-- 뷰포트 카메라
+	local vpCam = Instance.new("Camera")
+	vpCam.Parent = vpFrame
+	vpFrame.CurrentCamera = vpCam
+	InventoryUI.Refs.Animal.Viewport = vpFrame
+
+	-- 스탯 프레임 (뷰포트 아래)
+	local statsY = (isSmall and 52 or 60) + vpSize + 8
+	local statsFrame = Utils.mkFrame({name="AnimalStats", size=UDim2.new(1, -16, 1, -(statsY + 8)), pos=UDim2.new(0, 8, 0, statsY), bg=C.BG_DARK, bgT=0.6, r=6, parent=animalLeft})
+	local statsPad = Instance.new("UIPadding"); statsPad.PaddingTop=UDim.new(0,6); statsPad.PaddingLeft=UDim.new(0,8); statsPad.PaddingRight=UDim.new(0,8); statsPad.Parent=statsFrame
+	local statsLayout = Instance.new("UIGridLayout")
+	statsLayout.CellSize = UDim2.new(0.5, -6, 0, isSmall and 20 or 24)
+	statsLayout.CellPadding = UDim2.new(0, 6, 0, isSmall and 3 or 4)
+	statsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	statsLayout.Parent = statsFrame
+	InventoryUI.Refs.Animal.StatsFrame = statsFrame
+
+	-- 우측: 팰 리스트 + 소환 버튼
+	local animalRight = Utils.mkFrame({name="AnimalRight", size=UDim2.new(1 - animalLeftW, -8, 1, 0), pos=UDim2.new(animalLeftW, 8, 0, 0), bgT=1, parent=animalArea})
+
+	-- "소환가능" 헤더 + 수량
+	local listHeaderH = isSmall and 28 or 32
+	local listHeader = Utils.mkLabel({name="ListHeader", text="소환가능", size=UDim2.new(1, 0, 0, listHeaderH), ts=isSmall and 14 or 16, font=F.TITLE, color=C.WHITE, ax=Enum.TextXAlignment.Left, parent=animalRight})
+
+	local listCountLabel = Utils.mkLabel({name="ListCount", text="0 마리", size=UDim2.new(0, 60, 0, listHeaderH), pos=UDim2.new(1, -4, 0, 0), anchor=Vector2.new(1, 0), ts=isSmall and 12 or 14, color=C.GRAY, ax=Enum.TextXAlignment.Right, parent=animalRight})
+	InventoryUI.Refs.Animal.ListCountLabel = listCountLabel
+
+	-- 팰 리스트 스크롤
+	local palScroll = Instance.new("ScrollingFrame")
+	palScroll.Name = "PalScroll"
+	palScroll.Size = UDim2.new(1, 0, 1, -(listHeaderH + (isSmall and 88 or 100) + 4))
+	palScroll.Position = UDim2.new(0, 0, 0, listHeaderH + 4)
+	palScroll.BackgroundTransparency = 1; palScroll.BorderSizePixel = 0; palScroll.ScrollBarThickness = 3
+	palScroll.ScrollBarImageColor3 = C.GOLD
+	palScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	palScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	palScroll.Parent = animalRight
+	local palListPad = Instance.new("UIPadding")
+	palListPad.PaddingLeft = UDim.new(0, 4)
+	palListPad.PaddingRight = UDim.new(0, 4)
+	palListPad.PaddingTop = UDim.new(0, 2)
+	palListPad.PaddingBottom = UDim.new(0, 2)
+	palListPad.Parent = palScroll
+	local palListLayout = Instance.new("UIListLayout")
+	palListLayout.Padding = UDim.new(0, isSmall and 4 or 6)
+	palListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	palListLayout.Parent = palScroll
+	InventoryUI.Refs.Animal.PalList = palScroll
+
+	-- 소환 버튼 (하단)
+	local summonBtnH = isSmall and 42 or 48
+	InventoryUI.Refs.Animal.BtnSummon = Utils.mkBtn({text="소환하기", size=UDim2.new(1, 0, 0, summonBtnH), pos=UDim2.new(0, 0, 1, -summonBtnH), bg=Color3.fromRGB(60, 140, 180), r=6, font=F.TITLE, ts=isSmall and 16 or 18, color=C.WHITE, parent=animalRight})
+	InventoryUI.Refs.Animal.BtnSummon.MouseButton1Click:Connect(function()
+		if UIManager.onSummonPal then UIManager.onSummonPal() end
+	end)
+
+	-- 풀어주기 버튼 (소환 버튼 위)
+	InventoryUI.Refs.Animal.BtnRelease = Utils.mkBtn({text="풀어주기", size=UDim2.new(1, 0, 0, isSmall and 32 or 38), pos=UDim2.new(0, 0, 1, -(summonBtnH + (isSmall and 38 or 44))), bg=C.BTN, bgT=0.3, r=4, font=F.TITLE, ts=isSmall and 14 or 16, color=C.GRAY, parent=animalRight})
+	InventoryUI.Refs.Animal.BtnRelease.MouseButton1Click:Connect(function()
+		if UIManager.onReleasePal then UIManager.onReleasePal() end
+	end)
+
+	-- 비어있을 때 안내 텍스트
+	InventoryUI.Refs.Animal.EmptyLabel = Utils.mkLabel({name="EmptyGuide", text="길들인 동물이 없습니다.\n크리처를 포획하고 상자를 사용하세요.", size=UDim2.new(1, -20, 0, 80), pos=UDim2.new(0.5, 0, 0.4, 0), anchor=Vector2.new(0.5, 0.5), ts=isSmall and 13 or 15, color=C.GRAY, wrap=true, vis=false, parent=animalArea})
+
 	-- Drop/Split Modal Popup (반응형)
 	local dropModalFrame = Utils.mkFrame({name="DropModal", size=UDim2.new(isSmall and 0.7 or 0.3, 0, isSmall and 0.45 or 0.4, 0), pos=UDim2.new(0.5, 0, 0.5, 0), anchor=Vector2.new(0.5, 0.5), bg=C.BG_PANEL, stroke=2, vis=false, parent=InventoryUI.Refs.Frame, z=100})
 	local mRatio = Instance.new("UIAspectRatioConstraint"); mRatio.AspectRatio=1.2; mRatio.Parent=dropModalFrame
@@ -504,19 +614,27 @@ end
 
 function InventoryUI.SetTab(tabId)
 	local isBag = (tabId == "BAG")
+	local isCraft = (tabId == "CRAFT")
+	local isAnimal = (tabId == "ANIMAL")
+	
 	if InventoryUI.Refs.BagFrame then InventoryUI.Refs.BagFrame.Visible = isBag end
-	if InventoryUI.Refs.CraftFrame then InventoryUI.Refs.CraftFrame.Visible = not isBag end
+	if InventoryUI.Refs.CraftFrame then InventoryUI.Refs.CraftFrame.Visible = isCraft end
+	if InventoryUI.Refs.AnimalFrame then InventoryUI.Refs.AnimalFrame.Visible = isAnimal end
 	
 	if InventoryUI.Refs.TabBag then
 		InventoryUI.Refs.TabBag.TextColor3 = isBag and C.GOLD_SEL or C.GRAY
 	end
 	if InventoryUI.Refs.TabCraft then
-		InventoryUI.Refs.TabCraft.TextColor3 = (not isBag) and C.GOLD_SEL or C.GRAY
+		InventoryUI.Refs.TabCraft.TextColor3 = isCraft and C.GOLD_SEL or C.GRAY
+	end
+	if InventoryUI.Refs.TabAnimal then
+		InventoryUI.Refs.TabAnimal.TextColor3 = isAnimal and C.GOLD_SEL or C.GRAY
 	end
 	
 	local d = InventoryUI.Refs.Detail
 	if d.Frame then
-		d.Frame.Visible = false -- 탭 전환 시 정보창 숨김
+		-- 동물 관리 탭에서는 상세 패널 숨김
+		d.Frame.Visible = false
 		d.Name.Text = ""
 		d.Icon.Image = ""
 		d.Icon.Visible = false
@@ -881,6 +999,324 @@ function InventoryUI.UpdateDetail(data, getItemIcon, Enums, DataHelper, itemCoun
 		d.BtnDrop.Visible = false
 		if d.AttrBadge then d.AttrBadge.Visible = false end
 	end
+end
+
+--========================================
+-- 동물 관리 탭 기능
+--========================================
+
+-- 캐시된 팰 리스트 (클릭 시 재사용)
+local _cachedPalList = {}
+
+-- 스탯 행 생성 (2칼럼 그리드)
+local function createAnimalStatCell(parent, label, value, order)
+	local ts = (InventoryUI._ts and InventoryUI._ts.detailStat) or 16
+	local cell = Instance.new("Frame")
+	cell.Name = "Stat_" .. order
+	cell.Size = UDim2.new(0.5, -6, 0, 20)
+	cell.BackgroundTransparency = 1
+	cell.LayoutOrder = order
+	cell.Parent = parent
+
+	local nameL = Instance.new("TextLabel")
+	nameL.Size = UDim2.new(0.5, 0, 1, 0); nameL.BackgroundTransparency = 1
+	nameL.Text = label; nameL.TextColor3 = Color3.fromHex("#AAAAAA")
+	nameL.TextSize = ts; nameL.Font = F.NORMAL
+	nameL.TextXAlignment = Enum.TextXAlignment.Left; nameL.Parent = cell
+
+	local valL = Instance.new("TextLabel")
+	valL.Size = UDim2.new(0.5, 0, 1, 0); valL.Position = UDim2.new(0.5, 0, 0, 0)
+	valL.BackgroundTransparency = 1
+	valL.Text = tostring(value); valL.TextColor3 = C.WHITE
+	valL.TextSize = ts; valL.Font = F.TITLE
+	valL.TextXAlignment = Enum.TextXAlignment.Right; valL.Parent = cell
+end
+
+-- 스탯 프레임 초기화
+local function clearAnimalStats()
+	local sf = InventoryUI.Refs.Animal.StatsFrame
+	if not sf then return end
+	for _, child in ipairs(sf:GetChildren()) do
+		if child:IsA("Frame") then child:Destroy() end
+	end
+end
+
+-- 뷰포트에 크리처 모델 로드
+local function loadCreatureViewport(creatureId)
+	local vp = InventoryUI.Refs.Animal.Viewport
+	if not vp then return end
+
+	-- 기존 모델 제거 (카메라 유지)
+	for _, child in ipairs(vp:GetChildren()) do
+		if child:IsA("Model") or child:IsA("BasePart") then child:Destroy() end
+	end
+
+	local ReplicatedStorage = game:GetService("ReplicatedStorage")
+	local DataModule = require(ReplicatedStorage:WaitForChild("Data"):WaitForChild("CreatureData"))
+	local creatureData
+	for _, d in ipairs(DataModule) do
+		if d.id == creatureId then creatureData = d; break end
+	end
+	if not creatureData then return end
+
+	local modelName = creatureData.modelName
+	local assets = ReplicatedStorage:FindFirstChild("Assets")
+	if not assets then return end
+
+	-- 모델 검색
+	local template
+	local function searchRecursive(folder, target)
+		local found = folder:FindFirstChild(target)
+		if found then return found end
+		for _, child in ipairs(folder:GetChildren()) do
+			if child:IsA("Folder") or child:IsA("Model") then
+				local res = searchRecursive(child, target)
+				if res then return res end
+			end
+		end
+		return nil
+	end
+	template = searchRecursive(assets, modelName)
+	if not template then return end
+
+	local model = template:Clone()
+	model.Parent = vp
+
+	-- 모든 파트 Anchored 설정
+	for _, part in ipairs(model:GetDescendants()) do
+		if part:IsA("BasePart") then part.Anchored = true end
+	end
+
+	-- 카메라 위치 설정 (완전 측면 뷰)
+	local cam = vp.CurrentCamera
+	if cam then
+		local center, size
+		if model.PrimaryPart then
+			center = model.PrimaryPart.CFrame.Position
+			size = model:GetExtentsSize()
+		else
+			local cf2
+			cf2, size = model:GetBoundingBox()
+			center = cf2.Position
+		end
+		local maxDim = math.max(size.X, size.Y, size.Z)
+		local distance = maxDim * 0.85
+		-- 정면에서 살짝 측면 방향 (크리처 얼굴 + 옆모습)
+		cam.CFrame = CFrame.new(center + Vector3.new(distance * 0.7, maxDim * 0.05, -distance * 0.7), center)
+	end
+end
+
+-- 팰 리스트 아이템 생성
+local function createPalListItem(palData, index, isSelected)
+	local ReplicatedStorage = game:GetService("ReplicatedStorage")
+	local DataModule = require(ReplicatedStorage:WaitForChild("Data"):WaitForChild("CreatureData"))
+
+	local creatureData
+	for _, d in ipairs(DataModule) do
+		if d.id == palData.creatureId then creatureData = d; break end
+	end
+
+	local itemH = 52
+	local frame = Utils.mkFrame({
+		name = "Pal_" .. (palData.palUID or index),
+		size = UDim2.new(1, -4, 0, itemH),
+		bg = isSelected and C.BG_SLOT or C.BG_DARK,
+		bgT = isSelected and 0.1 or 0.5,
+		r = 6,
+	})
+	-- UIStroke는 항상 생성 (선택 시 두께 변경용)
+	local palStroke = Instance.new("UIStroke")
+	palStroke.Thickness = isSelected and 2 or 0
+	palStroke.Color = C.GOLD_SEL
+	palStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	palStroke.Parent = frame
+	frame.LayoutOrder = index
+
+	-- 크리처 아이콘 (좌측)
+	local iconBg = Utils.mkFrame({name="IconBg", size=UDim2.new(0, 40, 0, 40), pos=UDim2.new(0, 6, 0.5, 0), anchor=Vector2.new(0, 0.5), bg=C.BG_SLOT, bgT=0.3, r=6, parent=frame})
+	local iconImg = Instance.new("ImageLabel")
+	iconImg.Name = "IconImg"; iconImg.Size = UDim2.new(0.8, 0, 0.8, 0); iconImg.Position = UDim2.new(0.1, 0, 0.1, 0)
+	iconImg.BackgroundTransparency = 1; iconImg.Parent = iconBg
+
+	-- CollectionUI의 getCreatureIcon 로직을 간소화하여 인라인 적용
+	local function findCreatureIcon(cid)
+		local assets = ReplicatedStorage:FindFirstChild("Assets")
+		if not assets then return "" end
+		local searchFolders = {assets:FindFirstChild("CreatureIcons"), assets:FindFirstChild("ItemIcons"), assets:FindFirstChild("Icons")}
+		local aliases = {cid, creatureData and creatureData.modelName, creatureData and creatureData.name}
+		for _, folder in ipairs(searchFolders) do
+			if folder then
+				for _, alias in ipairs(aliases) do
+					if alias then
+						for _, inst in ipairs(folder:GetChildren()) do
+							if inst.Name:lower() == alias:lower() then
+								if inst:IsA("Decal") or inst:IsA("Texture") then return inst.Texture end
+								if inst:IsA("ImageLabel") or inst:IsA("ImageButton") then return inst.Image end
+								if inst:IsA("StringValue") then return inst.Value end
+							end
+						end
+					end
+				end
+			end
+		end
+		return ""
+	end
+	iconImg.Image = findCreatureIcon(palData.creatureId)
+
+	-- 이름 + 레벨
+	local nameText = palData.nickname or (creatureData and creatureData.name) or palData.creatureId
+	Utils.mkLabel({name="Name", text=nameText, size=UDim2.new(1, -100, 0, 20), pos=UDim2.new(0, 52, 0, 6), ts=14, font=F.TITLE, color=C.WHITE, ax=Enum.TextXAlignment.Left, parent=frame})
+
+	local levelText = "Lv. " .. tostring(creatureData and creatureData.level or 1)
+	Utils.mkLabel({name="Level", text=levelText, size=UDim2.new(0, 50, 0, 16), pos=UDim2.new(0, 52, 0, 28), ts=12, color=C.GRAY, ax=Enum.TextXAlignment.Left, parent=frame})
+
+	-- 상태 표시 (소환됨 / 보관중)
+	local stateText = (palData.state == "SUMMONED") and "소환됨" or ""
+	if stateText ~= "" then
+		Utils.mkLabel({name="State", text=stateText, size=UDim2.new(0, 50, 0, 18), pos=UDim2.new(1, -6, 0.5, 0), anchor=Vector2.new(1, 0.5), ts=11, bold=true, color=Color3.fromRGB(100, 200, 120), ax=Enum.TextXAlignment.Right, parent=frame})
+	end
+
+	-- 클릭 이벤트
+	local click = Instance.new("TextButton")
+	click.Size = UDim2.new(1, 0, 1, 0); click.BackgroundTransparency = 1; click.Text = ""; click.ZIndex = 5; click.Parent = frame
+
+	return frame, click, palData.palUID
+end
+
+--- 동물 관리 탭 새로고침 (팰 리스트 표시)
+function InventoryUI.RefreshAnimalTab(palList)
+	local a = InventoryUI.Refs.Animal
+	if not a.PalList then return end
+
+	-- 캐시 갱신
+	if palList then
+		_cachedPalList = palList
+	else
+		palList = _cachedPalList
+	end
+
+	-- 기존 리스트 정리
+	for _, child in ipairs(a.PalList:GetChildren()) do
+		if child:IsA("Frame") then child:Destroy() end
+	end
+
+	-- 빈 상태 처리
+	if not palList or #palList == 0 then
+		if a.EmptyLabel then a.EmptyLabel.Visible = true end
+		if a.ListCountLabel then a.ListCountLabel.Text = "0 마리" end
+		-- 뷰포트, 스탯, 이름 초기화
+		if a.NameLabel then a.NameLabel.Text = "" end
+		if a.NicknameLabel then a.NicknameLabel.Text = "" end
+		clearAnimalStats()
+		-- 뷰포트 비우기
+		if a.Viewport then
+			for _, ch in ipairs(a.Viewport:GetChildren()) do
+				if ch:IsA("Model") or ch:IsA("BasePart") then ch:Destroy() end
+			end
+		end
+		a.SelectedPalUID = nil
+		return
+	end
+
+	if InventoryUI.Refs.Animal.EmptyLabel then InventoryUI.Refs.Animal.EmptyLabel.Visible = false end
+	if a.ListCountLabel then a.ListCountLabel.Text = tostring(#palList) .. " 마리" end
+
+	-- 선택된 팰이 없으면 첫 번째 선택
+	if not a.SelectedPalUID then
+		a.SelectedPalUID = palList[1].palUID
+	end
+
+	-- 선택된 UID가 목록에 없으면 첫 번째로 리셋
+	local foundSelected = false
+	for _, p in ipairs(palList) do
+		if p.palUID == a.SelectedPalUID then foundSelected = true; break end
+	end
+	if not foundSelected then
+		a.SelectedPalUID = palList[1].palUID
+	end
+
+	-- 리스트 생성
+	for i, pal in ipairs(palList) do
+		local isSelected = (pal.palUID == a.SelectedPalUID)
+		local frame, click, uid = createPalListItem(pal, i, isSelected)
+		frame.Parent = a.PalList
+
+		click.MouseButton1Click:Connect(function()
+			local selectedUid = uid or pal.palUID or tostring(i)
+			a.SelectedPalUID = selectedUid
+			-- 리스트 재생성 없이 시각 갱신
+			for _, child in ipairs(a.PalList:GetChildren()) do
+				if child:IsA("Frame") then
+					local targetName = "Pal_" .. selectedUid
+					local isThis = (child.Name == targetName)
+					child.BackgroundColor3 = isThis and C.BG_SLOT or C.BG_DARK
+					child.BackgroundTransparency = isThis and 0.1 or 0.5
+					-- UIStroke 갱신
+					for _, s in ipairs(child:GetChildren()) do
+						if s:IsA("UIStroke") then
+							s.Thickness = isThis and 2 or 0
+							s.Color = C.GOLD_SEL
+						end
+					end
+				end
+			end
+			InventoryUI.ShowAnimalDetail(pal)
+		end)
+
+		-- 선택된 팰이면 상세 표시
+		if isSelected then
+			InventoryUI.ShowAnimalDetail(pal)
+		end
+	end
+end
+
+--- 선택된 동물 상세 정보 표시
+function InventoryUI.ShowAnimalDetail(palData)
+	local a = InventoryUI.Refs.Animal
+	if not palData then return end
+
+	local ReplicatedStorage = game:GetService("ReplicatedStorage")
+	local DataModule = require(ReplicatedStorage:WaitForChild("Data"):WaitForChild("CreatureData"))
+	local creatureData
+	for _, d in ipairs(DataModule) do
+		if d.id == palData.creatureId then creatureData = d; break end
+	end
+
+	-- 이름 표시
+	local displayName = (creatureData and creatureData.name) or palData.creatureId
+	a.NameLabel.Text = displayName
+	a.NicknameLabel.Text = palData.nickname or displayName
+
+	-- 뷰포트에 모델 로드
+	loadCreatureViewport(palData.creatureId)
+
+	-- 스탯 표시
+	clearAnimalStats()
+	local sf = a.StatsFrame
+	if sf and creatureData then
+		local stats = palData.stats or {}
+		local order = 0
+		order = order + 1; createAnimalStatCell(sf, "생명", tostring(creatureData.maxHealth or 0), order)
+		order = order + 1; createAnimalStatCell(sf, "이동속도", tostring(creatureData.runSpeed or 0), order)
+		order = order + 1; createAnimalStatCell(sf, "공격", tostring(creatureData.damage or 0), order)
+		order = order + 1; createAnimalStatCell(sf, "방어", "0", order)
+		order = order + 1; createAnimalStatCell(sf, "배고픔", tostring(math.floor(stats.hunger or 100)) .. " / 100", order)
+		order = order + 1; createAnimalStatCell(sf, "레벨", tostring(creatureData.level or 1), order)
+	end
+
+	-- 소환 버튼 텍스트 업데이트
+	if a.BtnSummon then
+		if palData.state == "SUMMONED" then
+			a.BtnSummon.Text = "회수하기"
+		else
+			a.BtnSummon.Text = "소환하기"
+		end
+	end
+end
+
+--- 현재 선택된 팰 UID 반환
+function InventoryUI.GetSelectedPalUID()
+	return InventoryUI.Refs.Animal.SelectedPalUID
 end
 
 return InventoryUI

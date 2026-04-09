@@ -981,6 +981,72 @@ local ItemData = {
 		iconName = "OBSIDIAN_BOW",
 		modelName = "ObsidianBow",
 	},
+
+	--========================================
+	-- 포획 박스 (CAPTURE_BOX)
+	-- 포획 성공 시 인벤토리에 들어오는 아이템
+	-- "사용" 시 길들이기 확률 굴림 → 성공 시 팰 등록
+	--========================================
+	{
+		id = "DODO_BOX",
+		name = "도도새 포획 상자",
+		type = "CAPTURE_BOX",
+		rarity = "COMMON",
+		maxStack = 1,
+		weight = 5.0,
+		description = "포획한 도도새가 들어있는 상자. 사용하면 길들이기를 시도합니다.",
+		iconName = "CAPTURE_BOX",
+		modelName = "CaptureBox",
+		creatureId = "DODO",
+	},
+	{
+		id = "COMPY_BOX",
+		name = "콤프소그나투스 포획 상자",
+		type = "CAPTURE_BOX",
+		rarity = "COMMON",
+		maxStack = 1,
+		weight = 3.0,
+		description = "포획한 콤프소그나투스가 들어있는 상자. 사용하면 길들이기를 시도합니다.",
+		iconName = "CAPTURE_BOX",
+		modelName = "CaptureBox",
+		creatureId = "COMPY",
+	},
+	{
+		id = "RAPTOR_BOX",
+		name = "랩터 포획 상자",
+		type = "CAPTURE_BOX",
+		rarity = "UNCOMMON",
+		maxStack = 1,
+		weight = 8.0,
+		description = "포획한 랩터가 들어있는 상자. 사용하면 길들이기를 시도합니다.",
+		iconName = "CAPTURE_BOX",
+		modelName = "CaptureBox",
+		creatureId = "RAPTOR",
+	},
+	{
+		id = "PARASAUR_BOX",
+		name = "파라사우롤로푸스 포획 상자",
+		type = "CAPTURE_BOX",
+		rarity = "UNCOMMON",
+		maxStack = 1,
+		weight = 12.0,
+		description = "포획한 파라사우롤로푸스가 들어있는 상자. 사용하면 길들이기를 시도합니다.",
+		iconName = "CAPTURE_BOX",
+		modelName = "CaptureBox",
+		creatureId = "PARASAUR",
+	},
+	{
+		id = "TRICERATOPS_BOX",
+		name = "트리케라톱스 포획 상자",
+		type = "CAPTURE_BOX",
+		rarity = "RARE",
+		maxStack = 1,
+		weight = 15.0,
+		description = "포획한 트리케라톱스가 들어있는 상자. 사용하면 길들이기를 시도합니다.",
+		iconName = "CAPTURE_BOX",
+		modelName = "CaptureBox",
+		creatureId = "TRICERATOPS",
+	},
 }
 
 return ItemData

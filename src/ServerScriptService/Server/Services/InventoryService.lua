@@ -1650,6 +1650,122 @@ local function handleUse(player: Player, payload: any)
 		return { success = true, data = { action = "DNA_REGISTER", creatureId = creatureId, itemId = slotData.itemId } }
 	end
 	
+	-- 2.5 포획 상자 (CAPTURE_BOX) → 길들이기 확률 굴림
+	if itemData.type == Enums.ItemType.CAPTURE_BOX then
+		local creatureId = itemData.creatureId
+		if not creatureId then
+			return { success = false, errorCode = Enums.ErrorCode.INVALID_ITEM }
+		end
+
+		-- 크리처 데이터에서 레벨 가져오기 → 길들이기 확률 계산
+		local CreatureDataModule = require(game:GetService("ReplicatedStorage").Data.CreatureData)
+		local SkillTreeDataModule = require(game:GetService("ReplicatedStorage").Data.SkillTreeData)
+		local SkillServiceRef = require(game:GetService("ServerScriptService").Server.Services.SkillService)
+
+		local creatureLevel = 1
+		for _, cData in ipairs(CreatureDataModule) do
+			if cData.id == creatureId then
+				creatureLevel = cData.level or 1
+				break
+			end
+		end
+
+		-- 길들이기 확률: 레벨이 높을수록 낮음
+		local baseTameRate = math.clamp(0.50 - creatureLevel * 0.05, 0.05, 0.50)
+
+		-- 스킬 보너스 적용
+		local unlockedMap = SkillServiceRef.getUnlockedSkills(userId)
+		local learnedList = {}
+		for skillId, _ in pairs(unlockedMap) do
+			table.insert(learnedList, skillId)
+		end
+		local tamingBonus = SkillTreeDataModule.GetTamingRateBonus(learnedList)
+		local finalRate = math.clamp(baseTameRate + tamingBonus, 0.03, 0.60)
+
+		-- 확률 굴림
+		local roll = math.random()
+		local tamed = roll <= finalRate
+
+		if not tamed then
+			-- 길들이기 실패 → 아이템 소모
+			InventoryService.removeItemFromSlot(userId, slot, 1)
+			if NetController then
+				NetController.FireClient(player, "Notify.Message", {
+					text = "길들이기에 실패했습니다... (확률: " .. math.floor(finalRate * 100) .. "%)",
+				})
+			end
+			return { success = true, data = { action = "TAME_FAIL", creatureId = creatureId, tameRate = finalRate } }
+		end
+
+		-- 길들이기 성공 → PalboxService에 팰 등록
+		local PalboxServiceRef = require(game:GetService("ServerScriptService").Server.Services.PalboxService)
+		local HttpService = game:GetService("HttpService")
+		local palUID = HttpService:GenerateGUID(false)
+
+		-- 크리처 기본 스탯으로 팰 데이터 생성
+		local creatureName = creatureId
+		for _, cData in ipairs(CreatureDataModule) do
+			if cData.id == creatureId then
+				creatureName = cData.name or creatureId
+				break
+			end
+		end
+
+		-- 크리처별 스탯 조회
+		local creatureLevel = 1
+		local creatureWorkTypes = {}
+		local creatureCombatPower = 0
+		for _, cEntry in ipairs(CreatureDataModule) do
+			if cEntry.id == creatureId then
+				creatureLevel = cEntry.level or 1
+				creatureWorkTypes = cEntry.workTypes or {}
+				creatureCombatPower = cEntry.petDamage or cEntry.damage or 0
+				break
+			end
+		end
+
+		local palData = {
+			uid = palUID,
+			creatureId = creatureId,
+			nickname = creatureName,
+			level = creatureLevel,
+			workTypes = creatureWorkTypes,
+			combatPower = creatureCombatPower,
+			stats = {
+				hp = 100,
+				hunger = 100,
+				san = 100,
+				speed = 16,
+				attack = creatureCombatPower,
+			},
+			state = "STORED",
+		}
+
+		local added = PalboxServiceRef.addPal(userId, palData)
+		if not added then
+			-- ★ 팰박스 가득 참 → 아이템 소모하지 않음 (재시도 가능)
+			if NetController then
+				NetController.FireClient(player, "Notify.Message", {
+					text = "팰 보관함이 가득 차서 길들일 수 없습니다!",
+				})
+			end
+			return { success = false, errorCode = "PALBOX_FULL" }
+		end
+
+		-- 팰 등록 성공 → 아이템 소모
+		InventoryService.removeItemFromSlot(userId, slot, 1)
+
+		-- 성공 알림
+		if NetController then
+			NetController.FireClient(player, "Notify.Message", {
+				text = creatureName .. " 길들이기 성공! 팰 보관함에 등록되었습니다.",
+			})
+		end
+
+		print(string.format("[InventoryService] Player %d tamed %s (rate: %.0f%%)", userId, creatureId, finalRate * 100))
+		return { success = true, data = { action = "TAME_SUCCESS", creatureId = creatureId, palUID = palUID, tameRate = finalRate } }
+	end
+	
 	-- 3. ?�모???�이??
 	if itemData.type == Enums.ItemType.CONSUMABLE then
 		-- ?�시: ?�용 ?�림�?

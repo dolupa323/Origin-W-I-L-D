@@ -102,6 +102,12 @@ local function findLootModel(itemId: string): (Instance?, boolean)
 		if template then return template, true end
 	end
 	
+	-- 4.5 CAPTURE_BOX는 전용 박스 모델 사용 (POUCH 아님)
+	if itemData and itemData.type == "CAPTURE_BOX" and itemData.modelName then
+		local boxTemplate = searchRecursive(root, itemData.modelName)
+		if boxTemplate then return boxTemplate, false end
+	end
+	
 	-- 5. POUCH 최우선 검색 (일반 드롭아이템은 POUCH로 통일)
 	local template = searchRecursive(root, modelName)
 	if template then return template, false end

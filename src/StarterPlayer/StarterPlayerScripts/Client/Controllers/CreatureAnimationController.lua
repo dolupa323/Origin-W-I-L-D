@@ -101,6 +101,11 @@ local function updateCreatureAnimation(model, info)
 	if humanoid.Health <= 0 and currentState ~= "DEAD" then 
 		return 
 	end
+
+	-- ★ 실제 사망(IsDead=true)이면 서버 HarvestService가 애니메이션을 처리하므로 클라이언트 스킵
+	if model:GetAttribute("IsDead") == true then
+		return
+	end
 	
 	local rootPart = model.PrimaryPart
 	if not rootPart then 
@@ -172,7 +177,6 @@ local function updateCreatureAnimation(model, info)
 		if targetAnimName and targetAnimName ~= "" then
 			local track = AnimationManager.play(humanoid, targetAnimName, 0.3)
 			if track then
-				-- ★ DEATH 애니메이션은 1회 재생 후 마지막 프레임 유지 (루프 X)
 				local isDeath = (currentState == "DEAD")
 				track.Looped = not isDeath
 				-- 보행/달리기 속도 조절
@@ -180,6 +184,32 @@ local function updateCreatureAnimation(model, info)
 					track:AdjustSpeed(locomotionSpeed)
 				end
 				info.lastAnim = targetAnimName
+
+				-- ★ DEATH 애니메이션: 95% 지점에서 프리즈 (마지막 포즈 유지)
+				if isDeath then
+					info._deathFrozen = false
+					task.spawn(function()
+						-- Length 로딩 대기
+						local waited = 0
+						while track.Length <= 0 and waited < 2 do
+							task.wait(0.1)
+							waited += 0.1
+						end
+						local len = track.Length
+						if len > 0 then
+							local targetTime = len * 0.95
+							while track.IsPlaying and track.TimePosition < targetTime do
+								task.wait()
+							end
+						else
+							task.wait(2.0)
+						end
+						if track and track.IsPlaying then
+							track:AdjustSpeed(0) -- 마지막 프레임에서 프리즈
+						end
+						info._deathFrozen = true
+					end)
+				end
 			else
 				-- 애니메이션 로드 실패 시 잠금 방지 (다음 프레임 재시도 허용)
 				info.lastAnim = ""
@@ -191,8 +221,12 @@ local function updateCreatureAnimation(model, info)
 		-- 동일 애니메이션 유지 중
 		local track = AnimationManager.load(humanoid, targetAnimName)
 		if track then
-			-- 트랙이 중지된 경우 재시작 (루프 안 걸린 트랙 보호)
-			if not track.IsPlaying then
+			-- ★ DEAD 상태에서는 DEATH 애니 재시작 방지 (프리즈 유지)
+			if currentState == "DEAD" then
+				-- 프리즈 상태 유지 — 아무것도 하지 않음
+				return
+			elseif not track.IsPlaying then
+				-- 트랙이 중지된 경우 재시작 (루프 안 걸린 트랙 보호)
 				track.Looped = true
 				track:Play(0.3)
 			end
