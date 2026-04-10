@@ -38,12 +38,14 @@ local function getCreatureDataById(creatureId: string)
 end
 
 local function calcCaptureRate(creatureId: string, tamingBonus: number): number
-	local data = getCreatureDataById(creatureId)
-	if not data then return 0 end
-
-	local level = data.level or 1
-	local baseRate = math.clamp(0.50 - level * 0.05, 0.05, 0.50)
-	return math.clamp(baseRate + tamingBonus, 0.03, 0.60)
+	-- [DEV] 개발용 100% 확률 고정 — 릴리스 시 아래 원래 공식으로 복원할 것
+	-- 원래 공식:
+	-- local data = getCreatureDataById(creatureId)
+	-- if not data then return 0 end
+	-- local level = data.level or 1
+	-- local baseRate = math.clamp(0.50 - level * 0.05, 0.05, 0.50)
+	-- return math.clamp(baseRate + tamingBonus, 0.03, 0.60)
+	return 1.0 -- [DEV] 포획 100%
 end
 
 --========================================

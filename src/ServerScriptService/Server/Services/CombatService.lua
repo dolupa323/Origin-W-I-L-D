@@ -962,6 +962,8 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 			bowShot = isBowShot,
 			chargeRatio = bowChargeRatio,
 			isCritical = isCritical,
+			currentHP = creature and creature.currentHealth or 0,
+			maxHP = creature and (creature.maxHealth or (creature.data and creature.data.maxHealth)) or 100,
 		})
 	end
 	
@@ -1085,6 +1087,11 @@ end
 --- 크리처 디스폰/사망 시 외부 호출용 전투 상태 해제
 function CombatService.disengageCreature(instanceId: string)
 	disengageCreature(instanceId)
+end
+
+--- 외부에서 전투 상태 진입 (스킬 공격 등)
+function CombatService.engageCombat(userId: number, instanceId: string)
+	engageCombat(userId, instanceId)
 end
 
 --- 플레이어의 현재 전투 대상 반환

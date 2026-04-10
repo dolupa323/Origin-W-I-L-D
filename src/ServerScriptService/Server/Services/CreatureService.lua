@@ -1909,9 +1909,20 @@ function CreatureService._updateAILoop()
 				local isCold = not creature.lostAggroAt or (now - creature.lostAggroAt > AGGRO_COOLDOWN)
 				
 				if isCold and not playerInCombat then
-					newState = "CHASE"
-					if not creature.chaseStartTime then
-						creature.chaseStartTime = now
+					-- 공격 사거리 내: CHASE 전환 건너뛰고 직접 공격 (달리기 애니메이션 방지)
+					local immediateRange = (creature.data.attackRange or 5) * 1.3
+					local atkReady = not creature.lastAttackTime or (now - creature.lastAttackTime >= (creature.data.attackCooldown or CREATURE_ATTACK_COOLDOWN))
+					if minDist <= immediateRange and atkReady then
+						-- CHASE 없이 직접 공격 플래그 (섹션 5에서 처리)
+						creature._directAttack = true
+						if not creature.chaseStartTime then
+							creature.chaseStartTime = now
+						end
+					else
+						newState = "CHASE"
+						if not creature.chaseStartTime then
+							creature.chaseStartTime = now
+						end
 					end
 				end
 			elseif creature.state == "IDLE" and elapsed > creature.stateDuration then
@@ -2351,11 +2362,23 @@ function CreatureService._updateAILoop()
 		end
 		
 		-- 5. Creature -> Player/Structure Damage (Phase 11-4)
-		if creature.state == "CHASE" then
+		-- AGGRESSIVE: IDLE/WANDER에서도 공격 사거리 내면 직접 공격 가능 (달리기 불필요)
+		local canDoAttack = (creature.state == "CHASE") or (creature._directAttack == true)
+		local wasDirectAttack = creature._directAttack
+		creature._directAttack = nil
+		if canDoAttack then
 			if getProtectedZoneInfo(hrp.Position) then
 				setCreatureState(creature, "FLEE")
 				creature.chaseStartTime = nil
 				continue
+			end
+
+			-- 직접 공격: 플레이어를 향해 회전
+			if wasDirectAttack and closestPlayerPos then
+				local faceDir = (closestPlayerPos - hrp.Position) * Vector3.new(1, 0, 1)
+				if faceDir.Magnitude > 0.1 then
+					hrp.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + faceDir.Unit)
+				end
 			end
 
 			local dmg = creature.data.damage or 0
@@ -2425,7 +2448,21 @@ function CreatureService._updateAILoop()
 									if dist <= attackRange * 1.3 then
 										CombatService.damagePlayer(closestPlayerUserId, dmg, currentCreature.rootPart.Position, id)
 									end
+									
+									-- 범위 내 소환된 팰에게도 데미지
+									local PartyService = require(game:GetService("ServerScriptService").Server.Services.PartyService)
+									local summon = PartyService.getSummon(closestPlayerUserId)
+									if summon and summon.rootPart and summon.currentHP > 0 then
+										local palDist = (summon.rootPart.Position - currentCreature.rootPart.Position).Magnitude
+										if palDist <= attackRange * 1.5 then
+											PartyService.damagePal(closestPlayerUserId, dmg, currentCreature.rootPart.Position)
+										end
+									end
 								end)
+							end
+							-- 직접 공격 후 CHASE 상태로 전환 (후속 추격 행동을 위해)
+							if creature.state ~= "CHASE" then
+								setCreatureState(creature, "CHASE")
 							end
 							continue
 						end
@@ -2435,6 +2472,11 @@ function CreatureService._updateAILoop()
 						local attackTime = chosenAttack.attackTime or 0.5
 						local totalTime = windupTime + attackTime
 						creature.attackingUntil = now + totalTime + NETWORK_ANIM_BUFFER
+
+						-- 직접 공격 후 CHASE 상태로 전환 (후속 추격 행동을 위해)
+						if creature.state ~= "CHASE" then
+							setCreatureState(creature, "CHASE")
+						end
 
 						-- ★ 텔레그래프 시작 즉시 이동 정지 (인디케이터 위치 고정)
 						humanoid.WalkSpeed = 0
@@ -2529,6 +2571,27 @@ function CreatureService._updateAILoop()
 								
 								if isHit then
 									CombatService.damagePlayer(closestPlayerUserId, attackDamage, currentCreature.rootPart.Position, id)
+								end
+								
+								-- 범위 내 소환된 팰에게도 데미지
+								local PartyService = require(game:GetService("ServerScriptService").Server.Services.PartyService)
+								local summon = PartyService.getSummon(closestPlayerUserId)
+								if summon and summon.rootPart and summon.currentHP > 0 then
+									local palPos = summon.rootPart.Position
+									-- 팰도 공격 영역 판정 (isPlayerInAttackArea 재활용)
+									local palHit = false
+									if chosenAttack then
+										palHit = CombatService.isPlayerInAttackArea(
+											chosenAttack,
+											lockedAttackOrigin,
+											lockedCreatureLook,
+											palPos,
+											lockedTargetPos
+										)
+									end
+									if palHit then
+										PartyService.damagePal(closestPlayerUserId, attackDamage, currentCreature.rootPart.Position)
+									end
 								end
 							end)
 						end

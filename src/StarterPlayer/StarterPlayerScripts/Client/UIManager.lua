@@ -2321,6 +2321,14 @@ local function setupEventListeners()
 		NetClient.On("Palbox.Updated", function(data)
 			UIManager.refreshAnimalManagement()
 		end)
+		
+		-- 팰 기절 알림
+		NetClient.On("Party.Pal.Fainted", function(data)
+			if data and data.palName then
+				UIManager.notify("💀 " .. data.palName .. "이(가) 기절했습니다!", Color3.fromRGB(255, 80, 80))
+			end
+			UIManager.refreshAnimalManagement()
+		end)
 	end
 
 	-- Debuff Events
@@ -2401,9 +2409,34 @@ local function setupEventListeners()
 					HUDUI.ShowCombatUI(displayName, creatureLevel, currentHP, maxHP)
 				end
 			else
-				-- Hide combat UI when disengaged
-				currentCombatCreatureId = nil
-				HUDUI.HideCombatUI()
+				-- 전투 해제 시: 짧은 딜레이 후 숨김 (사망 시 HP바=0 반영을 위해)
+				-- Hit.Result 이벤트가 먼저 도착하여 HP바를 0으로 업데이트할 여유를 줌
+				local disengagedId = currentCombatCreatureId
+				task.delay(0.8, function()
+					-- 딜레이 중 새 전투가 시작되지 않았으면 숨김
+					if currentCombatCreatureId == disengagedId then
+						currentCombatCreatureId = nil
+						HUDUI.HideCombatUI()
+					end
+				end)
+			end
+		end)
+
+		-- 플레이어 공격 히트 시 체력바 즉시 반영
+		NetClient.On("Combat.Hit.Result", function(data)
+			if data and data.currentHP and data.maxHP and currentCombatCreatureId then
+				if data.targetId == currentCombatCreatureId then
+					HUDUI.UpdateCombatUI(data.currentHP, data.maxHP)
+				end
+			end
+		end)
+
+		-- 팰 공격 히트 시 체력바 즉시 반영
+		NetClient.On("Combat.Pal.Hit.Result", function(data)
+			if data and data.currentHP and data.maxHP and currentCombatCreatureId then
+				if data.targetId == currentCombatCreatureId then
+					HUDUI.UpdateCombatUI(data.currentHP, data.maxHP)
+				end
 			end
 		end)
 	end
@@ -2797,7 +2830,12 @@ function UIManager.onSummonPal()
 			UIManager.notify("동물을 소환했습니다!", Color3.fromRGB(100, 255, 180))
 		end
 	else
-		UIManager.notify("소환에 실패했습니다: " .. tostring(data or "UNKNOWN"), Color3.fromRGB(255, 100, 100))
+		local errCode = (type(data) == "table" and data.errorCode) or tostring(data or "UNKNOWN")
+		if errCode == "FAINTED" then
+			UIManager.notify("기절한 동물은 소환할 수 없습니다.", Color3.fromRGB(255, 100, 100))
+		else
+			UIManager.notify("소환에 실패했습니다: " .. errCode, Color3.fromRGB(255, 100, 100))
+		end
 	end
 
 	UIManager.refreshAnimalManagement()

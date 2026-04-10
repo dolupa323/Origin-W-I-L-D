@@ -1671,7 +1671,10 @@ local function handleUse(player: Player, payload: any)
 		end
 
 		-- 길들이기 확률: 레벨이 높을수록 낮음
-		local baseTameRate = math.clamp(0.50 - creatureLevel * 0.05, 0.05, 0.50)
+		-- [DEV] 개발용 100% 확률 고정 — 릴리스 시 아래 원래 공식으로 복원할 것
+		-- 원래 공식:
+		-- local baseTameRate = math.clamp(0.50 - creatureLevel * 0.05, 0.05, 0.50)
+		local baseTameRate = 1.0 -- [DEV] 길들이기 100%
 
 		-- 스킬 보너스 적용
 		local unlockedMap = SkillServiceRef.getUnlockedSkills(userId)
@@ -1680,7 +1683,9 @@ local function handleUse(player: Player, payload: any)
 			table.insert(learnedList, skillId)
 		end
 		local tamingBonus = SkillTreeDataModule.GetTamingRateBonus(learnedList)
-		local finalRate = math.clamp(baseTameRate + tamingBonus, 0.03, 0.60)
+		-- [DEV] 개발용 100% — 릴리스 시 원래 공식으로 복원:
+		-- local finalRate = math.clamp(baseTameRate + tamingBonus, 0.03, 0.60)
+		local finalRate = 1.0 -- [DEV] 길들이기 100%
 
 		-- 확률 굴림
 		local roll = math.random()
@@ -1715,14 +1720,25 @@ local function handleUse(player: Player, payload: any)
 		local creatureLevel = 1
 		local creatureWorkTypes = {}
 		local creatureCombatPower = 0
+		local creaturePetHealth = 100
+		local creaturePetSpeed = 16
+		local creatureDefense = 0
 		for _, cEntry in ipairs(CreatureDataModule) do
 			if cEntry.id == creatureId then
 				creatureLevel = cEntry.level or 1
 				creatureWorkTypes = cEntry.workTypes or {}
 				creatureCombatPower = cEntry.petDamage or cEntry.damage or 0
+				creaturePetHealth = cEntry.petHealth or cEntry.maxHealth or 100
+				creaturePetSpeed = cEntry.runSpeed or cEntry.walkSpeed or 16
+				creatureDefense = cEntry.defense or 0
 				break
 			end
 		end
+
+		-- ★ 속성(특성) 롤링: 크리처 레벨 기반 랜덤 속성 부여
+		local PalTraitDataModule = require(game:GetService("ReplicatedStorage").Data.PalTraitData)
+		local rolledTraits = PalTraitDataModule.RollTraits(creatureLevel)
+		local multipliers = PalTraitDataModule.GetAllMultipliers(rolledTraits)
 
 		local palData = {
 			uid = palUID,
@@ -1731,12 +1747,20 @@ local function handleUse(player: Player, payload: any)
 			level = creatureLevel,
 			workTypes = creatureWorkTypes,
 			combatPower = creatureCombatPower,
+			traits = rolledTraits,
 			stats = {
-				hp = 100,
+				hp = math.floor(creaturePetHealth * multipliers.hp),
 				hunger = 100,
 				san = 100,
-				speed = 16,
+				speed = math.floor(creaturePetSpeed * multipliers.speed * 10) / 10,
+				attack = math.floor(creatureCombatPower * multipliers.attack),
+				defense = math.floor(creatureDefense * multipliers.defense),
+			},
+			baseStats = {
+				hp = creaturePetHealth,
+				speed = creaturePetSpeed,
 				attack = creatureCombatPower,
+				defense = creatureDefense,
 			},
 			state = "STORED",
 		}
@@ -1755,15 +1779,20 @@ local function handleUse(player: Player, payload: any)
 		-- 팰 등록 성공 → 아이템 소모
 		InventoryService.removeItemFromSlot(userId, slot, 1)
 
-		-- 성공 알림
+		-- 성공 알림 (속성 정보 포함)
+		local traitNames = {}
+		for _, t in ipairs(rolledTraits) do
+			table.insert(traitNames, t.icon .. " " .. t.name)
+		end
+		local traitMsg = #traitNames > 0 and (" [속성: " .. table.concat(traitNames, ", ") .. "]") or ""
 		if NetController then
 			NetController.FireClient(player, "Notify.Message", {
-				text = creatureName .. " 길들이기 성공! 팰 보관함에 등록되었습니다.",
+				text = creatureName .. " 길들이기 성공! 팰 보관함에 등록되었습니다." .. traitMsg,
 			})
 		end
 
-		print(string.format("[InventoryService] Player %d tamed %s (rate: %.0f%%)", userId, creatureId, finalRate * 100))
-		return { success = true, data = { action = "TAME_SUCCESS", creatureId = creatureId, palUID = palUID, tameRate = finalRate } }
+		print(string.format("[InventoryService] Player %d tamed %s (rate: %.0f%%, traits: %d)", userId, creatureId, finalRate * 100, #rolledTraits))
+		return { success = true, data = { action = "TAME_SUCCESS", creatureId = creatureId, palUID = palUID, tameRate = finalRate, traits = rolledTraits } }
 	end
 	
 	-- 3. ?�모???�이??

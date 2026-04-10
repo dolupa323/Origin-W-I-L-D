@@ -211,6 +211,7 @@ Enums.PalState = {
 	IN_PARTY = "IN_PARTY",     -- 파티에 편성 (미소환)
 	SUMMONED = "SUMMONED",     -- 월드에 소환됨
 	WORKING = "WORKING",       -- 시설에서 작업 중
+	FAINTED = "FAINTED",       -- 기절 (HP 0, 회복 필요)
 }
 
 --========================================

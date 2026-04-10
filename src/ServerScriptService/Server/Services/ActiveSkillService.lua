@@ -159,6 +159,14 @@ local function applySkillDamage(player: Player, targetInstanceId: string, damage
 	
 	local killed, dropPos = CreatureService.processAttack(targetInstanceId, hpDamage, torporDamage, player)
 	
+	-- ★ 전투 상태 진입 (스킬 공격으로도 전투 UI 표시)
+	if CombatService and CombatService.engageCombat then
+		CombatService.engageCombat(userId, targetInstanceId)
+	end
+	if killed and CombatService and CombatService.disengageCreature then
+		CombatService.disengageCreature(targetInstanceId)
+	end
+	
 	-- 넉백 + 피격 연출
 	local creature = CreatureService.getCreatureRuntime(targetInstanceId)
 	local displayPos = lastKnownPos -- 폴백 위치
@@ -207,6 +215,10 @@ local function applySkillDamage(player: Player, targetInstanceId: string, damage
 		if displayPos then
 			hitPosData = { x = displayPos.X, y = displayPos.Y, z = displayPos.Z }
 		end
+		-- HP 데이터 조회 (전투 UI 갱신용)
+		local skillCreature = CreatureService.getCreatureRuntime(targetInstanceId)
+		local curHP = skillCreature and skillCreature.currentHealth or 0
+		local mxHP = skillCreature and (skillCreature.maxHealth or (skillCreature.data and skillCreature.data.maxHealth)) or 100
 		NetController.FireClient(player, "Combat.Hit.Result", {
 			damage = hpDamage,
 			torporDamage = torporDamage,
@@ -215,6 +227,8 @@ local function applySkillDamage(player: Player, targetInstanceId: string, damage
 			isSkill = true,
 			isCritical = isCritical or false,
 			hitPosition = hitPosData,
+			currentHP = curHP,
+			maxHP = mxHP,
 		})
 	end
 	

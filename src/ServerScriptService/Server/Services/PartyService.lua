@@ -269,6 +269,12 @@ function PartyService.summon(userId: number, partySlot: number): (boolean, strin
 		return false, Enums.ErrorCode.PAL_ALREADY_ASSIGNED
 	end
 	
+	-- 기절 상태면 소환 불가
+	if pal.state == Enums.PalState.FAINTED then
+		summoningLocks[userId] = nil
+		return false, "FAINTED"
+	end
+	
 	-- 모델 생성 (플레이어 근처)
 	local spawnPos = hrp.Position + hrp.CFrame.LookVector * PAL_FOLLOW_DIST
 	local model, rootPart, humanoid = PartyService._createPalModel(pal, spawnPos, userId)
@@ -291,6 +297,18 @@ function PartyService.summon(userId: number, partySlot: number): (boolean, strin
 	local palInstanceId = "pal_" .. HttpService:GenerateGUID(false)
 	model:SetAttribute("InstanceId", palInstanceId)
 	
+	-- 팰 HP: palData.stats.currentHp가 있으면 사용, 없으면 maxHP
+	local maxHP = humanoid.MaxHealth
+	local currentHP = (pal.stats and pal.stats.currentHp) or maxHP
+	currentHP = math.clamp(currentHP, 1, maxHP)
+	humanoid.Health = currentHP
+	
+	-- 클라이언트 HP바 표시용 Attribute
+	model:SetAttribute("MaxHealth", maxHP)
+	model:SetAttribute("CurrentHealth", currentHP)
+	model:SetAttribute("IsPal", true)
+	model:SetAttribute("OwnerUserId", userId)
+	
 	activeSummons[userId] = {
 		model = model,
 		humanoid = humanoid,
@@ -301,6 +319,8 @@ function PartyService.summon(userId: number, partySlot: number): (boolean, strin
 		lastAttackTime = 0,
 		ownerUserId = userId,
 		lastMoveTarget = nil, -- MoveTo 중복 호출 방지
+		maxHP = maxHP,
+		currentHP = currentHP,
 	}
 	
 	-- 상태 업데이트
@@ -545,17 +565,17 @@ function PartyService._createPalModel(palData, position: Vector3, ownerUserId: n
 	model:SetAttribute("CreatureId", string.upper(palData.creatureId))
 	model:SetAttribute("State", "IDLE")
 
-	-- 이름표 (팰 닉네임 표시)
+	-- 이름표 (팰 닉네임 + HP바 표시)
 	local bg = Instance.new("BillboardGui")
-	bg.Size = UDim2.new(0, 120, 0, 40)
+	bg.Size = UDim2.new(0, 120, 0, 50)
 	bg.StudsOffset = Vector3.new(0, 3, 0)
 	bg.AlwaysOnTop = true
 	bg.MaxDistance = 60
 	bg.Parent = rootPart
 
 	local mainFrame = Instance.new("Frame")
-	mainFrame.Size = UDim2.new(1, 0, 0.4, 0)
-	mainFrame.Position = UDim2.new(0, 0, 0.3, 0)
+	mainFrame.Size = UDim2.new(1, 0, 0.35, 0)
+	mainFrame.Position = UDim2.new(0, 0, 0.15, 0)
 	mainFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 	mainFrame.BackgroundTransparency = 0.95
 	mainFrame.BorderSizePixel = 0
@@ -575,6 +595,46 @@ function PartyService._createPalModel(palData, position: Vector3, ownerUserId: n
 	txt.Font = Enum.Font.GothamMedium
 	txt.TextSize = 10
 	txt.Parent = mainFrame
+
+	-- HP바 (이름 아래)
+	local hpBarBg = Instance.new("Frame")
+	hpBarBg.Name = "PalHPBarBg"
+	hpBarBg.Size = UDim2.new(0.7, 0, 0.14, 0)
+	hpBarBg.Position = UDim2.new(0.15, 0, 0.55, 0)
+	hpBarBg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+	hpBarBg.BackgroundTransparency = 0.3
+	hpBarBg.BorderSizePixel = 0
+	hpBarBg.Parent = bg
+
+	local hpBarCorner = Instance.new("UICorner")
+	hpBarCorner.CornerRadius = UDim.new(0, 3)
+	hpBarCorner.Parent = hpBarBg
+
+	local hpBarFill = Instance.new("Frame")
+	hpBarFill.Name = "PalHPBarFill"
+	hpBarFill.Size = UDim2.new(1, 0, 1, 0)
+	hpBarFill.BackgroundColor3 = Color3.fromRGB(80, 220, 100)
+	hpBarFill.BackgroundTransparency = 0.1
+	hpBarFill.BorderSizePixel = 0
+	hpBarFill.Parent = hpBarBg
+
+	local hpFillCorner = Instance.new("UICorner")
+	hpFillCorner.CornerRadius = UDim.new(0, 3)
+	hpFillCorner.Parent = hpBarFill
+
+	local hpText = Instance.new("TextLabel")
+	hpText.Name = "PalHPText"
+	hpText.Size = UDim2.new(1, 0, 1, 0)
+	hpText.BackgroundTransparency = 1
+	hpText.Text = string.format("%d / %d", humanoid.Health, humanoid.MaxHealth)
+	hpText.TextColor3 = Color3.fromRGB(255, 255, 255)
+	hpText.TextTransparency = 0.1
+	hpText.TextStrokeTransparency = 0.5
+	hpText.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	hpText.Font = Enum.Font.GothamBold
+	hpText.TextSize = 8
+	hpText.ZIndex = 2
+	hpText.Parent = hpBarBg
 
 	model.Parent = creatureFolder
 
@@ -648,24 +708,155 @@ local function firePalAttackAnim(summon)
 	end
 end
 
+--========================================
+-- Pal Damage & Faint System
+--========================================
+
+--- 소환된 팰에게 데미지 적용
+--- @return killed: boolean
+function PartyService.damagePal(userId: number, damage: number, sourcePos: Vector3?)
+	local summon = activeSummons[userId]
+	if not summon or not summon.model or not summon.humanoid then return false end
+	if summon.currentHP <= 0 then return false end
+	
+	-- 데미지 적용
+	local actualDamage = math.max(0, damage)
+	summon.currentHP = math.max(0, summon.currentHP - actualDamage)
+	summon.humanoid.Health = summon.currentHP
+	
+	-- Attribute 갱신 (클라이언트 HP바 반영)
+	if summon.model then
+		summon.model:SetAttribute("CurrentHealth", summon.currentHP)
+		
+		-- 머리 위 HP바 갱신
+		if summon.rootPart then
+			local bbGui = summon.rootPart:FindFirstChildOfClass("BillboardGui")
+			if bbGui then
+				local hpBarBg = bbGui:FindFirstChild("PalHPBarBg")
+				if hpBarBg then
+					local hpRatio = math.clamp(summon.currentHP / summon.maxHP, 0, 1)
+					local fill = hpBarBg:FindFirstChild("PalHPBarFill")
+					if fill then
+						fill.Size = UDim2.new(hpRatio, 0, 1, 0)
+						-- HP 비율에 따라 색상 변경
+						if hpRatio > 0.5 then
+							fill.BackgroundColor3 = Color3.fromRGB(80, 220, 100)
+						elseif hpRatio > 0.25 then
+							fill.BackgroundColor3 = Color3.fromRGB(240, 200, 50)
+						else
+							fill.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
+						end
+					end
+					local hpTxt = hpBarBg:FindFirstChild("PalHPText")
+					if hpTxt then
+						hpTxt.Text = string.format("%d / %d", math.ceil(summon.currentHP), summon.maxHP)
+					end
+				end
+			end
+		end
+	end
+	
+	-- 클라이언트에게 팰 피격 알림 (데미지 텍스트 표시)
+	local player = Players:GetPlayerByUserId(userId)
+	if player and NetController then
+		NetController.FireClient(player, "Combat.Pal.Damaged", {
+			damage = actualDamage,
+			currentHP = summon.currentHP,
+			maxHP = summon.maxHP,
+			palUID = summon.palUID,
+		})
+	end
+	
+	-- HP 0 → 기절 처리
+	if summon.currentHP <= 0 then
+		PartyService._faintPal(userId)
+		return true
+	end
+	
+	return false
+end
+
+--- 팰 기절 처리 (HP 0 → FAINTED 상태 → 자동 소환 해제)
+function PartyService._faintPal(userId: number)
+	local summon = activeSummons[userId]
+	if not summon then return end
+	
+	local palUID = summon.palUID
+	local palData = summon.palData
+	
+	-- palData에 currentHp = 0 저장
+	if palData and palData.stats then
+		palData.stats.currentHp = 0
+	end
+	
+	-- 상태를 FAINTED로 설정
+	if palUID then
+		PalboxService.updatePalState(userId, palUID, Enums.PalState.FAINTED)
+	end
+	
+	-- 클라이언트에 기절 알림
+	local player = Players:GetPlayerByUserId(userId)
+	if player and NetController then
+		NetController.FireClient(player, "Party.Pal.Fainted", {
+			palUID = palUID,
+			palName = palData and (palData.nickname or palData.creatureId) or "?",
+		})
+	end
+	
+	-- 모델 제거 (1초 딜레이로 사망 연출)
+	local model = summon.model
+	if model then
+		-- 즉시 AI 중지 (humanoid 멈춤)
+		if summon.humanoid then
+			summon.humanoid.WalkSpeed = 0
+			summon.humanoid:MoveTo(summon.rootPart.Position)
+		end
+		task.delay(1.5, function()
+			if model and model.Parent then
+				model:Destroy()
+			end
+		end)
+	end
+	
+	-- 소환 정보 정리
+	activeSummons[userId] = nil
+	local party = playerParties[userId]
+	if party then
+		party.summonedSlot = nil
+	end
+	
+	print(string.format("[PartyService] Pal %s fainted for player %d", palUID or "?", userId))
+end
+
+--- 소환된 팰 조회 (CreatureService에서 사용)
+function PartyService.getActiveSummons()
+	return activeSummons
+end
+
+--- 특정 유저의 소환 팰 조회
+function PartyService.getSummon(userId: number)
+	return activeSummons[userId]
+end
+
 function PartyService._updateSummonedPalAI()
 	local now = os.clock()
 	
 	for userId, summon in pairs(activeSummons) do
-		if not summon.model or not summon.model.Parent or (summon.humanoid and summon.humanoid.Health <= 0) then
-			-- 모델 사라짐 또는 사망 → 정리
+		if not summon.model or not summon.model.Parent then
+			-- 모델 사라짐 → 정리
 			local palUID = summon.palUID
 			if palUID then
 				PalboxService.updatePalState(userId, palUID, Enums.PalState.IN_PARTY)
 			end
-			
-			if summon.model and summon.humanoid and summon.humanoid.Health <= 0 then
-				task.delay(1, function() if summon.model then summon.model:Destroy() end end)
-			end
-			
 			activeSummons[userId] = nil
 			local party = playerParties[userId]
 			if party then party.summonedSlot = nil end
+			continue
+		end
+		
+		-- HP 0 → 기절 처리 (_faintPal이 정리를 담당)
+		if summon.currentHP <= 0 or (summon.humanoid and summon.humanoid.Health <= 0) then
+			PartyService._faintPal(userId)
 			continue
 		end
 		
@@ -697,10 +888,17 @@ function PartyService._updateSummonedPalAI()
 				local model = part:FindFirstAncestorOfClass("Model")
 				if model and not processedModels[model] and not model.Name:match("^Pal_") then
 					processedModels[model] = true
+					-- 사망 또는 쓰러진(Collapsed) 크리처는 전투 대상에서 제외
+					-- 쓰러진 이후는 플레이어가 직접 처리하는 영역 (포획/사냥)
+					if model:GetAttribute("IsDead") or model:GetAttribute("HasCollapsed") then
+						continue
+					end
 					local childRoot = model:FindFirstChild("HumanoidRootPart")
 					local childHum = model:FindFirstChild("Humanoid")
 					if childRoot and childHum and childHum.Health > 0 then
-						local d = (palHrp.Position - childRoot.Position).Magnitude
+						-- 수평 거리(XZ)로 계산: 쓰러진 크리처의 Y 좌표 차이 무시
+						local delta = palHrp.Position - childRoot.Position
+						local d = Vector3.new(delta.X, 0, delta.Z).Magnitude
 						if d < enemyDist then
 							enemyDist = d
 							closestEnemy = childRoot
@@ -726,7 +924,19 @@ function PartyService._updateSummonedPalAI()
 						local targetModel = closestEnemy.Parent
 						if targetModel and targetModel:GetAttribute("InstanceId") and CreatureService.processAttack then
 							local damage = summon.palData.stats.attack or 10
-							CreatureService.processAttack(targetModel:GetAttribute("InstanceId"), damage, 0, player)
+							local targetId = targetModel:GetAttribute("InstanceId")
+							local killed = CreatureService.processAttack(targetId, damage, 0, player)
+							-- 팰 데미지 플로팅 텍스트 이벤트 (주인에게 전송)
+							if player and NetController then
+								local creatureRT = CreatureService.getCreatureRuntime(targetId)
+								NetController.FireClient(player, "Combat.Pal.Hit.Result", {
+									damage = damage,
+									targetId = targetId,
+									killed = killed or false,
+									currentHP = creatureRT and creatureRT.currentHealth or 0,
+									maxHP = creatureRT and (creatureRT.maxHealth or (creatureRT.data and creatureRT.data.maxHealth)) or 100,
+								})
+							end
 						end
 					end
 				end
@@ -774,7 +984,18 @@ function PartyService._updateSummonedPalAI()
 						local targetId = targetModel:GetAttribute("InstanceId")
 						if targetId and CreatureService.processAttack then
 							local damage = summon.palData.stats.attack or 10
-							CreatureService.processAttack(targetId, damage, 0, player)
+							local killed = CreatureService.processAttack(targetId, damage, 0, player)
+							-- 팰 데미지 플로팅 텍스트 이벤트 (주인에게 전송)
+							if player and NetController then
+								local creatureRT = CreatureService.getCreatureRuntime(targetId)
+								NetController.FireClient(player, "Combat.Pal.Hit.Result", {
+									damage = damage,
+									targetId = targetId,
+									killed = killed or false,
+									currentHP = creatureRT and creatureRT.currentHealth or 0,
+									maxHP = creatureRT and (creatureRT.maxHealth or (creatureRT.data and creatureRT.data.maxHealth)) or 100,
+								})
+							end
 						end
 					end
 				end

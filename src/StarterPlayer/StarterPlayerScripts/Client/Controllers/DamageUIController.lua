@@ -21,6 +21,8 @@ local COLORS = {
 	CRIT_STROKE = Color3.fromRGB(180, 60, 0), -- 진한 주황: 크리티컬 외곽선
 	TORPOR = Color3.fromRGB(180, 100, 255), -- 보라색: 기절 수치
 	HEAL = Color3.fromRGB(100, 255, 100),   -- 초록색: 회복
+	PAL_DAMAGE = Color3.fromRGB(255, 170, 50), -- 주황색: 팰(동료) 데미지
+	PAL_STROKE = Color3.fromRGB(160, 80, 0), -- 진한 갈색: 팰 데미지 외곽선
 }
 
 -- 데미지 사운드
@@ -107,7 +109,7 @@ local function playDamageSound(position: Vector3, isCritical: boolean?)
 end
 
 --- 데미지 텍스트 생성 및 애니메이션 (damageValue → 텍스트 크기 스케일링)
-local function spawnDamageText(position: Vector3, text: string, color: Color3, damageValue: number?, isCritical: boolean?)
+local function spawnDamageText(position: Vector3, text: string, color: Color3, damageValue: number?, isCritical: boolean?, strokeOverride: Color3?)
 	local dmg = damageValue or 0
 	local crit = isCritical == true
 	-- 데미지 크기에 따른 텍스트 크기 (높을수록 큼)
@@ -147,7 +149,7 @@ local function spawnDamageText(position: Vector3, text: string, color: Color3, d
 	label.Text = text
 	label.TextColor3 = color
 	label.TextStrokeTransparency = crit and 0 or 0.3
-	label.TextStrokeColor3 = crit and COLORS.CRIT_STROKE or Color3.fromRGB(0, 0, 0)
+	label.TextStrokeColor3 = strokeOverride or (crit and COLORS.CRIT_STROKE or Color3.fromRGB(0, 0, 0))
 	label.Font = Enum.Font.GothamBlack
 	label.TextSize = textSize
 	label.TextScaled = false
@@ -249,6 +251,73 @@ function DamageUIController.Init()
 		local hrp = char and char:FindFirstChild("HumanoidRootPart")
 		if not hrp then return end
 		spawnDamageText(hrp.Position + Vector3.new(0, 2, 0), string.format("-%.0f", data.damage), Color3.fromRGB(255, 50, 50), data.damage)
+	end)
+	
+	-- 4. 팰(동료 동물) 공격 데미지 표시 (주황색)
+	NetClient.On("Combat.Pal.Hit.Result", function(data)
+		if not data.damage or data.damage <= 0 then return end
+		
+		local targetModel = findTargetModel(data.targetId)
+		local spawnPos
+		if targetModel then
+			spawnPos = targetModel:GetPivot().Position
+		else
+			return
+		end
+		
+		-- 팰 데미지 사운드 재생
+		if spawnPos then
+			playDamageSound(spawnPos, false)
+		end
+		
+		-- 팰 데미지 표시 (주황색 + 갈색 외곽선)
+		spawnDamageText(
+			spawnPos + Vector3.new(math.random(-1, 1), 0.5, math.random(-1, 1)),
+			string.format("🐾%.0f", data.damage),
+			COLORS.PAL_DAMAGE,
+			data.damage,
+			false,
+			COLORS.PAL_STROKE
+		)
+	end)
+	
+	-- 5. 소환 팰 피격 데미지 표시 (빨간색, 팰 머리 위)
+	NetClient.On("Combat.Pal.Damaged", function(data)
+		if not data.damage or data.damage <= 0 then return end
+		
+		-- palUID 대신 workspace에서 IsPal 속성 모델 찾기
+		local palModel = nil
+		local creaturesFolder = workspace:FindFirstChild("Creatures")
+		if creaturesFolder then
+			for _, model in ipairs(creaturesFolder:GetChildren()) do
+				if model:IsA("Model") and model:GetAttribute("IsPal") == true then
+					local ownerAttr = model:GetAttribute("OwnerUserId")
+					if ownerAttr == Players.LocalPlayer.UserId then
+						palModel = model
+						break
+					end
+				end
+			end
+		end
+		
+		local spawnPos
+		if palModel then
+			spawnPos = palModel:GetPivot().Position
+		else
+			-- 팰 모델 못 찾으면 플레이어 근처에 표시
+			local char = Players.LocalPlayer.Character
+			local hrp = char and char:FindFirstChild("HumanoidRootPart")
+			if not hrp then return end
+			spawnPos = hrp.Position + Vector3.new(3, 0, 3)
+		end
+		
+		spawnDamageText(
+			spawnPos + Vector3.new(0, 1, 0),
+			string.format("-%.0f", data.damage),
+			Color3.fromRGB(255, 80, 80),
+			data.damage,
+			false
+		)
 	end)
 	
 	initialized = true

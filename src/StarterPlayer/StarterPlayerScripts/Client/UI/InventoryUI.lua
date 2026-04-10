@@ -1009,7 +1009,7 @@ end
 local _cachedPalList = {}
 
 -- 스탯 행 생성 (2칼럼 그리드)
-local function createAnimalStatCell(parent, label, value, order)
+local function createAnimalStatCell(parent, label, value, order, valueColor)
 	local ts = (InventoryUI._ts and InventoryUI._ts.detailStat) or 16
 	local cell = Instance.new("Frame")
 	cell.Name = "Stat_" .. order
@@ -1027,7 +1027,7 @@ local function createAnimalStatCell(parent, label, value, order)
 	local valL = Instance.new("TextLabel")
 	valL.Size = UDim2.new(0.5, 0, 1, 0); valL.Position = UDim2.new(0.5, 0, 0, 0)
 	valL.BackgroundTransparency = 1
-	valL.Text = tostring(value); valL.TextColor3 = C.WHITE
+	valL.Text = tostring(value); valL.TextColor3 = valueColor or C.WHITE
 	valL.TextSize = ts; valL.Font = F.TITLE
 	valL.TextXAlignment = Enum.TextXAlignment.Right; valL.Parent = cell
 end
@@ -1037,7 +1037,7 @@ local function clearAnimalStats()
 	local sf = InventoryUI.Refs.Animal.StatsFrame
 	if not sf then return end
 	for _, child in ipairs(sf:GetChildren()) do
-		if child:IsA("Frame") then child:Destroy() end
+		if child:IsA("Frame") or child:IsA("TextLabel") then child:Destroy() end
 	end
 end
 
@@ -1163,17 +1163,49 @@ local function createPalListItem(palData, index, isSelected)
 	end
 	iconImg.Image = findCreatureIcon(palData.creatureId)
 
+	-- 기절 여부
+	local isFainted = (palData.state == "FAINTED")
+
+	-- 기절 시 아이콘 회색 처리
+	if isFainted then
+		iconImg.ImageColor3 = Color3.fromRGB(100, 100, 100)
+	end
+
 	-- 이름 + 레벨
 	local nameText = palData.nickname or (creatureData and creatureData.name) or palData.creatureId
-	Utils.mkLabel({name="Name", text=nameText, size=UDim2.new(1, -100, 0, 20), pos=UDim2.new(0, 52, 0, 6), ts=14, font=F.TITLE, color=C.WHITE, ax=Enum.TextXAlignment.Left, parent=frame})
+	local nameColor = isFainted and Color3.fromRGB(120, 120, 120) or C.WHITE
+	Utils.mkLabel({name="Name", text=nameText, size=UDim2.new(1, -100, 0, 20), pos=UDim2.new(0, 52, 0, 6), ts=14, font=F.TITLE, color=nameColor, ax=Enum.TextXAlignment.Left, parent=frame})
 
+	local levelColor = isFainted and Color3.fromRGB(80, 80, 80) or C.GRAY
 	local levelText = "Lv. " .. tostring(creatureData and creatureData.level or 1)
-	Utils.mkLabel({name="Level", text=levelText, size=UDim2.new(0, 50, 0, 16), pos=UDim2.new(0, 52, 0, 28), ts=12, color=C.GRAY, ax=Enum.TextXAlignment.Left, parent=frame})
+	Utils.mkLabel({name="Level", text=levelText, size=UDim2.new(0, 50, 0, 16), pos=UDim2.new(0, 52, 0, 28), ts=12, color=levelColor, ax=Enum.TextXAlignment.Left, parent=frame})
 
-	-- 상태 표시 (소환됨 / 보관중)
-	local stateText = (palData.state == "SUMMONED") and "소환됨" or ""
+	-- 상태 표시 (소환됨 / 기절)
+	local stateText = ""
+	local stateColor = Color3.fromRGB(100, 200, 120)
+	if palData.state == "SUMMONED" then
+		stateText = "소환됨"
+		stateColor = Color3.fromRGB(100, 200, 120)
+	elseif isFainted then
+		stateText = "기절"
+		stateColor = Color3.fromRGB(200, 80, 80)
+	end
 	if stateText ~= "" then
-		Utils.mkLabel({name="State", text=stateText, size=UDim2.new(0, 50, 0, 18), pos=UDim2.new(1, -6, 0.5, 0), anchor=Vector2.new(1, 0.5), ts=11, bold=true, color=Color3.fromRGB(100, 200, 120), ax=Enum.TextXAlignment.Right, parent=frame})
+		Utils.mkLabel({name="State", text=stateText, size=UDim2.new(0, 50, 0, 18), pos=UDim2.new(1, -6, 0.5, 0), anchor=Vector2.new(1, 0.5), ts=11, bold=true, color=stateColor, ax=Enum.TextXAlignment.Right, parent=frame})
+	end
+
+	-- 기절 오버레이 (반투명 회색 덮기)
+	if isFainted then
+		local overlay = Instance.new("Frame")
+		overlay.Name = "FaintedOverlay"
+		overlay.Size = UDim2.new(1, 0, 1, 0)
+		overlay.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+		overlay.BackgroundTransparency = 0.6
+		overlay.ZIndex = 3
+		overlay.Parent = frame
+		local overlayCorner = Instance.new("UICorner")
+		overlayCorner.CornerRadius = UDim.new(0, 6)
+		overlayCorner.Parent = overlay
 	end
 
 	-- 클릭 이벤트
@@ -1290,24 +1322,76 @@ function InventoryUI.ShowAnimalDetail(palData)
 	-- 뷰포트에 모델 로드
 	loadCreatureViewport(palData.creatureId)
 
-	-- 스탯 표시
+	-- 스탯 표시 (속성 반영된 값 사용)
 	clearAnimalStats()
 	local sf = a.StatsFrame
 	if sf and creatureData then
 		local stats = palData.stats or {}
+		local baseStats = palData.baseStats or {}
+		local traits = palData.traits or {}
+
+		-- 스탯 비교 색상: 기본=흰, 상승=초록, 하락=빨강
+		local COLOR_UP = Color3.fromHex("#4CAF50")
+		local COLOR_DOWN = Color3.fromHex("#F44336")
+
+		local function getStatColor(statKey)
+			local base = baseStats[statKey]
+			local current = stats[statKey]
+			if not base or not current then return nil end
+			if current > base then return COLOR_UP end
+			if current < base then return COLOR_DOWN end
+			return nil
+		end
+
 		local order = 0
-		order = order + 1; createAnimalStatCell(sf, "생명", tostring(creatureData.maxHealth or 0), order)
-		order = order + 1; createAnimalStatCell(sf, "이동속도", tostring(creatureData.runSpeed or 0), order)
-		order = order + 1; createAnimalStatCell(sf, "공격", tostring(creatureData.damage or 0), order)
-		order = order + 1; createAnimalStatCell(sf, "방어", "0", order)
+		-- 생명: palData.stats.hp (속성 반영) vs baseStats.hp
+		local hpVal = stats.hp or creatureData.petHealth or creatureData.maxHealth or 0
+		order = order + 1; createAnimalStatCell(sf, "생명", tostring(hpVal), order, getStatColor("hp"))
+
+		-- 이동속도: palData.stats.speed (속성 반영)
+		local spdVal = stats.speed or creatureData.runSpeed or 0
+		order = order + 1; createAnimalStatCell(sf, "이동속도", tostring(spdVal), order, getStatColor("speed"))
+
+		-- 공격: palData.stats.attack (속성 반영)
+		local atkVal = stats.attack or creatureData.petDamage or creatureData.damage or 0
+		order = order + 1; createAnimalStatCell(sf, "공격", tostring(atkVal), order, getStatColor("attack"))
+
+		-- 방어: palData.stats.defense (속성 반영)
+		local defVal = stats.defense or 0
+		order = order + 1; createAnimalStatCell(sf, "방어", tostring(defVal), order, getStatColor("defense"))
+
+		-- 배고픔 / 레벨 (속성 무관)
 		order = order + 1; createAnimalStatCell(sf, "배고픔", tostring(math.floor(stats.hunger or 100)) .. " / 100", order)
-		order = order + 1; createAnimalStatCell(sf, "레벨", tostring(creatureData.level or 1), order)
+		order = order + 1; createAnimalStatCell(sf, "레벨", tostring(palData.level or creatureData.level or 1), order)
+
+		-- ★ 속성(특성) 표시 (그리드 셀 형식)
+		if #traits > 0 then
+			-- 구분 행 (빈 셀 2개로 간격 확보)
+			order = order + 1
+			local sep1 = Instance.new("Frame"); sep1.Name = "Sep_" .. order
+			sep1.BackgroundTransparency = 1; sep1.LayoutOrder = order; sep1.Parent = sf
+			order = order + 1
+			local sepLabel = Instance.new("Frame"); sepLabel.Name = "Sep_" .. order
+			sepLabel.BackgroundTransparency = 1; sepLabel.LayoutOrder = order; sepLabel.Parent = sf
+
+			for _, traitInfo in ipairs(traits) do
+				local badgeColor = traitInfo.positive and Color3.fromHex("#4CAF50") or Color3.fromHex("#F44336")
+				local arrow = traitInfo.positive and "▲" or "▼"
+				local traitLabel = string.format("%s %s", traitInfo.icon or "", traitInfo.name)
+				local traitValue = string.format("Lv.%d %s", traitInfo.level or 1, arrow)
+
+				order = order + 1
+				createAnimalStatCell(sf, traitLabel, traitValue, order, badgeColor)
+			end
+		end
 	end
 
 	-- 소환 버튼 텍스트 업데이트
 	if a.BtnSummon then
 		if palData.state == "SUMMONED" then
 			a.BtnSummon.Text = "회수하기"
+		elseif palData.state == "FAINTED" then
+			a.BtnSummon.Text = "기절 (소환 불가)"
 		else
 			a.BtnSummon.Text = "소환하기"
 		end

@@ -407,6 +407,11 @@ local function handleQuickSummonRequest(player: Player, payload)
 		return { success = true, data = { action = "RECALLED" } }
 	end
 
+	-- 기절 상태면 소환 불가
+	if pal.state == Enums.PalState.FAINTED then
+		return { success = false, errorCode = "FAINTED" }
+	end
+
 	-- 기존 소환 중인 팰이 있으면 먼저 회수
 	PartyService._recallPal(userId)
 
