@@ -58,6 +58,19 @@ local function getAnimNameForState(creatureModel, speed, info)
 	
 	-- 서버 상태(State) 속성 확인
 	local state = creatureModel:GetAttribute("State")
+	local mountedTurn = creatureModel:GetAttribute("MountedTurnDirection")
+	local mountedAnimState = creatureModel:GetAttribute("MountedAnimState")
+
+	if state == "MOUNTED" and animSet then
+		if mountedAnimState == "TURN_LEFT" or mountedTurn == "LEFT" then
+			return animSet.MOUNT_TURN_LEFT or animSet.MOUNT_RUN or animSet.RUN
+		elseif mountedAnimState == "TURN_RIGHT" or mountedTurn == "RIGHT" then
+			return animSet.MOUNT_TURN_RIGHT or animSet.MOUNT_RUN or animSet.RUN
+		elseif mountedAnimState == "RUN" then
+			return animSet.MOUNT_RUN or animSet.RUN or animSet.WALK or animSet.IDLE
+		end
+		return animSet.MOUNT_IDLE or animSet.IDLE or animSet.MOUNT_RUN or animSet.RUN
+	end
 	
 	local animKey = "IDLE"
 	if state == "STUNNED" then

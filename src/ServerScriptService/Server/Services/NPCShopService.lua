@@ -15,13 +15,16 @@ local DataService
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Enums = require(Shared.Enums.Enums)
 local Balance = require(Shared.Config.Balance)
+local SpawnConfig = require(Shared.Config.SpawnConfig)
 
 local DataFolder = ReplicatedStorage:WaitForChild("Data")
 local NPCShopData = require(DataFolder:WaitForChild("NPCShopData"))
+local MaterialAttributeData = require(DataFolder:WaitForChild("MaterialAttributeData"))
 
 --========================================
 -- Internal State
@@ -32,6 +35,7 @@ local lastRestockTime = os.time()
 
 -- 상점 데이터 캐시
 local shopDataMap = {}       -- [shopId] = shopData
+local spawnedNpcMap = {}     -- [shopId] = Model
 
 local function _getPlayerStateWithRetry(userId: number, timeoutSeconds: number?): any
 	if not SaveService or not SaveService.getPlayerState then
@@ -70,6 +74,400 @@ local function _loadShopData()
 		end
 	end
 	print(string.format("[NPCShopService] Loaded %d shops", count))
+end
+
+local function _getSellEntry(shop: any, itemId: string): any?
+	for _, item in ipairs(shop.sellList or {}) do
+		if item.itemId == itemId then
+			return item
+		end
+	end
+	return nil
+end
+
+local function _computeSellUnitPrice(shop: any, slotData: any): (number?, string?)
+	if not slotData or not slotData.itemId then
+		return nil, Enums.ErrorCode.SLOT_EMPTY
+	end
+
+	local sellEntry = _getSellEntry(shop, slotData.itemId)
+	if not sellEntry then
+		return nil, Enums.ErrorCode.ITEM_NOT_SELLABLE
+	end
+
+	local price = tonumber(sellEntry.price) or 0
+	if price <= 0 then
+		return nil, Enums.ErrorCode.ITEM_NOT_SELLABLE
+	end
+
+	if shop.dynamicSellPricing and slotData.attributes then
+		local pricing = shop.sellPricing or {}
+		local positivePenalty = tonumber(pricing.positiveLevelPenaltyPerLevel) or 0.08
+		local positiveMin = tonumber(pricing.positiveMinMultiplier) or 0.35
+		local negativeBonus = tonumber(pricing.negativeLevelBonusPerLevel) or 0.12
+
+		for attrId, attrLevel in pairs(slotData.attributes) do
+			local level = math.max(1, math.floor(tonumber(attrLevel) or 1))
+			local attrInfo = MaterialAttributeData.getAttribute(attrId)
+			if attrInfo then
+				if attrInfo.positive then
+					price *= math.max(positiveMin, 1 - (positivePenalty * level))
+				else
+					price *= (1 + (negativeBonus * level))
+				end
+			end
+		end
+	end
+
+	return math.max(1, math.floor(price + 0.5)), nil
+end
+
+local function _buildSellQuotes(userId: number, shop: any): {any}
+	if not InventoryService or not InventoryService.getFullInventory then
+		return {}
+	end
+
+	local quotes = {}
+	local inventory = InventoryService.getFullInventory(userId)
+	for _, slotData in ipairs(inventory) do
+		local unitPrice = _computeSellUnitPrice(shop, slotData)
+		if unitPrice then
+			table.insert(quotes, {
+				slot = slotData.slot,
+				itemId = slotData.itemId,
+				count = slotData.count or 1,
+				unitPrice = unitPrice,
+				totalPrice = unitPrice * (slotData.count or 1),
+				attributes = slotData.attributes,
+			})
+		end
+	end
+
+	table.sort(quotes, function(a, b)
+		return a.slot < b.slot
+	end)
+
+	return quotes
+end
+
+local function _getShopGroundPosition(basePosition: Vector3): Vector3
+	local rayResult = workspace:Raycast(basePosition + Vector3.new(0, 50, 0), Vector3.new(0, -200, 0))
+	if rayResult then
+		return rayResult.Position
+	end
+	return basePosition
+end
+
+local function _findPlacedShopNPC(folder: Folder, shopId: string): Model?
+	for _, child in ipairs(folder:GetChildren()) do
+		if child:IsA("Model") and (child.Name == shopId or child:GetAttribute("NPCId") == shopId) then
+			return child
+		end
+	end
+	return nil
+end
+
+local function _findShopModelTemplate(modelTemplateName: string?, fallbackName: string?): Model?
+	local candidateNames = {}
+	local function pushName(value: string?)
+		if type(value) ~= "string" or value == "" then
+			return
+		end
+		for _, existing in ipairs(candidateNames) do
+			if existing == value then
+				return
+			end
+		end
+		table.insert(candidateNames, value)
+	end
+
+	pushName(modelTemplateName)
+	pushName(fallbackName)
+
+	if #candidateNames == 0 then
+		return nil
+	end
+
+	local candidateFolders = {
+		ReplicatedStorage:FindFirstChild("NPCModels"),
+		ServerStorage:FindFirstChild("NPCModels"),
+	}
+
+	local replicatedAssets = ReplicatedStorage:FindFirstChild("Assets")
+	if replicatedAssets then
+		table.insert(candidateFolders, replicatedAssets:FindFirstChild("NPCModels"))
+		table.insert(candidateFolders, replicatedAssets:FindFirstChild("ShopNPCs"))
+	end
+
+	local serverAssets = ServerStorage:FindFirstChild("Assets")
+	if serverAssets then
+		table.insert(candidateFolders, serverAssets:FindFirstChild("NPCModels"))
+		table.insert(candidateFolders, serverAssets:FindFirstChild("ShopNPCs"))
+	end
+
+	for _, folder in ipairs(candidateFolders) do
+		if folder then
+			for _, candidateName in ipairs(candidateNames) do
+				local template = folder:FindFirstChild(candidateName)
+				if template and template:IsA("Model") then
+					return template
+				end
+			end
+		end
+	end
+
+	return nil
+end
+
+local function _ensureShopPrimaryPart(model: Model): BasePart?
+	if model.PrimaryPart and model.PrimaryPart:IsA("BasePart") then
+		return model.PrimaryPart
+	end
+
+	local preferredRoot = model:FindFirstChild("HumanoidRootPart", true)
+	if preferredRoot and preferredRoot:IsA("BasePart") then
+		model.PrimaryPart = preferredRoot
+		return preferredRoot
+	end
+
+	local firstPart = model:FindFirstChildWhichIsA("BasePart", true)
+	if firstPart then
+		model.PrimaryPart = firstPart
+		return firstPart
+	end
+
+	local root = Instance.new("Part")
+	root.Name = "HumanoidRootPart"
+	root.Size = Vector3.new(2, 2, 1)
+	root.Transparency = 1
+	root.CanCollide = false
+	root.Anchored = true
+	root.Parent = model
+	model.PrimaryPart = root
+	return root
+end
+
+local function _attachShopLabel(root: BasePart, shop: any)
+	if not root or root:FindFirstChild("NpcLabel") then
+		return
+	end
+
+	local label = Instance.new("BillboardGui")
+	label.Name = "NpcLabel"
+	label.Size = UDim2.new(0, 180, 0, 44)
+	label.StudsOffset = shop.labelOffset or Vector3.new(0, 4.8, 0)
+	label.AlwaysOnTop = true
+	label.MaxDistance = tonumber(shop.labelMaxDistance) or 36
+	label.Parent = root
+
+	local text = Instance.new("TextLabel")
+	text.Size = UDim2.new(1, 0, 1, 0)
+	text.BackgroundTransparency = 1
+	text.TextScaled = true
+	text.Font = Enum.Font.SourceSansBold
+	text.TextColor3 = Color3.fromRGB(255, 233, 184)
+	text.TextStrokeTransparency = 0.35
+	text.Text = string.format("%s\n%s", shop.npcName or shop.name or shop.id, shop.name or "")
+	text.Parent = label
+end
+
+local function _ensureShopInteractPart(model: Model, root: BasePart?, shop: any)
+	local interactPart = model:FindFirstChild("InteractPart")
+	if interactPart and not interactPart:IsA("BasePart") then
+		interactPart:Destroy()
+		interactPart = nil
+	end
+
+	if not interactPart then
+		interactPart = Instance.new("Part")
+		interactPart.Name = "InteractPart"
+		interactPart.Transparency = 1
+		interactPart.CanCollide = false
+		interactPart.CanTouch = false
+		interactPart.CanQuery = true
+		interactPart.Anchored = true
+		interactPart.Parent = model
+	end
+
+	local size = model:GetExtentsSize()
+	local minimumSize = shop.interactPartMinSize or Vector3.new(6, 6, 6)
+	interactPart.Size = Vector3.new(
+		math.max(size.X, minimumSize.X),
+		math.max(size.Y, minimumSize.Y),
+		math.max(size.Z, minimumSize.Z)
+	)
+
+	interactPart.CFrame = (root and root.CFrame) or model:GetPivot()
+	interactPart:SetAttribute("NPCId", shop.id)
+	interactPart:SetAttribute("NPCType", "shop")
+	interactPart:SetAttribute("DisplayName", shop.npcName or shop.name or shop.id)
+end
+
+local function _buildShopModelPlacement(shop: any, worldCFrame: CFrame?): CFrame?
+	if not worldCFrame then
+		return nil
+	end
+
+	local placement = worldCFrame
+	local positionOffset = shop.modelPositionOffset
+	if typeof(positionOffset) == "Vector3" then
+		placement *= CFrame.new(positionOffset)
+	end
+
+	local rotationOffset = shop.modelRotationOffset
+	if typeof(rotationOffset) == "Vector3" then
+		placement *= CFrame.Angles(
+			math.rad(rotationOffset.X),
+			math.rad(rotationOffset.Y),
+			math.rad(rotationOffset.Z)
+		)
+	end
+
+	return placement
+end
+
+local function _configureShopModel(model: Model, shop: any, root: BasePart?, worldCFrame: CFrame?, preservePosition: boolean?)
+	root = root or _ensureShopPrimaryPart(model)
+	model.Name = shop.id
+	model:SetAttribute("NPCId", shop.id)
+	model:SetAttribute("NPCType", "shop")
+	model:SetAttribute("DisplayName", shop.npcName or shop.name or shop.id)
+	model:SetAttribute("ZoneName", shop.zoneName)
+
+	for _, descendant in ipairs(model:GetDescendants()) do
+		if descendant:IsA("BasePart") then
+			descendant.Anchored = true
+			descendant.CanCollide = false
+			descendant:SetAttribute("NPCId", shop.id)
+			descendant:SetAttribute("NPCType", "shop")
+			descendant:SetAttribute("DisplayName", shop.npcName or shop.name or shop.id)
+		end
+	end
+
+	local placementCFrame = _buildShopModelPlacement(shop, worldCFrame)
+	if root and not preservePosition and placementCFrame then
+		model:PivotTo(placementCFrame)
+	end
+
+	_ensureShopInteractPart(model, root, shop)
+
+	if root and shop.showAutoLabel ~= false then
+		_attachShopLabel(root, shop)
+	end
+end
+
+local function _ensureNPCFolder(): Folder
+	local folder = workspace:FindFirstChild("NPCs")
+	if folder and folder:IsA("Folder") then
+		return folder
+	end
+
+	folder = Instance.new("Folder")
+	folder.Name = "NPCs"
+	folder.Parent = workspace
+	return folder
+end
+
+local function _spawnShopNPC(shop: any)
+	if not shop.zoneName then
+		return
+	end
+
+	if spawnedNpcMap[shop.id] and spawnedNpcMap[shop.id].Parent then
+		return
+	end
+
+	local zoneInfo = SpawnConfig.GetZoneInfo(shop.zoneName)
+	if not zoneInfo or not zoneInfo.spawnPoint then
+		warn(string.format("[NPCShopService] Missing zone info for shop NPC %s", tostring(shop.id)))
+		return
+	end
+
+	local folder = _ensureNPCFolder()
+	local existing = _findPlacedShopNPC(folder, shop.id)
+	if existing and existing:IsA("Model") then
+		_configureShopModel(existing, shop, nil, nil, true)
+		spawnedNpcMap[shop.id] = existing
+		return
+	end
+
+	local spawnOffset = shop.npcSpawnOffset or Vector3.new(12, 0, 12)
+	local groundPos = _getShopGroundPosition(zoneInfo.spawnPoint + spawnOffset)
+	local spawnPos = groundPos + Vector3.new(0, 3, 0)
+	local lookAt = zoneInfo.spawnPoint + Vector3.new(0, 3, 0)
+	local spawnCFrame = CFrame.lookAt(spawnPos, lookAt)
+
+	local template = _findShopModelTemplate(shop.modelTemplateName, shop.id)
+	if template then
+		local model = template:Clone()
+		local root = _ensureShopPrimaryPart(model)
+		_configureShopModel(model, shop, root, spawnCFrame, false)
+		model.Parent = folder
+		spawnedNpcMap[shop.id] = model
+		return
+	end
+
+	local model = Instance.new("Model")
+	model.Name = shop.id
+	model:SetAttribute("NPCId", shop.id)
+	model:SetAttribute("NPCType", "shop")
+	model:SetAttribute("DisplayName", shop.npcName or shop.name or shop.id)
+	model:SetAttribute("ZoneName", shop.zoneName)
+
+	local root = Instance.new("Part")
+	root.Name = "HumanoidRootPart"
+	root.Size = Vector3.new(2, 2, 1)
+	root.Transparency = 1
+	root.CanCollide = false
+	root.Anchored = true
+	root.CFrame = spawnCFrame
+	root.Parent = model
+	root:SetAttribute("NPCId", shop.id)
+	root:SetAttribute("NPCType", "shop")
+	root:SetAttribute("DisplayName", shop.npcName or shop.name or shop.id)
+
+	local torso = Instance.new("Part")
+	torso.Name = "Torso"
+	torso.Size = Vector3.new(2.2, 2.6, 1.2)
+	torso.Color = Color3.fromRGB(109, 77, 58)
+	torso.Material = Enum.Material.SmoothPlastic
+	torso.CanCollide = false
+	torso.Anchored = true
+	torso.CFrame = root.CFrame * CFrame.new(0, 0.8, 0)
+	torso.Parent = model
+
+	local head = Instance.new("Part")
+	head.Name = "Head"
+	head.Size = Vector3.new(1.6, 1.6, 1.6)
+	head.Color = Color3.fromRGB(240, 206, 168)
+	head.Material = Enum.Material.SmoothPlastic
+	head.CanCollide = false
+	head.Anchored = true
+	head.CFrame = root.CFrame * CFrame.new(0, 2.9, 0)
+	head.Parent = model
+
+	local hat = Instance.new("Part")
+	hat.Name = "Hat"
+	hat.Size = Vector3.new(2.2, 0.4, 2.2)
+	hat.Color = Color3.fromRGB(78, 57, 38)
+	hat.Material = Enum.Material.SmoothPlastic
+	hat.CanCollide = false
+	hat.Anchored = true
+	hat.CFrame = head.CFrame * CFrame.new(0, 1.0, 0)
+	hat.Parent = model
+
+	model.PrimaryPart = root
+	_attachShopLabel(root, shop)
+	model.Parent = folder
+	spawnedNpcMap[shop.id] = model
+end
+
+local function _spawnWorldShopNPCs()
+	for _, shop in pairs(shopDataMap) do
+		if shop.zoneName then
+			_spawnShopNPC(shop)
+		end
+	end
 end
 
 --- 모든 상점 재고 리필
@@ -158,13 +556,8 @@ local function _validateBuyItem(shop: any, itemId: string, count: number): (numb
 end
 
 --- 판매 가능 검증 (sellList 내 아이템)
-local function _validateSellItem(shop: any, itemId: string): (number?, string?)
-	for _, item in ipairs(shop.sellList or {}) do
-		if item.itemId == itemId then
-			return item.price, nil
-		end
-	end
-	return nil, Enums.ErrorCode.ITEM_NOT_SELLABLE
+local function _validateSellItem(shop: any, slotData: any): (number?, string?)
+	return _computeSellUnitPrice(shop, slotData)
 end
 
 --========================================
@@ -228,13 +621,14 @@ function NPCShopService.getShopList(): table
 			name = shop.name,
 			description = shop.description,
 			npcName = shop.npcName,
+			zoneName = shop.zoneName,
 		})
 	end
 	return list
 end
 
 --- 특정 상점 정보 조회 (buyList/sellList 포함)
-function NPCShopService.getShopInfo(shopId: string): (any?, string?)
+function NPCShopService.getShopInfo(shopId: string, userId: number?): (any?, string?)
 	local shop, err = _validateShop(shopId)
 	if not shop then
 		return nil, err
@@ -256,8 +650,11 @@ function NPCShopService.getShopInfo(shopId: string): (any?, string?)
 		name = shop.name,
 		description = shop.description,
 		npcName = shop.npcName,
+		zoneName = shop.zoneName,
+		sellOnly = shop.sellOnly == true,
 		buyList = buyListWithStock,
 		sellList = shop.sellList,
+		sellQuotes = userId and _buildSellQuotes(userId, shop) or {},
 		sellMultiplier = shop.sellMultiplier or Balance.SHOP_DEFAULT_SELL_MULT,
 	}, nil
 end
@@ -354,7 +751,7 @@ function NPCShopService.sell(userId: number, shopId: string, slot: number, count
 	end
 	
 	-- 판매 가능 검증 및 가격 확인
-	local sellPrice, sellErr = _validateSellItem(shop, itemId)
+	local sellPrice, sellErr = _validateSellItem(shop, slotData)
 	if not sellPrice then
 		return false, sellErr
 	end
@@ -411,7 +808,7 @@ local function _onShopGetInfoRequest(player: Player, payload: any)
 		}
 	end
 	
-	local shopInfo, err = NPCShopService.getShopInfo(shopId)
+	local shopInfo, err = NPCShopService.getShopInfo(shopId, player.UserId)
 	
 	if not shopInfo then
 		return {
@@ -449,7 +846,7 @@ local function _onShopBuyRequest(player: Player, payload: any)
 	end
 	
 	-- [최적화] 구매 성공 시 갱신된 상점 정보(재고 포함)를 함께 반환하여 추가 요청 방지
-	local updatedShopInfo = NPCShopService.getShopInfo(shopId)
+	local updatedShopInfo = NPCShopService.getShopInfo(shopId, userId)
 	
 	return { 
 		success = true,
@@ -479,7 +876,11 @@ local function _onShopSellRequest(player: Player, payload: any)
 		}
 	end
 	
-	return { success = true }
+	local updatedShopInfo = NPCShopService.getShopInfo(shopId, userId)
+	return {
+		success = true,
+		shop = updatedShopInfo,
+	}
 end
 
 local function _onShopGetGoldRequest(player: Player, _payload: any)
@@ -530,6 +931,7 @@ function NPCShopService.Init(netController: any, dataService: any, inventoryServ
 	
 	-- 상점 데이터 로드
 	_loadShopData()
+	_spawnWorldShopNPCs()
 	
 	-- 플레이어 이벤트
 	Players.PlayerAdded:Connect(_onPlayerAdded)

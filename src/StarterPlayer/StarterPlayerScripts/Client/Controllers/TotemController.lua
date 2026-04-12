@@ -27,6 +27,7 @@ local previewConn = nil
 local ownInfoCache = nil
 local ownInfoFetchedAt = 0
 local ownInfoRequestPending = false
+local isTeleporting = false -- 텔레포트 중 네트워크 요청 중단 플래그
 
 -- 사유지 진입 알림 상태
 local currentTerritoryOwnerId = nil  -- 현재 위치한 사유지 주인
@@ -392,6 +393,8 @@ local function renderPreviewRing(centerPos: Vector3, radius: number, _color: Col
 end
 
 local function refreshNearbyPreview()
+	if isTeleporting then return end -- 텔레포트 중에는 불필요한 네트워크 요청 및 UI 갱신 방지
+
 	local character = Players.LocalPlayer and Players.LocalPlayer.Character
 	local hrp = character and character:FindFirstChild("HumanoidRootPart")
 	if not hrp then
@@ -565,6 +568,18 @@ function TotemController.Init()
 			child:Destroy()
 		end
 	end
+
+	-- 텔레포트 대역폭 병목 처리
+	NetClient.On("Portal.Teleporting", function()
+		isTeleporting = true
+		hidePreview()
+	end)
+	NetClient.On("Portal.Arrived", function()
+		isTeleporting = false
+	end)
+	NetClient.On("Portal.Error", function()
+		isTeleporting = false
+	end)
 
 	NetClient.On("Totem.Upkeep.Changed", function(data)
 		if type(data) ~= "table" then

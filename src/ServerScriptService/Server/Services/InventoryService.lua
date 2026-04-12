@@ -1741,7 +1741,7 @@ local function handleUse(player: Player, payload: any)
 				creatureCombatPower = cEntry.petDamage or cEntry.damage or 0
 				creaturePetHealth = cEntry.petHealth or cEntry.maxHealth or 100
 				creaturePetSpeed = cEntry.runSpeed or cEntry.walkSpeed or 16
-				creatureDefense = cEntry.defense or 0
+				creatureDefense = cEntry.petDefense or cEntry.defense or 0
 				break
 			end
 		end

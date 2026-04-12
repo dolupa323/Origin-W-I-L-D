@@ -768,7 +768,14 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 	HUDUI.Refs.phaseLabel = phaseLabel
 	
 	-- Action 버튼 클릭 연동 (모바일/클릭 지원)
-	HUDUI.Refs.hex_Interact.MouseButton1Click:Connect(function() local IC = require(Controllers.InteractController); if IC.onInteractPress then IC.onInteractPress() end end)
+	HUDUI.Refs.hex_Interact.MouseButton1Click:Connect(function()
+		local IC = require(Controllers.InteractController)
+		if IC.onFacilityInteractPress then
+			IC.onFacilityInteractPress()
+		elseif IC.onInteractPress then
+			IC.onInteractPress()
+		end
+	end)
 	HUDUI.Refs.hex_Attack.MouseButton1Click:Connect(function() local CC = require(Controllers.CombatController); if CC.attack then CC.attack() end end)
 
 	-- Dodge & Jump (Mobile Bindings)

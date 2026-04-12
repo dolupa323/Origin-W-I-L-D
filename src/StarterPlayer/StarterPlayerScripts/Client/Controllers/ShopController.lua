@@ -104,7 +104,7 @@ function ShopController.requestBuy(shopId: string, itemId: string, count: number
 			_fireListeners("shopUpdated", data.shop)
 		end
 		if callback then
-			callback(ok, not ok and tostring(data.errorCode or "UNKNOWN_ERROR") or nil)
+			callback(ok, not ok and tostring(data and data.errorCode or "UNKNOWN_ERROR") or nil)
 		end
 	end)
 end
@@ -117,8 +117,12 @@ function ShopController.requestSell(shopId: string, slot: number, count: number?
 			slot = slot,
 			count = count,
 		})
+		if ok and data and data.shop then
+			shopInfoCache[shopId] = data.shop
+			_fireListeners("shopUpdated", data.shop)
+		end
 		if callback then
-			callback(ok, not ok and tostring(data) or nil)
+			callback(ok, not ok and tostring(data and data.errorCode or "UNKNOWN_ERROR") or nil)
 		end
 	end)
 end

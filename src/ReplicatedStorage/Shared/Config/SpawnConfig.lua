@@ -17,9 +17,9 @@ local ZONES = {
 		spawnPoint = Vector3.new(-128, 20, -278),  -- 초원 섬 기본 스폰 지점
 	},
 	TROPICAL = {
-		center = Vector3.new(-197, 0, 2892),            -- 열대 섬 중심 좌표 (귀환 포탈 기준)
+		center = Vector3.new(-184, 10, 2788),            -- 열대 섬 중심 좌표 (귀환 포탈 기준)
 		radius = 2500,                                  -- 영역 반경 (studs)
-		spawnPoint = Vector3.new(-197, 45, 2892),       -- 열대 섬 기본 스폰 지점 (귀환 포탈 근처)
+		spawnPoint = Vector3.new(-184, 45, 2788),       -- 열대 섬 기본 스폰 지점 (귀환 포탈 근처)
 	},
 }
 

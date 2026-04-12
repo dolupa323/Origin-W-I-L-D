@@ -36,6 +36,18 @@ local function findAnimation(animName: string): Animation?
 	return ReplicatedStorage:FindFirstChild(animName, true)
 end
 
+function AnimationManager.invalidate(humanoid: Humanoid, animName: string?)
+	if not humanoid or not trackCache[humanoid] then
+		return
+	end
+
+	if animName then
+		trackCache[humanoid][animName] = nil
+	else
+		trackCache[humanoid] = nil
+	end
+end
+
 --========================================
 -- Public API
 --========================================
@@ -55,8 +67,12 @@ function AnimationManager.load(humanoid: Humanoid, animName: string): AnimationT
 		end)
 	end
 	
-	if trackCache[humanoid][animName] then
-		return trackCache[humanoid][animName]
+	if trackCache[humanoid][animName] ~= nil then
+		local cachedTrack = trackCache[humanoid][animName]
+		if cachedTrack == false then
+			return nil
+		end
+		return cachedTrack
 	end
 
 	-- 2. 애니메이션 객체 찾기
@@ -77,11 +93,9 @@ function AnimationManager.load(humanoid: Humanoid, animName: string): AnimationT
 	
 	local animObject = findAnimation(animName)
 	if not animObject then
-		-- 너무 잦은 경고 방지를 위해 캐시에 nil 기록 (한 번만 경고)
+		-- 너무 잦은 경고 방지를 위해 false 캐시 (한 번만 경고)
 		trackCache[humanoid][animName] = false
 		warn(string.format("[AnimationManager] Animation '%s' not found", animName))
-		return nil
-	elseif trackCache[humanoid][animName] == false then
 		return nil
 	end
 	

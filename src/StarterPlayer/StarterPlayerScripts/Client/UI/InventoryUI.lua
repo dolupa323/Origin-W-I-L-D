@@ -1330,6 +1330,24 @@ function InventoryUI.ShowAnimalDetail(palData)
 		local baseStats = palData.baseStats or {}
 		local traits = palData.traits or {}
 
+		-- [수정] 과거 버전에 잡은 팰(구버전 호환) 및 UI 표기 정확도를 위해 서버와 동일하게 모든 스탯 동적 계산 보정
+		local baseHp = baseStats.hp or creatureData.petHealth or creatureData.maxHealth or 100
+		local baseDef = baseStats.defense or creatureData.petDefense or creatureData.defense or 0
+		local baseAtk = baseStats.attack or creatureData.petDamage or creatureData.damage or 0
+		local baseSpd = baseStats.speed or creatureData.runSpeed or creatureData.walkSpeed or 16
+
+		local PalTraitData = require(game:GetService("ReplicatedStorage").Data.PalTraitData)
+		stats.hp = math.floor(baseHp * PalTraitData.GetStatMultiplier(traits, "hp"))
+		stats.defense = math.floor(baseDef * PalTraitData.GetStatMultiplier(traits, "defense"))
+		stats.attack = math.floor(baseAtk * PalTraitData.GetStatMultiplier(traits, "attack"))
+		stats.speed = math.floor(baseSpd * PalTraitData.GetStatMultiplier(traits, "speed") * 10) / 10
+
+		-- 비교(색상) 함수 구동을 위해 baseStats가 비어있는 구(old)데이터더라도 값 채워주기
+		baseStats.hp = baseHp
+		baseStats.defense = baseDef
+		baseStats.attack = baseAtk
+		baseStats.speed = baseSpd
+
 		-- 스탯 비교 색상: 기본=흰, 상승=초록, 하락=빨강
 		local COLOR_UP = Color3.fromHex("#4CAF50")
 		local COLOR_DOWN = Color3.fromHex("#F44336")
@@ -1338,20 +1356,31 @@ function InventoryUI.ShowAnimalDetail(palData)
 			local base = baseStats[statKey]
 			local current = stats[statKey]
 			if not base or not current then return nil end
+			-- (주의) 방어가 둘다 0일 때, 특성이 있는데도 색상이 안나오는 현상 방어
 			if current > base then return COLOR_UP end
 			if current < base then return COLOR_DOWN end
+
+			-- 현재값과 기본값이 같더라도, 특성이 존재하면 억지로 색상 부여 (예: 방어력이 0일때 배율 곱해도 0이므로)
+			for _, trait in ipairs(traits) do
+				if trait.stat == statKey then
+					return trait.positive and COLOR_UP or COLOR_DOWN
+				end
+			end
+
 			return nil
 		end
 
 		local order = 0
 		-- 생명: 현재HP / 최대HP (currentHp가 있으면 사용, 없으면 풀HP)
 		local maxHp = stats.hp or creatureData.petHealth or creatureData.maxHealth or 0
-		local currentHp = stats.currentHp or maxHp
+		local currentHp = stats.currentHp
+		if currentHp == nil then currentHp = maxHp end
+
 		local hpDisplay = string.format("%d / %d", currentHp, maxHp)
 		local hpColor = getStatColor("hp")
 		if currentHp < maxHp then
-			-- 현재 HP가 최대보다 낮으면 노란색 표시
-			hpColor = hpColor or Color3.fromHex("#FFCC00")
+			-- 현재 HP가 최대보다 낮으면 노란색 표시 (우선적용)
+			hpColor = Color3.fromHex("#FFCC00")
 		end
 		order = order + 1; createAnimalStatCell(sf, "생명", hpDisplay, order, hpColor)
 

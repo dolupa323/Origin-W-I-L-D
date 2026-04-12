@@ -250,7 +250,7 @@ local function createDropModel(dropData)
 	prompt.ObjectText = getItemDisplayName(dropData.itemId) .. " (x" .. tostring(dropData.count) .. ")"
 	prompt.MaxActivationDistance = Balance.DROP_PROMPT_RANGE
 	prompt.HoldDuration = 0
-	prompt.KeyboardKeyCode = Enum.KeyCode.Z
+	prompt.KeyboardKeyCode = Enum.KeyCode.R
 	prompt.RequiresLineOfSight = false
 	prompt.Style = Enum.ProximityPromptStyle.Custom
 	prompt.UIOffset = Vector2.new(0, 0) -- PromptUI에서 BillboardGui offset으로 제어

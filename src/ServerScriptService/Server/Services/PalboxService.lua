@@ -203,7 +203,13 @@ function PalboxService.removePal(userId: number, palUID: string): boolean
 	end
 	
 	palbox[palUID] = nil
-	
+
+	local ServerScriptService = game:GetService("ServerScriptService")
+	local StorageService = require(ServerScriptService.Server.Services.StorageService)
+	if StorageService and StorageService.deleteStorageInternal then
+		StorageService.deleteStorageInternal("PAL_" .. palUID)
+	end
+
 	-- 즉시 SaveService에 동기화
 	if SaveService and SaveService.updatePlayerState then
 		SaveService.updatePlayerState(userId, function(state)

@@ -29,6 +29,7 @@ local CreatureData = {
 		passiveEffect = { stat = "workSpeed", value = 5 },       -- 작업 속도 +5
 		petScale = 5.0,     -- 목표 크기 (스터드)
 		petDamage = 3,
+		petDefense = 5,
 		petHealth = 20,
 	},
 	{
@@ -54,6 +55,7 @@ local CreatureData = {
 		passiveEffect = { stat = "attackMult", value = 0.03 },   -- 공격력 +3%
 		petScale = 4.0,     -- 목표 크기 (스터드)
 		petDamage = 6,
+		petDefense = 8,
 		petHealth = 15,
 	},
 	{
@@ -82,7 +84,12 @@ local CreatureData = {
 		passiveEffect = { stat = "maxStamina", value = 15 },     -- 최대 기력 +15
 		petScale = 7.0,     -- 목표 크기 (스터드)
 		petDamage = 10,
+		petDefense = 15,
 		petHealth = 80,
+		mountable = true,
+		mountSeatOffset = Vector3.new(0, 5.9, -7.8),
+		mountSpeedMultiplier = 1.0,
+		mountJumpPower = 46,
 	},
 
 	--========================================
@@ -114,6 +121,7 @@ local CreatureData = {
 		passiveEffect = { stat = "defense", value = 5 },         -- 방어력 +5
 		petScale = 7.0,     -- 목표 크기 (스터드)
 		petDamage = 20,
+		petDefense = 30,
 		petHealth = 200,
 	},
 	{
@@ -139,6 +147,7 @@ local CreatureData = {
 		passiveEffect = { stat = "maxHealth", value = 10 },      -- 최대 체력 +10
 		petScale = 5.0,     -- 목표 크기 (스터드)
 		petDamage = 5,
+		petDefense = 10,
 		petHealth = 50,
 	},
 	{
@@ -166,6 +175,7 @@ local CreatureData = {
 		passiveEffect = { stat = "maxHealth", value = 20 },      -- 최대 체력 +20
 		petScale = 7.0,     -- 목표 크기 (스터드)
 		petDamage = 18,
+		petDefense = 25,
 		petHealth = 180,
 	},
 	{
@@ -190,6 +200,7 @@ local CreatureData = {
 		passiveEffect = { stat = "defense", value = 8 },         -- 방어력 +8
 		petScale = 7.0,     -- 목표 크기 (스터드)
 		petDamage = 18,
+		petDefense = 40,
 		petHealth = 250,
 	},
 
@@ -221,7 +232,12 @@ local CreatureData = {
 		passiveEffect = { stat = "attackMult", value = 0.05 },   -- 공격력 +5%
 		petScale = 6.0,     -- 목표 크기 (스터드)
 		petDamage = 12,
+		petDefense = 15,
 		petHealth = 60,
+		mountable = true,
+		mountSeatOffset = Vector3.new(0, 4.1, -5.5),
+		mountSpeedMultiplier = 1.65,
+		mountJumpPower = 58,
 	},
 	{
 		id = "TREX",
@@ -245,6 +261,7 @@ local CreatureData = {
 		passiveEffect = { stat = "attackMult", value = 0.08 },   -- 공격력 +8%
 		petScale = 8.0,     -- 목표 크기 (스터드)
 		petDamage = 40,
+		petDefense = 50,
 		petHealth = 400,
 	},
 }

@@ -173,7 +173,19 @@ end
 --========================================
 
 local function _getPortalObject(objectName)
-	return workspace:FindFirstChild(objectName)
+	if not objectName or objectName == "" then return nil end
+	-- 1. 최상위 Workspace 우선 검색
+	local obj = workspace:FindFirstChild(objectName)
+	if obj then return obj end
+
+	-- 2. 하위 폴더/모델 내 재귀 검색 (StreamingEnabled 환경 대응)
+	for _, folder in ipairs(workspace:GetChildren()) do
+		if folder:IsA("Folder") or folder:IsA("Model") then
+			local sub = folder:FindFirstChild(objectName, true)
+			if sub then return sub end
+		end
+	end
+	return nil
 end
 
 local function _distanceToPortalSurface(player, portalObject)
@@ -390,30 +402,54 @@ local function _requestPortalTeleport(player, payload)
 		-- ★ 도착 좌표: zone spawnPoint를 기본으로 사용 (안전 보장)
 		-- 포탈 오브젝트 위치는 주변 지형(물 등)이 위험할 수 있으므로 spawnPoint 우선
 		local arrivalPos = zoneInfo.spawnPoint + Vector3.new(0, 5, 0)
-		local arrivalPortal = _getPortalObject(arrivalPortalName)
-
-		-- Raycast 제외 목록: 캐릭터 + 도착 포탈 (포탈 표면이 아닌 실제 지면을 감지)
 		local excludeList = { character }
+
+		-- ★ 포탈 오브젝트가 발견되면 해당 위치를 정교한 이동 기준점으로 사용
+		local arrivalPortal = _getPortalObject(arrivalPortalName)
 		if arrivalPortal then
 			table.insert(excludeList, arrivalPortal)
-		end
-
-		-- spawnPoint 기준으로 지면 안전 확인
-		local rayOrigin = arrivalPos + Vector3.new(0, 50, 0)
-		local rayDir = Vector3.new(0, -250, 0)
-		local rayParams = RaycastParams.new()
-		rayParams.FilterType = Enum.RaycastFilterType.Exclude
-		rayParams.FilterDescendantsInstances = excludeList
-		local rayResult = workspace:Raycast(rayOrigin, rayDir, rayParams)
-		if rayResult and rayResult.Material ~= Enum.Material.Water then
-			-- 안전한 지면 발견 → 지면 위 5스터드에 착지
-			arrivalPos = rayResult.Position + Vector3.new(0, 5, 0)
+			arrivalPos = arrivalPortal:GetPivot().Position + Vector3.new(0, 5, 0)
 		else
-			-- 지면 없음 또는 Water → spawnPoint 높이 그대로 사용
-			if rayResult then
-				warn("[PortalService] Water detected at spawnPoint, using raw spawnPoint")
+			-- 도착 포탈 기준점이 없는 경우에만 레이캐스트로 지면 재확인 (공중 스폰 방지)
+			local rayOrigin = arrivalPos + Vector3.new(0, 50, 0)
+			local rayDir = Vector3.new(0, -250, 0)
+			local rayParams = RaycastParams.new()
+			rayParams.FilterDescendantsInstances = excludeList
+			rayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+			local rayResult = workspace:Raycast(rayOrigin, rayDir, rayParams)
+			if rayResult and rayResult.Material ~= Enum.Material.Water then
+				-- [안전 장치] 레이캐스트 결과 지면이 기준점보다 너무 낮다면 기본값 유지
+				local hitY = rayResult.Position.Y
+				if hitY > (arrivalPos.Y - 20) then
+					arrivalPos = rayResult.Position + Vector3.new(0, 5, 0)
+				else
+					warn("[PortalService] Raycast hit too low surface (possibly underground), using default spawnPoint height.")
+				end
+			else
+				-- 지면 없음 또는 Water → spawnPoint 높이 그대로 사용 (공중 5스터드)
+				if rayResult then
+					warn("[PortalService] Water detected at spawnPoint, using raw spawnPoint")
+				end
 			end
 		end
+
+		-- ★ [원인파악 밎 근본 해결]
+		-- StreamingEnabled 환경에서는 서버가 PivotTo로 캐릭터를 순간 이동시키면,
+		-- 클라이언트는 아직 해당 지역의 지형/파트를 다운로드받지 못한 상태일 수 있습니다.
+		-- 이 때 클라이언트 측 물리 엔진이 빈 공간으로 인식하여 중력에 의해 캐릭터가 추락하며,
+		-- 지형이 생성되기 전에 FallenPartsDestroyHeight 선(-500)에 닿아 사망하게 됩니다 (지하 리스폰 버그의 원인).
+
+		local hrp = character:FindFirstChild("HumanoidRootPart")
+		if hrp then
+			-- 텔레포트 전후로 클라이언트 물리 추락 방지를 위해 앵커링
+			hrp.Anchored = true
+		end
+
+		-- 서버가 클라이언트에게 도착 위치의 맵 데이터를 최우선으로 스트리밍하도록 강제 요청 (최대 5초 대기)
+		pcall(function()
+			player:RequestStreamAroundAsync(arrivalPos, 5)
+		end)
 
 		character:PivotTo(CFrame.new(arrivalPos))
 
@@ -424,6 +460,17 @@ local function _requestPortalTeleport(player, payload)
 		task.delay(5, function()
 			if ff and ff.Parent then ff:Destroy() end
 		end)
+
+		if hrp then
+			-- 데이터 스트리밍(RequestStreamAroundAsync)이 완료되었더라도,
+			-- 클라이언트 렌더링 프레임 및 물리 계산이 정상화되는 찰나의 순간 추락할 위험이 있으므로
+			-- 서버에서 충분한 시간(2초) 동안 Anchored를 유지해 허공 추락을 근본적으로 방지합니다.
+			task.delay(2.0, function()
+				if hrp and character.Parent then
+					hrp.Anchored = false
+				end
+			end)
+		end
 
 		NetController.FireClient(player, "Portal.Arrived", { zone = targetZoneName, portalId = portalId })
 		print(string.format("[PortalService] %s warped to '%s' via portal '%s'%s (pos=%.0f,%.0f,%.0f)",
@@ -499,7 +546,16 @@ end
 
 local function _setupPortalObject(objectName, objectText, actionText, callback)
 	task.spawn(function()
-		local portalObj = workspace:WaitForChild(objectName, 30)
+		local portalObj = nil
+		local deadline = os.clock() + 30
+		repeat
+			portalObj = _getPortalObject(objectName)
+			if portalObj then
+				break
+			end
+			task.wait(0.5)
+		until os.clock() >= deadline
+
 		if not portalObj then
 			warn("[PortalService] Portal object not found:", objectName)
 			return

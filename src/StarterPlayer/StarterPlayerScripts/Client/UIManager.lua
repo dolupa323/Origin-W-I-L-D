@@ -1387,7 +1387,7 @@ function UIManager.requestSell(slotIdx, count)
 			UIManager.notify("판매 완료!", C.GOLD)
 			UIManager.refreshShop()
 		else
-			UIManager.notify("판매 실패", C.RED)
+			UIManager.notify(friendlyError(err, "판매"), C.RED)
 		end
 	end)
 end
@@ -1905,7 +1905,7 @@ end
 -- Public API: Interact / Harvest
 ----------------------------------------------------------------
 function UIManager.showInteractPrompt(text, targetName, durability)
-	local keyHint = UILocalizer.Localize(text or "[Z] 상호작용")
+	local keyHint = UILocalizer.Localize(text or "[R] 상호작용")
 	local buildingName = targetName and targetName ~= "" and targetName or ""
 
 	InteractUI.UpdatePrompt(buildingName, keyHint)
@@ -2399,6 +2399,16 @@ local function setupEventListeners()
 			end
 			UIManager.refreshAnimalManagement()
 		end)
+
+		NetClient.On("Party.Mounted", function(data)
+			local palName = data and data.palName or "공룡"
+			UIManager.sideNotify(palName .. " 탑승 중", Color3.fromRGB(120, 220, 255))
+		end)
+
+		NetClient.On("Party.Dismounted", function(data)
+			local palName = data and data.palName or "공룡"
+			UIManager.sideNotify(palName .. "에서 내렸습니다.", Color3.fromRGB(180, 220, 255))
+		end)
 	end
 
 	-- Debuff Events
@@ -2538,6 +2548,11 @@ local function setupEventListeners()
 			local dest = (data and data.destination) or "다음 섬"
 			UIManager.closePortal()
 
+			local oldFadeGui = player.PlayerGui:FindFirstChild("PortalFadeGui")
+			if oldFadeGui then
+				oldFadeGui:Destroy()
+			end
+
 			-- 페이드 스크린 생성
 			local fadeGui = Instance.new("ScreenGui")
 			fadeGui.Name = "PortalFadeGui"
@@ -2555,7 +2570,7 @@ local function setupEventListeners()
 
 			local label = Instance.new("TextLabel")
 			label.Size = UDim2.new(1, 0, 0, 60)
-			label.Position = UDim2.new(0, 0, 0.45, 0)
+			label.Position = UDim2.new(0, 0, 0.45, -40)
 			label.BackgroundTransparency = 1
 			label.Text = "🌀 " .. dest .. "(으)로 이동 중..."
 			label.TextColor3 = Color3.fromRGB(200, 230, 255)
@@ -2564,26 +2579,83 @@ local function setupEventListeners()
 			label.TextTransparency = 1
 			label.Parent = overlay
 
+			-- 로딩바 배경
+			local barBg = Instance.new("Frame")
+			barBg.Name = "ProgressBarBg"
+			barBg.Size = UDim2.new(0.4, 0, 0, 12)
+			barBg.Position = UDim2.new(0.3, 0, 0.45, 30)
+			barBg.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+			barBg.BorderSizePixel = 0
+			barBg.BackgroundTransparency = 1
+			local bgCorner = Instance.new("UICorner")
+			bgCorner.CornerRadius = UDim.new(0.5, 0)
+			bgCorner.Parent = barBg
+			barBg.Parent = overlay
+
+			-- 로딩바 채움
+			local barFill = Instance.new("Frame")
+			barFill.Name = "ProgressBarFill"
+			barFill.Size = UDim2.new(0, 0, 1, 0)
+			barFill.BackgroundColor3 = Color3.fromRGB(100, 200, 255)
+			barFill.BorderSizePixel = 0
+			barFill.BackgroundTransparency = 1
+			local fillCorner = Instance.new("UICorner")
+			fillCorner.CornerRadius = UDim.new(0.5, 0)
+			fillCorner.Parent = barFill
+			barFill.Parent = barBg
+
+			-- 빛나는 효과 (가짜 진행률)
+			local uigradient = Instance.new("UIGradient")
+			uigradient.Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, Color3.fromRGB(80, 180, 255)),
+				ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 230, 255))
+			})
+			uigradient.Parent = barFill
+
 			-- 페이드 인 (검정화면)
-			local fadeIn = TweenService:Create(overlay, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0})
-			local textIn = TweenService:Create(label, TweenInfo.new(0.8), {TextTransparency = 0})
-			fadeIn:Play()
-			textIn:Play()
+			TweenService:Create(overlay, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 0}):Play()
+			TweenService:Create(label, TweenInfo.new(0.8), {TextTransparency = 0}):Play()
+			TweenService:Create(barBg, TweenInfo.new(0.8), {BackgroundTransparency = 0.3}):Play()
+			TweenService:Create(barFill, TweenInfo.new(0.8), {BackgroundTransparency = 0}):Play()
+
+			-- 모의 로딩 애니메이션 (85%까지 약 4초에 걸쳐 천천히 진입)
+			task.delay(0.8, function()
+				if barFill and barFill.Parent then
+					TweenService:Create(barFill, TweenInfo.new(4.0, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {Size = UDim2.new(0.85, 0, 1, 0)}):Play()
+				end
+			end)
 		end)
 
 		NetClient.On("Portal.Arrived", function(_data)
 			local fadeGui = player.PlayerGui:FindFirstChild("PortalFadeGui")
 			if fadeGui then
 				local overlay = fadeGui:FindFirstChildWhichIsA("Frame")
-				local label = overlay and overlay:FindFirstChildWhichIsA("TextLabel")
 				if overlay then
-					local fadeOut = TweenService:Create(overlay, TweenInfo.new(1.0, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1})
-					if label then
-						TweenService:Create(label, TweenInfo.new(0.6), {TextTransparency = 1}):Play()
-					end
-					fadeOut:Play()
-					fadeOut.Completed:Connect(function()
-						fadeGui:Destroy()
+					local label = overlay:FindFirstChildWhichIsA("TextLabel")
+					local barBg = overlay:FindFirstChild("ProgressBarBg")
+					local barFill = barBg and barBg:FindFirstChild("ProgressBarFill")
+
+					task.spawn(function()
+						-- 1. 완료 시 잔여 로딩바를 빠르게 100%로 채움
+						if barFill then
+							TweenService:Create(barFill, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(1, 0, 1, 0)}):Play()
+						end
+						if label then
+							label.Text = "🌀 안전하게 도착했습니다!"
+							label.TextColor3 = Color3.fromRGB(150, 255, 150)
+						end
+						task.wait(0.5)
+
+						-- 2. 서서히 화면 페이드 아웃
+						local fadeOut = TweenService:Create(overlay, TweenInfo.new(1.0, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1})
+						if label then TweenService:Create(label, TweenInfo.new(0.6), {TextTransparency = 1}):Play() end
+						if barBg then TweenService:Create(barBg, TweenInfo.new(0.6), {BackgroundTransparency = 1}):Play() end
+						if barFill then TweenService:Create(barFill, TweenInfo.new(0.6), {BackgroundTransparency = 1}):Play() end
+
+						fadeOut:Play()
+						fadeOut.Completed:Connect(function()
+							fadeGui:Destroy()
+						end)
 					end)
 				else
 					fadeGui:Destroy()
@@ -2593,6 +2665,10 @@ local function setupEventListeners()
 
 		NetClient.On("Portal.Error", function(data)
 			local msg = (data and data.message) or "포탈 오류"
+			local fadeGui = player.PlayerGui:FindFirstChild("PortalFadeGui")
+			if fadeGui then
+				fadeGui:Destroy()
+			end
 			UIManager.sideNotify("❌ " .. msg, Color3.fromRGB(255, 80, 80))
 		end)
 	end

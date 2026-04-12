@@ -105,4 +105,68 @@ NPCShopData.BUILDING_SHOP = {
 	},
 }
 
+--========================================
+-- 섬별 부산물 매입상 (Island Traders)
+-- optional:
+-- modelTemplateName = "MyNpcModel"  -- ReplicatedStorage/Assets/NPCModels 또는 ServerStorage/NPCModels에서 탐색
+-- showAutoLabel = false             -- 커스텀 모델에 자체 이름표가 있으면 비활성화 가능
+-- labelOffset = Vector3.new(0, 5, 0)
+-- labelMaxDistance = 36
+-- modelPositionOffset = Vector3.new(0, 0, 0)
+-- modelRotationOffset = Vector3.new(0, 0, 0) -- degrees
+--========================================
+NPCShopData.ISLAND_TRADER_GRASSLAND = {
+	id = "ISLAND_TRADER_GRASSLAND",
+	name = "초원섬 부산물 상점",
+	description = "초원섬의 공룡 부산물과 잡템을 전문적으로 매입합니다.",
+	npcName = "수집상 마로",
+	zoneName = "GRASSLAND",
+	npcSpawnOffset = Vector3.new(52, 0, 34),
+	labelMaxDistance = 30,
+	modelPositionOffset = Vector3.new(0, 3.5, 0),
+	modelRotationOffset = Vector3.new(180, 0, 0),
+	sellOnly = true,
+	dynamicSellPricing = true,
+	sellPricing = {
+		positiveLevelPenaltyPerLevel = 0.08,
+		positiveMinMultiplier = 0.35,
+		negativeLevelBonusPerLevel = 0.12,
+	},
+	buyList = {},
+	sellList = {
+		{ itemId = "MEAT", price = 9 },
+		{ itemId = "DODO_FEATHER", price = 14 },
+		{ itemId = "SMALL_BONE", price = 12 },
+		{ itemId = "LEATHER", price = 17 },
+		{ itemId = "HORN", price = 24 },
+	},
+}
+
+NPCShopData.ISLAND_TRADER_TROPICAL = {
+	id = "ISLAND_TRADER_TROPICAL",
+	name = "열대섬 부산물 상점",
+	description = "열대섬의 공룡 부산물과 잡템을 전문적으로 매입합니다.",
+	npcName = "교역상 세라",
+	zoneName = "TROPICAL",
+	npcSpawnOffset = Vector3.new(18, 0, 12),
+	labelMaxDistance = 30,
+	modelPositionOffset = Vector3.new(0, 3.5, 0),
+	modelRotationOffset = Vector3.new(180, 0, 0),
+	sellOnly = true,
+	dynamicSellPricing = true,
+	sellPricing = {
+		positiveLevelPenaltyPerLevel = 0.08,
+		positiveMinMultiplier = 0.35,
+		negativeLevelBonusPerLevel = 0.12,
+	},
+	buyList = {},
+	sellList = {
+		{ itemId = "MEAT", price = 11 },
+		{ itemId = "TROPICAL_LEATHER", price = 26 },
+		{ itemId = "BONE", price = 17 },
+		{ itemId = "HORN", price = 32 },
+		{ itemId = "SHARP_TOOTH", price = 28 },
+	},
+}
+
 return NPCShopData

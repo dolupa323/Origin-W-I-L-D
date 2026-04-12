@@ -381,12 +381,7 @@ if success then
 		end
 	end)
 	
-	-- Z = 상호작용 (줍기, NPC 등)
-	InputManager.bindKey(Enum.KeyCode.Z, "InteractZ", function()
-		InteractController.onInteractPress()
-	end)
-
-	-- R = 건물/시설 상호작용 (Z 줍기 프롬프트와 충돌 방지)
+	-- R = 모든 상호작용 통합 (NPC, 자원, 시설, 무전기, 공룡 메뉴)
 	InputManager.bindKey(Enum.KeyCode.R, "InteractFacilityR", function()
 		if InteractController.onFacilityInteractPress then
 			InteractController.onFacilityInteractPress()

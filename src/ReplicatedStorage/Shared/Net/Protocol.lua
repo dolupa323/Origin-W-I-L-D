@@ -97,6 +97,10 @@ Protocol.Commands = {
 	["Party.Remove.Request"] = true,           -- 파티에서 해제
 	["Party.Summon.Request"] = true,           -- 팰 소환
 	["Party.Recall.Request"] = true,           -- 팰 회수
+	["Party.Mount.Request"] = true,            -- 팰 타기
+	["Party.Dismount.Request"] = true,         -- 팰 내리기
+	["Party.Mount.Jump.Request"] = true,       -- 탑승 중 공룡 점프
+	["Party.Mount.Control.Request"] = true,    -- 탑승 중 공룡 조작 입력
 	
 	-- Player Stats 명령어 (Phase 6)
 	["Player.Stats.Request"] = true,           -- 레벨/XP/포인트 조회

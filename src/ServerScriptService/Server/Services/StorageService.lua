@@ -36,7 +36,46 @@ local TotemService = nil
 -- Internal: Storage Management
 --========================================
 
+local PAL_STORAGE_ACCESS_DISTANCE = (Balance.HARVEST_RANGE or 10) + 6
+
+local function _canAccessPalStorage(player: Player, palUID: string): boolean
+	if not palUID or palUID == "" then
+		return false
+	end
+
+	local PalboxService = require(Services:WaitForChild("PalboxService"))
+	local PartyService = require(Services:WaitForChild("PartyService"))
+	if not PalboxService or not PartyService then
+		return false
+	end
+
+	local pal = PalboxService.getPal and PalboxService.getPal(player.UserId, palUID)
+	if not pal or pal.state ~= Enums.PalState.SUMMONED then
+		return false
+	end
+
+	local summon = PartyService.getSummon and PartyService.getSummon(player.UserId)
+	if not summon or summon.palUID ~= palUID then
+		return false
+	end
+
+	local character = player.Character
+	local playerRoot = character and character:FindFirstChild("HumanoidRootPart")
+	local palRoot = summon.rootPart
+	if not playerRoot or not palRoot or not palRoot.Parent then
+		return false
+	end
+
+	return (playerRoot.Position - palRoot.Position).Magnitude <= PAL_STORAGE_ACCESS_DISTANCE
+end
+
 local function _canAccessStorage(player: Player, storageId: string): boolean
+	-- 팰 가방 접근 권한 체크
+	if string.sub(storageId, 1, 4) == "PAL_" then
+		local palUID = string.sub(storageId, 5)
+		return _canAccessPalStorage(player, palUID)
+	end
+
 	if not BuildService or not BuildService.get then
 		return false
 	end
@@ -368,6 +407,29 @@ end
 --- 창고 정보 가져오기 (디버그용)
 function StorageService.getStorageInfo(storageId: string): any?
 	return _getStorage(storageId)
+end
+
+function StorageService.deleteStorageInternal(storageId: string)
+	if not storageId or type(storageId) ~= "string" then
+		return false
+	end
+
+	local storages = _getStorages(storageId)
+	if not storages[storageId] then
+		return false
+	end
+
+	storages[storageId] = nil
+	viewingPlayers[storageId] = nil
+
+	for userId, sessions in pairs(playerSessions) do
+		sessions[storageId] = nil
+		if next(sessions) == nil then
+			playerSessions[userId] = nil
+		end
+	end
+
+	return true
 end
 
 --- 모든 창고 ID 목록 (주의: 파티셔닝으로 인해 전체 순회 부하 발생 가능, 실사용 시 최적화 필요)

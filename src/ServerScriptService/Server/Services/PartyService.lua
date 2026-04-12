@@ -4,6 +4,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Enums = require(Shared.Enums.Enums)
 local Balance = require(Shared.Config.Balance)
@@ -26,12 +27,18 @@ local PAL_MIN_DIST = Balance.PAL_MIN_DIST or 5
 local PAL_COMBAT_RANGE = Balance.PAL_COMBAT_RANGE or 15
 local PAL_ATTACK_RANGE = 5
 local PAL_ATTACK_COOLDOWN = 2
+local SEA_LEVEL = Balance.SEA_LEVEL or 2
+local MOUNT_INTERACT_DISTANCE = 12
+local MOUNT_TURN_RATE = math.rad(140)
+local MOUNT_TURN_LEAD_TIME = 0.22
+local MOUNT_REVERSE_SPEED_MULTIPLIER = 0.55
 
 -- 소환된 팰 목록 (모델 관리)
 local activeSummons = {} -- [userId] = { model, humanoid, rootPart, palData, state, lastAttackTime }
 
 -- ★ 주인의 전투 대상 (활 원거리 전투 시 팰에게 적 위치 공유)
 local ownerCombatTargets = {} -- [userId] = instanceId (CreatureService의 크리처 ID)
+local setPalState
 
 --========================================
 -- Internal Helpers
@@ -53,6 +60,51 @@ local function getPartySize(party): number
 	return count
 end
 
+local function getCreatureData(creatureId: string)
+	local CreatureDataModule = require(ReplicatedStorage.Data.CreatureData)
+	for _, entry in ipairs(CreatureDataModule) do
+		if entry.id == creatureId then
+			return entry
+		end
+	end
+	return nil
+end
+
+local function resolveMountSpeed(palData, creatureData, fallbackSpeed: number?): number
+	local baseSpeed = tonumber(
+		palData and palData.stats and palData.stats.speed
+		or creatureData and creatureData.runSpeed
+		or creatureData and creatureData.walkSpeed
+		or fallbackSpeed
+		or 16
+	) or 16
+	local multiplier = tonumber(creatureData and creatureData.mountSpeedMultiplier) or 1
+	return baseSpeed * multiplier
+end
+
+local function resolveCurrentMountMoveSpeed(summon, throttle: number): number
+	local moveSpeed = resolveMountSpeed(summon.palData, summon.creatureData, summon.baseSpeed)
+	if throttle < 0 then
+		local reverseMultiplier = tonumber(summon.creatureData and summon.creatureData.mountReverseSpeedMultiplier)
+			or MOUNT_REVERSE_SPEED_MULTIPLIER
+		moveSpeed *= reverseMultiplier
+	end
+	return moveSpeed
+end
+
+local function isPositionInWater(position: Vector3): boolean
+	local params = RaycastParams.new()
+	params.FilterDescendantsInstances = { workspace.Terrain }
+	params.FilterType = Enum.RaycastFilterType.Include
+
+	local result = workspace:Raycast(position + Vector3.new(0, 5, 0), Vector3.new(0, -20, 0), params)
+	if result and result.Material == Enum.Material.Water then
+		return true
+	end
+
+	return position.Y < SEA_LEVEL
+end
+
 --- 외부에서 파티 풀 여부 확인 (길들이기 차단용)
 function PartyService.isPartyFull(userId: number): boolean
 	local party = getOrCreateParty(userId)
@@ -62,6 +114,252 @@ end
 --- ★ 주인의 전투 대상 설정 (CombatService에서 호출)
 function PartyService.setOwnerCombatTarget(userId: number, instanceId: string?)
 	ownerCombatTargets[userId] = instanceId
+end
+
+local function createMountSeat(model: Model, rootPart: BasePart, creatureData)
+	if not creatureData or not creatureData.mountable then
+		return nil
+	end
+
+	local seat = Instance.new("Part")
+	seat.Name = "MountSeat"
+	seat.Size = Vector3.new(2, 1, 2)
+	seat.Transparency = 1
+	seat.CanCollide = false
+	seat.CanQuery = false
+	seat.CanTouch = false
+	seat.Massless = true
+	seat.CollisionGroup = "Creatures"
+	seat.Parent = model
+
+	local offset = creatureData.mountSeatOffset or Vector3.new(0, 2.5, 0)
+	seat.CFrame = rootPart.CFrame * CFrame.new(offset)
+
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = rootPart
+	weld.Part1 = seat
+	weld.Parent = seat
+
+	return seat
+end
+
+local function endMountState(summon, notifyClient: boolean?)
+	if not summon or not summon.isMounted then
+		return
+	end
+
+	local riderUserId = summon.riderUserId
+	summon.isMounted = false
+	summon.riderUserId = nil
+	summon.isDismounting = false
+	summon.ignoreSeatExitUntil = 0
+	summon.model:SetAttribute("MountedByUserId", nil)
+	summon.model:SetAttribute("MountedTurnDirection", nil)
+	summon.model:SetAttribute("MountedAnimState", nil)
+	summon.humanoid.WalkSpeed = summon.baseSpeed
+	summon.humanoid.JumpPower = summon.baseJumpPower or 5
+	setPalState(summon, "IDLE")
+
+	local riderPlayer = riderUserId and Players:GetPlayerByUserId(riderUserId)
+	if riderPlayer then
+		riderPlayer:SetAttribute("MountedPalUID", nil)
+	end
+	local riderCharacter = riderPlayer and riderPlayer.Character
+	if summon.mountWeld then
+		summon.mountWeld:Destroy()
+		summon.mountWeld = nil
+	end
+	if summon.riderCollisionStates and riderCharacter then
+		for part, canCollide in pairs(summon.riderCollisionStates) do
+			if part and part.Parent then
+				part.CanCollide = canCollide
+			end
+		end
+	end
+	summon.riderCollisionStates = nil
+	local riderHumanoid = riderCharacter and riderCharacter:FindFirstChildOfClass("Humanoid")
+	if riderHumanoid then
+		riderHumanoid.AutoRotate = true
+		if summon.riderState then
+			riderHumanoid.WalkSpeed = summon.riderState.walkSpeed
+			riderHumanoid.JumpPower = summon.riderState.jumpPower
+			riderHumanoid.AutoJumpEnabled = summon.riderState.autoJumpEnabled
+		end
+		riderHumanoid.Sit = false
+		riderHumanoid.Jump = false
+		riderHumanoid:ChangeState(Enum.HumanoidStateType.Landed)
+		riderHumanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, true)
+	end
+	summon.riderState = nil
+	if summon.rootPart and riderPlayer then
+		pcall(function()
+			summon.rootPart:SetNetworkOwner(riderPlayer)
+		end)
+	end
+
+	if notifyClient and riderPlayer and NetController then
+		NetController.FireClient(riderPlayer, "Party.Dismounted", {
+			palUID = summon.palUID,
+			palName = summon.palData and summon.palData.nickname,
+		})
+	end
+end
+
+local function beginMountState(summon, riderPlayer: Player)
+	if not summon or not riderPlayer then
+		return
+	end
+
+	summon.isMounted = true
+	summon.riderUserId = riderPlayer.UserId
+	summon.isDismounting = false
+	summon.model:SetAttribute("MountedByUserId", riderPlayer.UserId)
+	summon.model:SetAttribute("MountedAnimState", "IDLE")
+	summon.mountSpeed = resolveMountSpeed(summon.palData, summon.creatureData, summon.baseSpeed)
+	summon.humanoid.WalkSpeed = summon.mountSpeed
+	summon.humanoid.JumpPower = (summon.creatureData and summon.creatureData.mountJumpPower) or 48
+	setPalState(summon, "MOUNTED")
+	riderPlayer:SetAttribute("MountedPalUID", summon.palUID)
+	if summon.rootPart then
+		pcall(function()
+			summon.rootPart:SetNetworkOwner(riderPlayer)
+		end)
+	end
+
+	local riderCharacter = riderPlayer.Character
+	local riderHumanoid = riderCharacter and riderCharacter:FindFirstChildOfClass("Humanoid")
+	local riderRoot = riderCharacter and riderCharacter:FindFirstChild("HumanoidRootPart")
+	if riderHumanoid then
+		summon.riderState = {
+			walkSpeed = riderHumanoid.WalkSpeed,
+			jumpPower = riderHumanoid.JumpPower,
+			autoJumpEnabled = riderHumanoid.AutoJumpEnabled,
+		}
+		riderHumanoid.AutoRotate = false
+		riderHumanoid.Jump = false
+		riderHumanoid.Sit = true
+		riderHumanoid.WalkSpeed = 0
+		riderHumanoid.JumpPower = 0
+		riderHumanoid.AutoJumpEnabled = false
+		riderHumanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
+		riderHumanoid:ChangeState(Enum.HumanoidStateType.Seated)
+	end
+	if riderCharacter and riderRoot and summon.mountSeat then
+		riderCharacter:PivotTo(summon.mountSeat.CFrame)
+		summon.riderCollisionStates = {}
+		for _, descendant in ipairs(riderCharacter:GetDescendants()) do
+			if descendant:IsA("BasePart") then
+				summon.riderCollisionStates[descendant] = descendant.CanCollide
+				descendant.CanCollide = false
+			end
+		end
+		local weld = Instance.new("WeldConstraint")
+		weld.Name = "MountWeld"
+		weld.Part0 = summon.mountSeat
+		weld.Part1 = riderRoot
+		weld.Parent = summon.mountSeat
+		summon.mountWeld = weld
+	end
+
+	if NetController then
+		NetController.FireClient(riderPlayer, "Party.Mounted", {
+			palUID = summon.palUID,
+			palName = summon.palData and summon.palData.nickname,
+		})
+	end
+end
+
+local function bindMountSeat(summon)
+	return
+end
+
+local function updateMountedSummons(dt)
+	local now = os.clock()
+	for userId, summon in pairs(activeSummons) do
+		if not summon.isMounted then
+			continue
+		end
+		if not summon.model or not summon.model.Parent or not summon.mountSeat or not summon.mountWeld then
+			endMountState(summon, true)
+			continue
+		end
+
+		local riderPlayer = Players:GetPlayerByUserId(userId)
+		local riderCharacter = riderPlayer and riderPlayer.Character
+		local riderHumanoid = riderCharacter and riderCharacter:FindFirstChildOfClass("Humanoid")
+		local riderRoot = riderCharacter and riderCharacter:FindFirstChild("HumanoidRootPart")
+		if not riderHumanoid or not riderRoot or riderHumanoid.Health <= 0 then
+			endMountState(summon, true)
+			continue
+		end
+		if isPositionInWater(summon.rootPart.Position) or isPositionInWater(riderRoot.Position) then
+			PartyService._recallPal(userId)
+			continue
+		end
+
+		local throttle = summon.mountThrottle or 0
+		local steer = summon.mountSteer or 0
+		local hasThrottle = math.abs(throttle) > 0.01
+		local hasSteer = math.abs(steer) > 0.01
+		local turnDirection = steer < 0 and "LEFT" or "RIGHT"
+		local shouldTriggerTurnLead = hasSteer and ((summon.lastTurnDirection ~= turnDirection) or not summon.turnLeadUntil or now >= summon.turnLeadUntil)
+
+		if shouldTriggerTurnLead then
+			summon.lastTurnDirection = turnDirection
+			summon.turnLeadUntil = now + MOUNT_TURN_LEAD_TIME
+		end
+
+		if hasSteer and summon.turnLeadUntil and now < summon.turnLeadUntil then
+			summon.model:SetAttribute("MountedTurnDirection", turnDirection)
+			summon.model:SetAttribute("MountedAnimState", turnDirection == "LEFT" and "TURN_LEFT" or "TURN_RIGHT")
+			local turnStep = -steer * summon.mountTurnRate * dt * 0.9
+			summon.rootPart.CFrame = summon.rootPart.CFrame * CFrame.Angles(0, turnStep, 0)
+			local currentVel = summon.rootPart.AssemblyLinearVelocity
+			summon.rootPart.AssemblyLinearVelocity = Vector3.new(0, currentVel.Y, 0)
+			summon.humanoid:Move(Vector3.zero, false)
+			continue
+		end
+
+		if hasSteer then
+			local turnStep = -steer * summon.mountTurnRate * dt
+			summon.rootPart.CFrame = summon.rootPart.CFrame * CFrame.Angles(0, turnStep, 0)
+		end
+
+		if hasThrottle then
+			local moveDir = Vector3.new(summon.rootPart.CFrame.LookVector.X, 0, summon.rootPart.CFrame.LookVector.Z)
+			if moveDir.Magnitude < 0.01 then
+				moveDir = Vector3.new(0, 0, -1)
+			else
+				moveDir = moveDir.Unit
+			end
+			if throttle < 0 then
+				moveDir = -moveDir
+			end
+			summon.model:SetAttribute("MountedTurnDirection", nil)
+			summon.model:SetAttribute("MountedAnimState", "RUN")
+			summon.mountSpeed = resolveCurrentMountMoveSpeed(summon, throttle)
+			summon.humanoid.WalkSpeed = summon.mountSpeed
+			local currentVel = summon.rootPart.AssemblyLinearVelocity
+			summon.rootPart.AssemblyLinearVelocity = Vector3.new(
+				moveDir.X * summon.mountSpeed,
+				currentVel.Y,
+				moveDir.Z * summon.mountSpeed
+			)
+			summon.humanoid:Move(moveDir, false)
+		elseif hasSteer then
+			summon.model:SetAttribute("MountedTurnDirection", turnDirection)
+			summon.model:SetAttribute("MountedAnimState", turnDirection == "LEFT" and "TURN_LEFT" or "TURN_RIGHT")
+			local currentVel = summon.rootPart.AssemblyLinearVelocity
+			summon.rootPart.AssemblyLinearVelocity = Vector3.new(0, currentVel.Y, 0)
+			summon.humanoid:Move(Vector3.zero, false)
+		else
+			summon.model:SetAttribute("MountedTurnDirection", nil)
+			summon.model:SetAttribute("MountedAnimState", "IDLE")
+			local currentVel = summon.rootPart.AssemblyLinearVelocity
+			summon.rootPart.AssemblyLinearVelocity = Vector3.new(0, currentVel.Y, 0)
+			summon.humanoid:Move(Vector3.zero, false)
+		end
+	end
 end
 
 --========================================
@@ -91,6 +389,7 @@ function PartyService.Init(_NetController, _PalboxService, _CreatureService, _Sa
 			PartyService._updateSummonedPalAI()
 		end
 	end)
+	RunService.Heartbeat:Connect(updateMountedSummons)
 	
 	print("[PartyService] Initialized")
 end
@@ -286,6 +585,8 @@ function PartyService.summon(userId: number, partySlot: number): (boolean, strin
 		summoningLocks[userId] = nil
 		return false, Enums.ErrorCode.NOT_FOUND 
 	end
+
+	local creatureData = getCreatureData(pal.creatureId)
 	
 	-- 시설 배치 중이면 소환 불가
 	if pal.state == Enums.PalState.WORKING then
@@ -338,6 +639,7 @@ function PartyService.summon(userId: number, partySlot: number): (boolean, strin
 		humanoid = humanoid,
 		rootPart = rootPart,
 		palData = pal,
+		creatureData = creatureData,
 		palUID = palUID,
 		state = "IDLE",
 		lastAttackTime = 0,
@@ -345,7 +647,26 @@ function PartyService.summon(userId: number, partySlot: number): (boolean, strin
 		lastMoveTarget = nil, -- MoveTo 중복 호출 방지
 		maxHP = maxHP,
 		currentHP = currentHP,
+		baseSpeed = pal.stats and pal.stats.speed or (creatureData and creatureData.walkSpeed) or 16,
+		baseJumpPower = humanoid.JumpPower,
+		mountSpeed = resolveMountSpeed(pal, creatureData, humanoid.WalkSpeed),
+		canMount = creatureData and creatureData.mountable == true or false,
+		mountSeat = model:FindFirstChild("MountSeat"),
+		isMounted = false,
+		riderUserId = nil,
+		isDismounting = false,
+		mountWeld = nil,
+		riderState = nil,
+		riderCollisionStates = nil,
+		mountThrottle = 0,
+		mountSteer = 0,
+		turnLeadUntil = 0,
+		lastTurnDirection = nil,
+		mountTurnRate = MOUNT_TURN_RATE,
+		ignoreSeatExitUntil = 0,
 	}
+
+	bindMountSeat(activeSummons[userId])
 	
 	-- 상태 업데이트
 	PalboxService.updatePalState(userId, palUID, Enums.PalState.SUMMONED)
@@ -370,6 +691,12 @@ function PartyService._recallPal(userId: number)
 	local summon = activeSummons[userId]
 	
 	if not summon then return end
+
+	endMountState(summon, true)
+	if summon.mountSeatConn then
+		summon.mountSeatConn:Disconnect()
+		summon.mountSeatConn = nil
+	end
 	
 	-- ★ 회수 시 현재 HP 저장
 	if summon.palUID then
@@ -417,14 +744,7 @@ function PartyService._createPalModel(palData, position: Vector3, ownerUserId: n
 	end
 
 	-- CreatureData에서 크리처 정의 조회
-	local CreatureDataModule = require(ReplicatedStorage.Data.CreatureData)
-	local cData = nil
-	for _, entry in ipairs(CreatureDataModule) do
-		if entry.id == palData.creatureId then
-			cData = entry
-			break
-		end
-	end
+	local cData = getCreatureData(palData.creatureId)
 	if not cData then
 		warn("[PartyService] CreatureData not found:", palData.creatureId)
 		return nil
@@ -598,7 +918,9 @@ function PartyService._createPalModel(palData, position: Vector3, ownerUserId: n
 	rootPart:SetAttribute("IsPal", true)
 	rootPart:SetAttribute("OwnerUserId", ownerUserId)
 	model:SetAttribute("CreatureId", string.upper(palData.creatureId))
+	model:SetAttribute("PalUID", palData.uid)
 	model:SetAttribute("State", "IDLE")
+	model:SetAttribute("CanMount", cData.mountable == true)
 
 	-- 이름표 (팰 닉네임 + HP바 표시)
 	local bg = Instance.new("BillboardGui")
@@ -673,6 +995,10 @@ function PartyService._createPalModel(palData, position: Vector3, ownerUserId: n
 
 	model.Parent = creatureFolder
 
+	if cData.mountable then
+		createMountSeat(model, rootPart, cData)
+	end
+
 	-- Raycast로 정확한 지면 높이를 찾아 배치한 뒤 Anchored 해제
 	do
 		local rayOrigin = rootPart.Position
@@ -722,7 +1048,7 @@ local function smartMoveTo(humanoid, targetPos, summon)
 end
 
 -- 팰 상태 변경 + 클라이언트 동기화 (애니메이션 트리거)
-local function setPalState(summon, newState)
+setPalState = function(summon, newState)
 	if summon.state == newState then return end
 	summon.state = newState
 	if summon.model then
@@ -815,6 +1141,12 @@ end
 function PartyService._faintPal(userId: number)
 	local summon = activeSummons[userId]
 	if not summon then return end
+
+	endMountState(summon, true)
+	if summon.mountSeatConn then
+		summon.mountSeatConn:Disconnect()
+		summon.mountSeatConn = nil
+	end
 	
 	local palUID = summon.palUID
 	local palData = summon.palData
@@ -873,12 +1205,65 @@ function PartyService.getSummon(userId: number)
 	return activeSummons[userId]
 end
 
+function PartyService.mount(player: Player): (boolean, string?)
+	local summon = activeSummons[player.UserId]
+	if not summon or not summon.model or not summon.model.Parent then
+		return false, Enums.ErrorCode.NOT_FOUND
+	end
+	if not summon.canMount or not summon.mountSeat then
+		return false, Enums.ErrorCode.NOT_SUPPORTED
+	end
+	if summon.riderUserId and summon.riderUserId ~= player.UserId then
+		return false, Enums.ErrorCode.INVALID_STATE
+	end
+
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local hrp = character and character:FindFirstChild("HumanoidRootPart")
+	if not humanoid or not hrp then
+		return false, Enums.ErrorCode.INVALID_STATE
+	end
+	if humanoid.Health <= 0 then
+		return false, Enums.ErrorCode.INVALID_STATE
+	end
+	if (hrp.Position - summon.rootPart.Position).Magnitude > MOUNT_INTERACT_DISTANCE then
+		return false, Enums.ErrorCode.OUT_OF_RANGE
+	end
+
+	beginMountState(summon, player)
+	return true, nil
+end
+
+function PartyService.dismount(userId: number, shouldReposition: boolean?): (boolean, string?)
+	local summon = activeSummons[userId]
+	if not summon or not summon.isMounted then
+		return false, Enums.ErrorCode.INVALID_STATE
+	end
+
+	local riderPlayer = Players:GetPlayerByUserId(userId)
+	local character = riderPlayer and riderPlayer.Character
+	summon.isDismounting = true
+	summon.ignoreSeatExitUntil = 0
+
+	if shouldReposition ~= false and character and summon.rootPart then
+		local dismountPos = summon.rootPart.Position + summon.rootPart.CFrame.RightVector * 4 + Vector3.new(0, 2, 0)
+		character:PivotTo(CFrame.new(dismountPos, dismountPos + summon.rootPart.CFrame.LookVector))
+	end
+
+	endMountState(summon, true)
+	return true, nil
+end
+
 function PartyService._updateSummonedPalAI()
 	local now = os.clock()
 	
 	for userId, summon in pairs(activeSummons) do
 		if not summon.model or not summon.model.Parent then
 			-- 모델 사라짐 → 정리
+			if summon.mountSeatConn then
+				summon.mountSeatConn:Disconnect()
+				summon.mountSeatConn = nil
+			end
 			local palUID = summon.palUID
 			if palUID then
 				PalboxService.updatePalState(userId, palUID, Enums.PalState.IN_PARTY)
@@ -899,6 +1284,10 @@ function PartyService._updateSummonedPalAI()
 		local palHrp = summon.rootPart
 		if not palHrp then continue end
 		local humanoid = summon.humanoid
+
+		if summon.isMounted then
+			continue
+		end
 		
 		-- 주인 상태 체크
 		local player = Players:GetPlayerByUserId(userId)
@@ -1163,6 +1552,41 @@ local function handleRecallRequest(player, _payload)
 	return { success = true }
 end
 
+local function handleMountRequest(player, _payload)
+	local ok, err = PartyService.mount(player)
+	if not ok then
+		return { success = false, errorCode = err }
+	end
+	return { success = true }
+end
+
+local function handleDismountRequest(player, _payload)
+	local ok, err = PartyService.dismount(player.UserId)
+	if not ok then
+		return { success = false, errorCode = err }
+	end
+	return { success = true }
+end
+
+local function handleMountJumpRequest(player, _payload)
+	local summon = activeSummons[player.UserId]
+	if not summon or not summon.isMounted or not summon.humanoid then
+		return { success = false, errorCode = Enums.ErrorCode.INVALID_STATE }
+	end
+	return { success = false, errorCode = Enums.ErrorCode.NOT_SUPPORTED }
+end
+
+local function handleMountControlRequest(player, payload)
+	local summon = activeSummons[player.UserId]
+	if not summon or not summon.isMounted then
+		return { success = false, errorCode = Enums.ErrorCode.INVALID_STATE }
+	end
+
+	summon.mountThrottle = math.clamp(tonumber(payload and payload.throttle) or 0, -1, 1)
+	summon.mountSteer = math.clamp(tonumber(payload and payload.steer) or 0, -1, 1)
+	return { success = true }
+end
+
 function PartyService.GetHandlers()
 	return {
 		["Party.List.Request"] = handlePartyListRequest,
@@ -1170,6 +1594,10 @@ function PartyService.GetHandlers()
 		["Party.Remove.Request"] = handleRemoveFromPartyRequest,
 		["Party.Summon.Request"] = handleSummonRequest,
 		["Party.Recall.Request"] = handleRecallRequest,
+		["Party.Mount.Request"] = handleMountRequest,
+		["Party.Dismount.Request"] = handleDismountRequest,
+		["Party.Mount.Jump.Request"] = handleMountJumpRequest,
+		["Party.Mount.Control.Request"] = handleMountControlRequest,
 	}
 end
 

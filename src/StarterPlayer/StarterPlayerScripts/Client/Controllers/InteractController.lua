@@ -5,6 +5,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local ContextActionService = game:GetService("ContextActionService")
+local UserInputService = game:GetService("UserInputService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local AnimationIds = require(Shared.Config.AnimationIds)
@@ -46,6 +48,13 @@ local REMOVE_CONFIRM_WINDOW = 2.5
 local pendingRemoveStructureId = nil
 local pendingRemoveExpireAt = 0
 local playSleepTransitionAndRequest
+local mountedJumpBound = false
+local MOUNT_JUMP_ACTION = "MountedDinoJumpBlock"
+local MOUNT_MOVE_ACTION = "MountedDinoMoveSink"
+local mountedControlState = { forward = false, backward = false, left = false, right = false }
+local lastMountControlThrottle = 0
+local lastMountControlSteer = 0
+local NPC_TARGET_PRIORITY_BONUS = 3.5
 
 -- UIManager 참조 (Init 후 설정)
 local UIManager = nil
@@ -301,7 +310,7 @@ local function findNearbyInteractable(): (Instance?, string?)
 	local overlapParams = OverlapParams.new()
 	overlapParams.FilterType = Enum.RaycastFilterType.Include
 	
-	local targetFolderNames = {"ResourceNodes", "NPCs", "Facilities"}
+	local targetFolderNames = {"ResourceNodes", "NPCs", "Facilities", "Creatures"}
 	local folderObjects = {}
 	local includeList = {}
 	for _, name in ipairs(targetFolderNames) do
@@ -321,6 +330,7 @@ local function findNearbyInteractable(): (Instance?, string?)
 	local closestTarget = nil
 	local closestType = nil
 	local closestDist = INTERACT_DISTANCE + 1
+	local closestScore = math.huge
 
 	local closestFacility = nil
 	local closestFacilityDist = INTERACT_DISTANCE + FACILITY_INTERACT_BONUS + 1
@@ -328,7 +338,8 @@ local function findNearbyInteractable(): (Instance?, string?)
 	local typeMap = {
 		ResourceNodes = "resource",
 		NPCs = "npc",
-		Facilities = "facility"
+		Facilities = "facility",
+		Creatures = "pal",
 	}
 	
 	for _, part in ipairs(nearbyParts) do
@@ -346,6 +357,7 @@ local function findNearbyInteractable(): (Instance?, string?)
 					if check:GetAttribute("NodeId") or 
 					   check:GetAttribute("FacilityId") or 
 					   check:GetAttribute("NPCId") or
+					   check:GetAttribute("IsPal") or
 					   game:GetService("CollectionService"):HasTag(check, "ResourceNode") then
 						entity = check
 						break
@@ -364,6 +376,18 @@ local function findNearbyInteractable(): (Instance?, string?)
 		end
 		
 		if not entity or not currentType then continue end
+
+		-- 팰인 경우 내 팰인지 체크 (RootPart 또는 Model에 걸린 IsPal 속성)
+		if currentType == "pal" then
+			local ownerId = entity:GetAttribute("OwnerUserId")
+			if not ownerId or ownerId ~= player.UserId then
+				continue -- 내 팰이 아니면 상호작용 후보에서 제외
+			end
+			-- 모델 자체로 entity 변경 (IsPal이 rootPart에 있을시)
+			if entity:IsA("BasePart") and entity.Parent:IsA("Model") then
+				entity = entity.Parent
+			end
+		end
 		
 		-- 고갈된 노드 스킵
 		if currentType == "resource" and entity:GetAttribute("Depleted") then
@@ -371,7 +395,9 @@ local function findNearbyInteractable(): (Instance?, string?)
 		end
 		
 		local allowedDistance = INTERACT_DISTANCE
-		if currentType == "facility" then
+		if currentType == "pal" then
+			allowedDistance = (Balance.HARVEST_RANGE or 10) + 4
+		elseif currentType == "facility" then
 			local facilityId = entity:GetAttribute("FacilityId")
 			local facilityData = facilityId and DataHelper.GetData("FacilityData", tostring(facilityId)) or nil
 			local serverRange = (facilityData and facilityData.interactRange) or INTERACT_DISTANCE
@@ -399,11 +425,16 @@ local function findNearbyInteractable(): (Instance?, string?)
 		local isCorpse = nodeId and string.sub(tostring(nodeId), 1, 7) == "CORPSE_"
 		local closestIsCorpse = closestTarget and closestTarget:GetAttribute("NodeId")
 			and string.sub(tostring(closestTarget:GetAttribute("NodeId")), 1, 7) == "CORPSE_"
+		local score = dist
+		if currentType == "npc" then
+			score -= NPC_TARGET_PRIORITY_BONUS
+		end
 		
 		if dist <= allowedDistance then
 			-- 시체가 일반 노드를 밀어냄 / 같은 종류면 거리 비교
-			if (isCorpse and not closestIsCorpse) or (dist < closestDist and (isCorpse == closestIsCorpse or not closestIsCorpse)) then
+			if (isCorpse and not closestIsCorpse) or (score < closestScore and (isCorpse == closestIsCorpse or not closestIsCorpse)) then
 				closestDist = dist
+				closestScore = score
 				closestTarget = entity
 				closestType = currentType
 			end
@@ -534,17 +565,7 @@ end
 
 --- Z키 눌림 처리 (NPC/일반 상호작용)
 function InteractController.onInteractPress()
-	if InputManager.isUIOpen() then
-		return
-	end
-	
-	if currentTarget and currentTargetType then
-		if currentTargetType == "resource" then
-			-- R키로 채집 UI를 여세요
-		elseif currentTargetType == "npc" then
-			interactNPC(currentTarget)
-		end
-	end
+	InteractController.onFacilityInteractPress()
 end
 
 --- R키 눌림 처리 (건물/시설 상호작용 전용)
@@ -561,6 +582,15 @@ function InteractController.onFacilityInteractPress()
 		return
 	end
 
+	local mountedPalUID = player:GetAttribute("MountedPalUID")
+	if mountedPalUID then
+		local ok, err = NetClient.Request("Party.Dismount.Request", {})
+		if not ok and UIManager then
+			UIManager.notify("지금은 내릴 수 없습니다.", Color3.fromRGB(255, 120, 120))
+		end
+		return
+	end
+
 	if RadioStoryController.shouldConsumeInteractKey and RadioStoryController.shouldConsumeInteractKey() then
 		RadioStoryController.interact()
 		return
@@ -568,6 +598,23 @@ function InteractController.onFacilityInteractPress()
 
 	if currentTarget and currentTargetType == "radio" then
 		RadioStoryController.interact()
+		return
+	end
+
+	if currentTarget and currentTargetType == "npc" then
+		interactNPC(currentTarget)
+		return
+	end
+
+	-- R키 대상: Facility 및 Pal (Pal은 우선순위를 위해 별도 조건 처리)
+	if currentTarget and currentTargetType == "pal" then
+		-- Pal UI 띄우기 처리 (Radial UI)
+		local PalRadialUI = require(Client.UI.PalRadialUI)
+		if PalRadialUI.IsOpen() then
+			PalRadialUI.Close()
+		else
+			PalRadialUI.Open(currentTarget)
+		end
 		return
 	end
 
@@ -603,8 +650,130 @@ function InteractController.onFacilityRemovePress()
 	end
 end
 
+local function getMountControlValues()
+	local throttle = 0
+	if mountedControlState.forward then
+		throttle += 1
+	end
+	if mountedControlState.backward then
+		throttle -= 1
+	end
+
+	local steer = 0
+	if mountedControlState.left then
+		steer -= 1
+	end
+	if mountedControlState.right then
+		steer += 1
+	end
+
+	return throttle, steer
+end
+
+local function sendMountedControl(force)
+	local mountedPalUID = player:GetAttribute("MountedPalUID")
+	local throttle, steer = getMountControlValues()
+	if not mountedPalUID then
+		throttle = 0
+		steer = 0
+	end
+
+	if not force and throttle == lastMountControlThrottle and steer == lastMountControlSteer then
+		return
+	end
+
+	lastMountControlThrottle = throttle
+	lastMountControlSteer = steer
+	NetClient.Request("Party.Mount.Control.Request", {
+		throttle = throttle,
+		steer = steer,
+	})
+end
+
+local function isMountedMovementKey(input: InputObject): boolean
+	if input.UserInputType ~= Enum.UserInputType.Keyboard then
+		return false
+	end
+
+	local keyCode = input.KeyCode
+	return keyCode == Enum.KeyCode.W
+		or keyCode == Enum.KeyCode.A
+		or keyCode == Enum.KeyCode.S
+		or keyCode == Enum.KeyCode.D
+		or keyCode == Enum.KeyCode.Up
+		or keyCode == Enum.KeyCode.Down
+		or keyCode == Enum.KeyCode.Left
+		or keyCode == Enum.KeyCode.Right
+end
+
+local function updateMountedControlKey(input: InputObject, isPressed: boolean)
+	local keyCode = input.KeyCode
+	local handled = true
+	if keyCode == Enum.KeyCode.W or keyCode == Enum.KeyCode.Up then
+		mountedControlState.forward = isPressed
+	elseif keyCode == Enum.KeyCode.S or keyCode == Enum.KeyCode.Down then
+		mountedControlState.backward = isPressed
+	elseif keyCode == Enum.KeyCode.A or keyCode == Enum.KeyCode.Left then
+		mountedControlState.left = isPressed
+	elseif keyCode == Enum.KeyCode.D or keyCode == Enum.KeyCode.Right then
+		mountedControlState.right = isPressed
+	else
+		handled = false
+	end
+
+	if handled and player:GetAttribute("MountedPalUID") then
+		sendMountedControl(false)
+	end
+end
+
+local function syncMountedJumpBinding()
+	local isMounted = player:GetAttribute("MountedPalUID") ~= nil
+
+	if isMounted and not mountedJumpBound then
+		ContextActionService:BindActionAtPriority(MOUNT_JUMP_ACTION, function()
+			return Enum.ContextActionResult.Sink
+		end, false, Enum.ContextActionPriority.High.Value, Enum.PlayerActions.CharacterJump)
+		mountedJumpBound = true
+	elseif not isMounted and mountedJumpBound then
+		ContextActionService:UnbindAction(MOUNT_JUMP_ACTION)
+		mountedJumpBound = false
+	end
+
+	if isMounted then
+		ContextActionService:BindActionAtPriority(MOUNT_MOVE_ACTION, function()
+			return Enum.ContextActionResult.Sink
+		end, false, Enum.ContextActionPriority.High.Value,
+			Enum.PlayerActions.CharacterForward,
+			Enum.PlayerActions.CharacterBackward,
+			Enum.PlayerActions.CharacterLeft,
+			Enum.PlayerActions.CharacterRight)
+	else
+		ContextActionService:UnbindAction(MOUNT_MOVE_ACTION)
+	end
+
+	if not isMounted then
+		mountedControlState.forward = false
+		mountedControlState.backward = false
+		mountedControlState.left = false
+		mountedControlState.right = false
+		sendMountedControl(true)
+	end
+end
+
 --- 주변 대상 감지 업데이트 (10Hz)
 local function onUpdate()
+	syncMountedJumpBinding()
+
+	if player:GetAttribute("MountedPalUID") then
+		currentTarget = nil
+		currentTargetType = nil
+		currentFacilityTarget = nil
+		if UIManager then
+			UIManager.hideInteractPrompt()
+		end
+		return
+	end
+
 	-- UI가 열려있거나 제작 중이면 상호작용 레이블 숨김
 	if InputManager.isUIOpen() or (UIManager and UIManager.isCrafting and UIManager.isCrafting()) then
 		if currentTarget then
@@ -618,62 +787,66 @@ local function onUpdate()
 	local target, targetType, nearbyFacility = findNearbyInteractable()
 	currentFacilityTarget = nearbyFacility
 	
-	if target ~= currentTarget or targetType == "facility" or targetType == "radio" then
-		if target ~= currentTarget or targetType ~= currentTargetType then
-			clearPendingRemove()
-		end
+	if target ~= currentTarget or targetType ~= currentTargetType then
+		clearPendingRemove()
 		currentTarget = target
 		currentTargetType = targetType
-		
-		if UIManager then
-			RadioStoryController.ensureRinging()
-			if target then
-				local promptText = ""
-				local targetName = nil
-				local fId = target:GetAttribute("FacilityId") or target:GetAttribute("id")
-				local structureId = target:GetAttribute("StructureId") or target:GetAttribute("id") or target.Name
-				if fId then
-					local fid = tostring(fId):upper()
-					local data = DataHelper.GetData("FacilityData", fid)
-					targetName = UILocalizer.LocalizeDataText("FacilityData", fid, "name", data and data.name or fid)
-				end
-				
-				if not targetName then
-					local nId = target:GetAttribute("NodeId")
-					if nId then
-						local nid = tostring(nId):upper()
-						local data = DataHelper.GetData("ResourceNodeData", nid)
-						targetName = UILocalizer.LocalizeDataText("ResourceNodeData", nid, "name", data and data.name or nid)
-					end
-				end
+	end
 
-				targetName = targetName or target:GetAttribute("DisplayName")
+	if UIManager then
+		RadioStoryController.ensureRinging()
+		if currentTarget then
+			local promptText = ""
+			local targetName = nil
+			local fId = currentTarget:GetAttribute("FacilityId") or currentTarget:GetAttribute("id")
+			if fId then
+				local fid = tostring(fId):upper()
+				local data = DataHelper.GetData("FacilityData", fid)
+				targetName = UILocalizer.LocalizeDataText("FacilityData", fid, "name", data and data.name or fid)
+			end
+			
+			if not targetName then
+				local nId = currentTarget:GetAttribute("NodeId")
+				if nId then
+					local nid = tostring(nId):upper()
+					local data = DataHelper.GetData("ResourceNodeData", nid)
+					targetName = UILocalizer.LocalizeDataText("ResourceNodeData", nid, "name", data and data.name or nid)
+				end
+			end
 
-				if targetType == "radio" then
-					targetName = UILocalizer.Localize("비상 무전기")
+			targetName = targetName or currentTarget:GetAttribute("DisplayName")
+
+			if currentTargetType == "radio" then
+				targetName = UILocalizer.Localize("비상 무전기")
+			elseif currentTargetType == "pal" then
+				local cId = currentTarget:GetAttribute("CreatureId")
+				if cId then
+					local cData = DataHelper.GetData("CreatureData", cId)
+					targetName = cData and cData.name or cId
 				end
-				
-				if targetType == "resource" then
-					-- R키로 채집 UI 열기
-					promptText = UILocalizer.Localize("[R] 채집")
-				elseif targetType == "npc" then
-					promptText = UILocalizer.Localize("[Z] 대화")
-				elseif targetType == "facility" then
-					promptText = UILocalizer.Localize("[R] 사용") .. "  " .. UILocalizer.Localize("[T] 해체")
-				elseif targetType == "radio" then
-					promptText = UILocalizer.Localize("[R] 무전 수신")
-				else
-					promptText = UILocalizer.Localize("[Z] 상호작용")
-				end
-				
-				if promptText ~= "" then
-					UIManager.showInteractPrompt(promptText, targetName)
-				else
-					UIManager.hideInteractPrompt()
-				end
+			end
+			
+			if currentTargetType == "resource" then
+				promptText = UILocalizer.Localize("[R] 채집")
+			elseif currentTargetType == "npc" then
+				promptText = UILocalizer.Localize("[R] 대화")
+			elseif currentTargetType == "facility" then
+				promptText = UILocalizer.Localize("[R] 사용") .. "  " .. UILocalizer.Localize("[T] 해체")
+			elseif currentTargetType == "pal" then
+				promptText = UILocalizer.Localize("[R] 공룡 메뉴")
+			elseif currentTargetType == "radio" then
+				promptText = UILocalizer.Localize("[R] 무전 수신")
+			else
+				promptText = UILocalizer.Localize("[R] 상호작용")
+			end
+			
+			if promptText ~= "" then
+				UIManager.showInteractPrompt(promptText, targetName)
 			else
 				UIManager.hideInteractPrompt()
 			end
+		else
+			UIManager.hideInteractPrompt()
 		end
 	end
 end
@@ -694,6 +867,20 @@ function InteractController.Init()
 	end)
 
 	RadioStoryController.Init()
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		local allowMountedMovement = player:GetAttribute("MountedPalUID")
+			and isMountedMovementKey(input)
+			and not UserInputService:GetFocusedTextBox()
+		if gameProcessed and not allowMountedMovement then
+			return
+		end
+		updateMountedControlKey(input, true)
+	end)
+	UserInputService.InputEnded:Connect(function(input, _gameProcessed)
+		updateMountedControlKey(input, false)
+	end)
+	player:GetAttributeChangedSignal("MountedPalUID"):Connect(syncMountedJumpBinding)
+	syncMountedJumpBinding()
 	
 	-- 주기적으로 대상 감지 업데이트 (0.1초 - 10Hz)
 	task.spawn(function()
@@ -706,8 +893,18 @@ function InteractController.Init()
 		end
 	end)
 	
+	-- 탑승 중 공룡 조작 입력 주기적 전송 (0.05초 - 20Hz)
+	task.spawn(function()
+		while true do
+			task.wait(0.05)
+			if player:GetAttribute("MountedPalUID") then
+				sendMountedControl(false)
+			end
+		end
+	end)
+	
 	initialized = true
-	print("[InteractController] Initialized (Z = Interact, R = Facility)")
+	print("[InteractController] Initialized (R = Interact)")
 end
 
 return InteractController
