@@ -36,6 +36,23 @@ local lastRestockTime = os.time()
 -- 상점 데이터 캐시
 local shopDataMap = {}       -- [shopId] = shopData
 local spawnedNpcMap = {}     -- [shopId] = Model
+local RARITY_BASE_SELL_PRICE = {
+	COMMON = 6,
+	UNCOMMON = 11,
+	RARE = 18,
+	EPIC = 32,
+	LEGENDARY = 55,
+}
+local TYPE_SELL_MULTIPLIER = {
+	RESOURCE = 1.0,
+	FOOD = 0.9,
+	TOOL = 1.8,
+	WEAPON = 2.2,
+	ARMOR = 2.0,
+	CONSUMABLE = 1.1,
+	AMMO = 1.1,
+	PLACEABLE = 1.6,
+}
 
 local function _getPlayerStateWithRetry(userId: number, timeoutSeconds: number?): any
 	if not SaveService or not SaveService.getPlayerState then
@@ -82,6 +99,62 @@ local function _getSellEntry(shop: any, itemId: string): any?
 			return item
 		end
 	end
+
+	if shop.acceptAllItems == true then
+		local bestExplicitSell = nil
+		local bestDerivedSell = nil
+
+		for _, otherShop in pairs(shopDataMap) do
+			for _, otherSell in ipairs(otherShop.sellList or {}) do
+				if otherSell.itemId == itemId then
+					local sellPrice = tonumber(otherSell.price) or 0
+					if sellPrice > 0 and (not bestExplicitSell or sellPrice > bestExplicitSell) then
+						bestExplicitSell = sellPrice
+					end
+				end
+			end
+
+			for _, otherBuy in ipairs(otherShop.buyList or {}) do
+				if otherBuy.itemId == itemId then
+					local buyPrice = tonumber(otherBuy.price) or 0
+					local derivedSell = math.max(1, math.floor((buyPrice * (otherShop.sellMultiplier or Balance.SHOP_DEFAULT_SELL_MULT)) + 0.5))
+					if buyPrice > 0 and (not bestDerivedSell or derivedSell > bestDerivedSell) then
+						bestDerivedSell = derivedSell
+					end
+				end
+			end
+		end
+
+		local fallbackPrice = bestExplicitSell or bestDerivedSell
+		if not fallbackPrice or fallbackPrice <= 0 then
+			local itemData = DataService and DataService.getItem and DataService.getItem(itemId)
+			if itemData then
+				local rarityBase = RARITY_BASE_SELL_PRICE[itemData.rarity or "COMMON"] or RARITY_BASE_SELL_PRICE.COMMON
+				local typeMultiplier = TYPE_SELL_MULTIPLIER[itemData.type or "RESOURCE"] or 1
+				local weightBonus = math.clamp(math.floor(((tonumber(itemData.weight) or 0) * 2) + 0.5), 0, 10)
+				local utilityBonus = 0
+
+				if tonumber(itemData.foodValue) and itemData.foodValue > 0 then
+					utilityBonus += math.min(6, math.floor(itemData.foodValue / 10))
+				end
+
+				if tonumber(itemData.fuelValue) and itemData.fuelValue > 0 then
+					utilityBonus += math.min(6, math.floor(itemData.fuelValue / 8))
+				end
+
+				fallbackPrice = math.max(1, math.floor((rarityBase * typeMultiplier) + weightBonus + utilityBonus + 0.5))
+			end
+		end
+
+		if fallbackPrice and fallbackPrice > 0 then
+			return {
+				itemId = itemId,
+				price = fallbackPrice,
+				synthetic = true,
+			}
+		end
+	end
+
 	return nil
 end
 
@@ -158,16 +231,16 @@ local function _getShopGroundPosition(basePosition: Vector3): Vector3
 	return basePosition
 end
 
-local function _findPlacedShopNPC(folder: Folder, shopId: string): Model?
+local function _findPlacedShopNPC(folder: Folder, shopId: string): Instance?
 	for _, child in ipairs(folder:GetChildren()) do
-		if child:IsA("Model") and (child.Name == shopId or child:GetAttribute("NPCId") == shopId) then
+		if child.Name == shopId or child:GetAttribute("NPCId") == shopId then
 			return child
 		end
 	end
 	return nil
 end
 
-local function _findShopModelTemplate(modelTemplateName: string?, fallbackName: string?): Model?
+local function _findShopModelTemplate(modelTemplateName: string?, fallbackName: string?): Instance?
 	local candidateNames = {}
 	local function pushName(value: string?)
 		if type(value) ~= "string" or value == "" then
@@ -209,7 +282,7 @@ local function _findShopModelTemplate(modelTemplateName: string?, fallbackName: 
 		if folder then
 			for _, candidateName in ipairs(candidateNames) do
 				local template = folder:FindFirstChild(candidateName)
-				if template and template:IsA("Model") then
+				if template then
 					return template
 				end
 			end
@@ -217,6 +290,27 @@ local function _findShopModelTemplate(modelTemplateName: string?, fallbackName: 
 	end
 
 	return nil
+end
+
+local function _coerceShopInstanceToModel(instance: Instance, shopId: string): Model?
+	if not instance then
+		return nil
+	end
+
+	if instance:IsA("Model") then
+		instance.Name = shopId
+		return instance
+	end
+
+	local basePart = instance:IsA("BasePart") and instance or instance:FindFirstChildWhichIsA("BasePart", true)
+	if not basePart then
+		return nil
+	end
+
+	local wrapper = Instance.new("Model")
+	wrapper.Name = shopId
+	instance.Parent = wrapper
+	return wrapper
 end
 
 local function _ensureShopPrimaryPart(model: Model): BasePart?
@@ -289,15 +383,25 @@ local function _ensureShopInteractPart(model: Model, root: BasePart?, shop: any)
 		interactPart.Parent = model
 	end
 
-	local size = model:GetExtentsSize()
-	local minimumSize = shop.interactPartMinSize or Vector3.new(6, 6, 6)
-	interactPart.Size = Vector3.new(
-		math.max(size.X, minimumSize.X),
-		math.max(size.Y, minimumSize.Y),
-		math.max(size.Z, minimumSize.Z)
-	)
+	local partSize = shop.interactPartSize
+	if typeof(partSize) ~= "Vector3" then
+		local size = model:GetExtentsSize()
+		local minimumSize = shop.interactPartMinSize or Vector3.new(4, 4, 4)
+		local maximumSize = shop.interactPartMaxSize or Vector3.new(6, 6, 6)
+		partSize = Vector3.new(
+			math.clamp(size.X, minimumSize.X, maximumSize.X),
+			math.clamp(size.Y, minimumSize.Y, maximumSize.Y),
+			math.clamp(size.Z, minimumSize.Z, maximumSize.Z)
+		)
+	end
+	interactPart.Size = partSize
 
-	interactPart.CFrame = (root and root.CFrame) or model:GetPivot()
+	local baseCFrame = (root and root.CFrame) or model:GetPivot()
+	local partOffset = shop.interactPartOffset
+	if typeof(partOffset) == "Vector3" then
+		baseCFrame *= CFrame.new(partOffset)
+	end
+	interactPart.CFrame = baseCFrame
 	interactPart:SetAttribute("NPCId", shop.id)
 	interactPart:SetAttribute("NPCType", "shop")
 	interactPart:SetAttribute("DisplayName", shop.npcName or shop.name or shop.id)
@@ -385,9 +489,17 @@ local function _spawnShopNPC(shop: any)
 
 	local folder = _ensureNPCFolder()
 	local existing = _findPlacedShopNPC(folder, shop.id)
-	if existing and existing:IsA("Model") then
-		_configureShopModel(existing, shop, nil, nil, true)
-		spawnedNpcMap[shop.id] = existing
+	if existing then
+		local existingModel = _coerceShopInstanceToModel(existing, shop.id)
+		if existingModel and existingModel.Parent ~= folder then
+			existingModel.Parent = folder
+		end
+		if existingModel then
+			_configureShopModel(existingModel, shop, nil, nil, true)
+			spawnedNpcMap[shop.id] = existingModel
+			return
+		end
+		warn(string.format("[NPCShopService] Existing NPC %s has no BasePart for interaction", tostring(shop.id)))
 		return
 	end
 
@@ -399,12 +511,16 @@ local function _spawnShopNPC(shop: any)
 
 	local template = _findShopModelTemplate(shop.modelTemplateName, shop.id)
 	if template then
-		local model = template:Clone()
-		local root = _ensureShopPrimaryPart(model)
-		_configureShopModel(model, shop, root, spawnCFrame, false)
-		model.Parent = folder
-		spawnedNpcMap[shop.id] = model
-		return
+		local clonedTemplate = template:Clone()
+		local model = _coerceShopInstanceToModel(clonedTemplate, shop.id)
+		if model then
+			local root = _ensureShopPrimaryPart(model)
+			_configureShopModel(model, shop, root, spawnCFrame, false)
+			model.Parent = folder
+			spawnedNpcMap[shop.id] = model
+			return
+		end
+		warn(string.format("[NPCShopService] Template %s has no BasePart for interaction", tostring(template.Name)))
 	end
 
 	local model = Instance.new("Model")
@@ -566,11 +682,13 @@ end
 
 --- 플레이어 골드 조회
 function NPCShopService.getGold(userId: number): number
+	_initPlayerGold(userId)
 	return playerGold[userId] or 0
 end
 
 --- 골드 추가 (획득)
 function NPCShopService.addGold(userId: number, amount: number): (boolean, string?)
+	_initPlayerGold(userId)
 	if amount <= 0 then
 		return false, Enums.ErrorCode.INVALID_COUNT
 	end
@@ -592,6 +710,7 @@ end
 
 --- 골드 차감 (소비)
 function NPCShopService.removeGold(userId: number, amount: number): (boolean, string?)
+	_initPlayerGold(userId)
 	if amount <= 0 then
 		return false, Enums.ErrorCode.INVALID_COUNT
 	end
@@ -652,6 +771,7 @@ function NPCShopService.getShopInfo(shopId: string, userId: number?): (any?, str
 		npcName = shop.npcName,
 		zoneName = shop.zoneName,
 		sellOnly = shop.sellOnly == true,
+		acceptAllItems = shop.acceptAllItems == true,
 		buyList = buyListWithStock,
 		sellList = shop.sellList,
 		sellQuotes = userId and _buildSellQuotes(userId, shop) or {},

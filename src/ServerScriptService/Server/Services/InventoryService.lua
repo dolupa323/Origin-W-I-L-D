@@ -1565,6 +1565,45 @@ local function handleDrop(player: Player, payload: any)
 	return { success = true, data = data }  -- data.dropped ?�함
 end
 
+local function handleDropGold(player: Player, payload: any)
+	local count = math.floor(tonumber(payload and payload.count) or 0)
+	if count < 1 then
+		return { success = false, errorCode = Enums.ErrorCode.INVALID_COUNT }
+	end
+
+	local goldService = require(game:GetService("ServerScriptService").Server.Services.NPCShopService)
+	local worldDropService = require(game:GetService("ServerScriptService").Server.Services.WorldDropService)
+	local currentGold = goldService.getGold(player.UserId)
+	if currentGold < count then
+		return { success = false, errorCode = Enums.ErrorCode.INSUFFICIENT_GOLD }
+	end
+
+	local character = player.Character
+	local hrp = character and character:FindFirstChild("HumanoidRootPart")
+	if not hrp then
+		return { success = false, errorCode = Enums.ErrorCode.INVALID_STATE }
+	end
+
+	local ok, err = goldService.removeGold(player.UserId, count)
+	if not ok then
+		return { success = false, errorCode = err }
+	end
+
+	local spawnOk, spawnErr = worldDropService.spawnGoldDrop(hrp.Position + hrp.CFrame.LookVector * 2 + Vector3.new(0, -1, 0), count)
+	if not spawnOk then
+		goldService.addGold(player.UserId, count)
+		return { success = false, errorCode = spawnErr }
+	end
+
+	return {
+		success = true,
+		data = {
+			dropType = "gold",
+			goldAmount = count,
+		}
+	}
+end
+
 local function handleActiveSlot(player: Player, payload: any)
 	local slot = payload.slot
 	if type(slot) ~= "number" or slot < 1 or slot > 8 then
@@ -2041,6 +2080,7 @@ function InventoryService.GetHandlers()
 		["Inventory.Move.Request"] = handleMove,
 		["Inventory.Split.Request"] = handleSplit,
 		["Inventory.Drop.Request"] = handleDrop,
+		["Inventory.DropGold.Request"] = handleDropGold,
 		["Inventory.Get.Request"] = handleGetInventory,
 		["Inventory.ActiveSlot.Request"] = handleActiveSlot,
 		["Inventory.Use.Request"] = handleUse,

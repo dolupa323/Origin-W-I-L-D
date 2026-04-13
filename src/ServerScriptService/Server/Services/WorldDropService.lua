@@ -32,6 +32,9 @@ local DataService = nil
 local InventoryService = nil
 local TimeService = nil
 local PlayerStatService = nil -- DNA 수집을 위해 추가
+local function _getGoldService()
+	return require(Services:WaitForChild("NPCShopService"))
+end
 
 --========================================
 -- Private State
@@ -63,6 +66,9 @@ end
 -- Internal: Despawn 시간 계산
 --========================================
 local function getDespawnSeconds(itemId: string): number
+	if itemId == nil then
+		return Balance.DROP_DESPAWN_DEFAULT
+	end
 	local itemData = DataService.getItem(itemId)
 	if itemData and itemData.dropDespawn == "GATHER" then
 		return Balance.DROP_DESPAWN_GATHER
@@ -80,6 +86,8 @@ local function emitSpawned(drop: any)
 			dropId = drop.dropId,
 			pos = drop.pos,
 			itemId = drop.itemId,
+			dropType = drop.dropType,
+			goldAmount = drop.goldAmount,
 			count = drop.count,
 			despawnAt = drop.despawnAt,
 			inactive = drop.inactive,
@@ -94,6 +102,7 @@ local function emitChanged(dropId: string, count: number)
 			NetController.FireClientsInRange(drop.pos, 400, "WorldDrop.Changed", {
 				dropId = dropId,
 				count = count,
+				goldAmount = drop.goldAmount,
 			})
 		end
 	end
@@ -462,6 +471,37 @@ function WorldDropService.spawnDrop(pos: Vector3, itemId: string, count: number,
 	return true, nil, { merged = false, dropId = drop.dropId, count = drop.count }
 end
 
+function WorldDropService.spawnGoldDrop(pos: Vector3, amount: number): (boolean, string?, any?)
+	local adjustedPos = getGroundHeight(pos)
+	local goldAmount = math.max(0, math.floor(tonumber(amount) or 0))
+	if goldAmount <= 0 then
+		return false, Enums.ErrorCode.INVALID_COUNT, nil
+	end
+
+	local now = tick()
+	local drop = {
+		dropId = generateDropId(),
+		pos = adjustedPos,
+		dropType = "gold",
+		goldAmount = goldAmount,
+		count = goldAmount,
+		spawnedAt = now,
+		despawnAt = now + Balance.DROP_DESPAWN_DEFAULT,
+		inactive = false,
+	}
+
+	drops[drop.dropId] = drop
+	dropCount = dropCount + 1
+	indexDropForMerge(drop)
+
+	if dropCount > Balance.DROP_CAP then
+		pruneOldestDrops()
+	end
+
+	emitSpawned(drop)
+	return true, nil, { merged = false, dropId = drop.dropId, count = goldAmount }
+end
+
 --- Loot (아이템 줍기)
 --- 반환: (success, errorCode?, data?)
 function WorldDropService.loot(player: Player, dropId: string): (boolean, string?, any?)
@@ -489,7 +529,43 @@ function WorldDropService.loot(player: Player, dropId: string): (boolean, string
 	if dist > Balance.DROP_LOOT_RANGE then
 		return false, Enums.ErrorCode.OUT_OF_RANGE, nil
 	end
-	
+
+	if drop.dropType == "gold" then
+		local availableGold = math.max(0, math.floor(tonumber(drop.goldAmount or drop.count) or 0))
+		if availableGold <= 0 then
+			return false, Enums.ErrorCode.NOT_FOUND, nil
+		end
+
+		local goldService = _getGoldService()
+		local currentGold = goldService.getGold(userId)
+		if currentGold >= Balance.GOLD_CAP then
+			return false, Enums.ErrorCode.GOLD_CAP_REACHED, nil
+		end
+		local goldAmount = math.min(availableGold, Balance.GOLD_CAP - currentGold)
+		local ok, err = goldService.addGold(userId, goldAmount)
+		if not ok then
+			return false, err, nil
+		end
+
+		local remaining = availableGold - goldAmount
+		if remaining > 0 then
+			drop.goldAmount = remaining
+			drop.count = remaining
+			emitChanged(dropId, remaining)
+		else
+			emitDespawned(dropId, "LOOTED_OUT")
+			unindexDropForMerge(drop)
+			drops[dropId] = nil
+			dropCount = dropCount - 1
+		end
+
+		return true, nil, {
+			dropId = dropId,
+			dropType = "gold",
+			goldAmount = goldAmount,
+		}
+	end
+
 	-- DNA 타입 아이템: 인벤토리에 추가 + 특별 알림
 	local itemData = DataService.getItem(drop.itemId)
 	if itemData and itemData.type == "DNA" then

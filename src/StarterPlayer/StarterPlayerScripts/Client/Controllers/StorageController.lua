@@ -57,25 +57,61 @@ function StorageController.closeStorage()
 	storageData = nil
 end
 
+function StorageController.getStorageData()
+	return storageData
+end
+
+function StorageController.getStorageSlot(slot: number)
+	if not storageData or type(storageData.slots) ~= "table" then
+		return nil
+	end
+	for _, item in ipairs(storageData.slots) do
+		if item.slot == slot then
+			return item
+		end
+	end
+	return nil
+end
+
 --- 아이템 이동 요청 (인벤토리 <-> 창고)
 --- @param slot 이동할 슬롯 번호
 --- @param fromType "player" | "storage"
-function StorageController.moveItem(slot: number, fromType: string)
+function StorageController.moveItem(slot: number, fromType: string, targetSlot: number?, targetType: string?)
 	if not currentStorageId then return end
 	
-	local targetType = (fromType == "player") and "storage" or "player"
+	targetType = targetType or ((fromType == "player") and "storage" or "player")
+	targetSlot = targetSlot or 0
+	if targetSlot == slot and targetType == fromType then
+		return
+	end
 	
 	local success, err = NetClient.Request("Storage.Move.Request", {
 		storageId = currentStorageId,
 		sourceType = fromType,
 		sourceSlot = slot,
 		targetType = targetType,
-		targetSlot = 0, -- 0이면 자동 빈 슬롯 찾기 (서버 InventoryService.MoveInternal 지원)
+		targetSlot = targetSlot,
 	})
 
 	if not success and tostring(err) == "NO_PERMISSION" then
 		local UIManager = require(script.Parent.Parent.UIManager)
 		UIManager.notify("토템 보호가 활성화되어 아이템 이동이 차단되었습니다.", Color3.fromRGB(255, 120, 120))
+	end
+end
+
+function StorageController.moveGold(sourceType: string, amount: number?)
+	if not currentStorageId then return end
+
+	local success, err = NetClient.Request("Storage.MoveGold.Request", {
+		storageId = currentStorageId,
+		sourceType = sourceType,
+		amount = amount,
+	})
+
+	if not success then
+		local UIManager = require(script.Parent.Parent.UIManager)
+		UIManager.notify("골드를 이동할 수 없습니다.", Color3.fromRGB(255, 120, 120))
+		warn("[StorageController] Failed to move gold:", err)
 	end
 end
 
@@ -121,6 +157,10 @@ local function onStorageChanged(data)
 				end
 			end
 		end
+	end
+
+	if data.gold ~= nil then
+		storageData.gold = data.gold
 	end
 	
 	-- UI 리프레시

@@ -222,6 +222,8 @@ local currentCombatCreatureId = nil
 local invSlots = {}
 local invDetailPanel
 local selectedInvSlot = nil
+local hoveredStorageSlotInfo = nil
+local currentStorageData = nil
 local categoryButtons = {}
 
 -- Crafting / Building
@@ -444,6 +446,9 @@ end
 function UIManager.updateGold(amt)
 	InventoryUI.UpdateCurrency(amt)
 	ShopUI.UpdateGold(amt)
+	if WindowManager.isOpen("STORAGE") then
+		UIManager.refreshStorage()
+	end
 	if shopFrame then
 		local g = shopFrame:FindFirstChild("TB")
 		if g then g = g:FindFirstChild("Gold"); if g then g.Text = "💰 "..tostring(amt) end end
@@ -755,7 +760,18 @@ function UIManager.getIsMobile() return isMobile end
 
 -- UIManager.isDragging()은 이미 위(L456)에서 DragDropController를 통해 정의됨 (중복 제거)
 
-local modalActionType = "DROP" -- DROP or SPLIT
+local modalActionType = "DROP" -- DROP, SPLIT, DROP_GOLD, STORAGE_DEPOSIT_GOLD, STORAGE_WITHDRAW_GOLD
+
+local function openCountModal(title, amount)
+	local safeAmount = math.max(1, math.floor(tonumber(amount) or 1))
+	local m = InventoryUI.Refs.DropModal
+	m.Frame.Visible = true
+	m.Input.Text = tostring(safeAmount)
+	m.MaxLabel.Text = "(최대: " .. safeAmount .. ")"
+	if m.Title then
+		m.Title.Text = title or "수량 입력"
+	end
+end
 
 function UIManager.openDropModal()
 	if not selectedInvSlot then return end
@@ -774,10 +790,42 @@ function UIManager.openDropModal()
 	end
 	if totalCount < 1 then totalCount = 1 end
 	
-	local m = InventoryUI.Refs.DropModal
-	m.Frame.Visible = true
-	m.Input.Text = tostring(totalCount)
-	m.MaxLabel.Text = "(최대: " .. totalCount .. ")"
+	openCountModal("수량 입력", totalCount)
+end
+
+function UIManager.openGoldDropModal()
+	local currentGold = ShopController.getGold()
+	if currentGold <= 0 then
+		UIManager.notify("드랍할 골드가 없습니다.", C.RED)
+		return
+	end
+
+	modalActionType = "DROP_GOLD"
+	openCountModal("드랍할 골드", currentGold)
+end
+
+function UIManager.openStorageGoldModal(sourceType)
+	if not currentStorageData then
+		return
+	end
+
+	if sourceType == "player" then
+		local currentGold = ShopController.getGold()
+		if currentGold <= 0 then
+			UIManager.notify("보관할 골드가 없습니다.", C.RED)
+			return
+		end
+		modalActionType = "STORAGE_DEPOSIT_GOLD"
+		openCountModal("보관할 골드", currentGold)
+	else
+		local storageGold = tonumber(currentStorageData.gold) or 0
+		if storageGold <= 0 then
+			UIManager.notify("인출할 골드가 없습니다.", C.RED)
+			return
+		end
+		modalActionType = "STORAGE_WITHDRAW_GOLD"
+		openCountModal("인출할 골드", storageGold)
+	end
 end
 
 function UIManager.openSplitModal()
@@ -787,10 +835,8 @@ function UIManager.openSplitModal()
 	
 	modalActionType = "SPLIT"
 	
-	local m = InventoryUI.Refs.DropModal
-	m.Frame.Visible = true
-	m.Input.Text = tostring(math.floor(item.count / 2))
-	m.MaxLabel.Text = "(최대: " .. (item.count - 1) .. ")"
+	openCountModal("수량 입력", math.floor(item.count / 2))
+	InventoryUI.Refs.DropModal.MaxLabel.Text = "(최대: " .. (item.count - 1) .. ")"
 end
 
 function UIManager.getSelectedInvSlot()
@@ -798,6 +844,30 @@ function UIManager.getSelectedInvSlot()
 end
 
 function UIManager.confirmModalAction(count)
+	if modalActionType == "DROP_GOLD" then
+		local currentGold = ShopController.getGold()
+		local validCount = math.max(1, math.min(count, currentGold))
+		InventoryController.requestDropGold(validCount)
+		InventoryUI.Refs.DropModal.Frame.Visible = false
+		return
+	end
+
+	if modalActionType == "STORAGE_DEPOSIT_GOLD" then
+		local currentGold = ShopController.getGold()
+		local validCount = math.max(1, math.min(count, currentGold))
+		StorageController.moveGold("player", validCount)
+		InventoryUI.Refs.DropModal.Frame.Visible = false
+		return
+	end
+
+	if modalActionType == "STORAGE_WITHDRAW_GOLD" then
+		local storageGold = currentStorageData and (tonumber(currentStorageData.gold) or 0) or 0
+		local validCount = math.max(1, math.min(count, storageGold))
+		StorageController.moveGold("storage", validCount)
+		InventoryUI.Refs.DropModal.Frame.Visible = false
+		return
+	end
+
 	if not selectedInvSlot then return end
 	local item = InventoryController.getSlot(selectedInvSlot)
 	if not item then return end
@@ -1455,6 +1525,7 @@ end
 
 function UIManager._onOpenStorage(storageId, data)
 	currentStorageData = data
+	hoveredStorageSlotInfo = nil
 	StorageUI.Refs.Frame.Visible = true
 	updateUIMode()
 	
@@ -1462,6 +1533,12 @@ function UIManager._onOpenStorage(storageId, data)
 		blurEffect = Instance.new("BlurEffect"); blurEffect.Size = 15; blurEffect.Parent = Lighting
 	end
 	
+	ShopController.requestGold(function()
+		if WindowManager.isOpen("STORAGE") then
+			UIManager.refreshStorage()
+		end
+	end)
+
 	UIManager.refreshStorage()
 end
 
@@ -1472,6 +1549,7 @@ end
 function UIManager._onCloseStorage()
 	if blurEffect then blurEffect:Destroy(); blurEffect = nil end
 	currentStorageData = nil
+	hoveredStorageSlotInfo = nil
 	StorageUI.Refs.Frame.Visible = false
 	-- 서버에 닫기 요청
 	StorageController.closeStorage()
@@ -1481,11 +1559,77 @@ function UIManager.refreshStorage()
 	if not WindowManager.isOpen("STORAGE") or not currentStorageData then return end
 	
 	local invData = InventoryController.getItems()
-	StorageUI.Refresh(currentStorageData, invData, UIManager.getItemIcon, UIManager)
+	local playerGold = ShopController.getGold()
+	local _, inventoryMaxSlots = InventoryController.getSlotInfo()
+	StorageUI.Refresh(currentStorageData, invData, playerGold, UIManager.getItemIcon, UIManager, inventoryMaxSlots)
 end
 
 function UIManager._onStorageSlotClick(slot, fromType)
 	StorageController.moveItem(slot, fromType)
+end
+
+function UIManager.onStorageSlotHover(slot, fromType, isHovering)
+	if not isHovering then
+		hoveredStorageSlotInfo = nil
+		StorageUI.HideTooltip()
+		return
+	end
+
+	if fromType == "storage" then
+		hoveredStorageSlotInfo = StorageController.getStorageSlot(slot)
+	else
+		local item = InventoryController.getSlot(slot)
+		hoveredStorageSlotInfo = item and table.clone(item) or nil
+	end
+
+	StorageUI.ShowTooltip(hoveredStorageSlotInfo)
+end
+
+function UIManager.getHoveredStorageSlotInfo()
+	return hoveredStorageSlotInfo
+end
+
+function UIManager.handleStorageDragStart(slot, fromType)
+	DragDropController.handleDragStart(slot, fromType, "storage")
+end
+
+function UIManager.getStorageSlots()
+	return StorageUI.Refs.StorageSlots
+end
+
+function UIManager.getStorageInventorySlots()
+	return StorageUI.Refs.InventorySlots
+end
+
+function UIManager.getStorageDragItem(slot, fromType)
+	if fromType == "storage" then
+		return StorageController.getStorageSlot(slot)
+	end
+	return InventoryController.getSlot(slot)
+end
+
+function UIManager.moveStorageItem(sourceSlot, sourceType, targetSlot, targetType)
+	StorageController.moveItem(sourceSlot, sourceType, targetSlot, targetType)
+end
+
+function UIManager.requestStorageGoldMove(sourceType)
+	if not currentStorageData then return end
+
+	if sourceType == "player" then
+		local amount = ShopController.getGold()
+		if amount <= 0 then
+			UIManager.notify("보관할 골드가 없습니다.", C.RED)
+			return
+		end
+		UIManager.openStorageGoldModal("player")
+	else
+		local amount = tonumber(currentStorageData.gold) or 0
+		if amount <= 0 then
+			UIManager.notify("인출할 골드가 없습니다.", C.RED)
+			return
+		end
+		UIManager.openStorageGoldModal("storage")
+	end
 end
 
 ----------------------------------------------------------------
@@ -2233,6 +2377,7 @@ end
 local function setupEventListeners()
 	InventoryController.onChanged(function()
 		if WindowManager.isOpen("INV") then UIManager.refreshInventory() end
+		if WindowManager.isOpen("STORAGE") then UIManager.refreshStorage() end
 		UIManager.refreshHotbar()
 		if WindowManager.isOpen("EQUIP") then UIManager.refreshStats() end
 		if invCraftContainer and invCraftContainer.Visible then

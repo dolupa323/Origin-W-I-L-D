@@ -10,6 +10,8 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Balance = require(Shared.Config.Balance)
 local Enums = require(Shared.Enums.Enums)
+local FacilityData = require(ReplicatedStorage:WaitForChild("Data"):WaitForChild("FacilityData"))
+local CreatureData = require(ReplicatedStorage:WaitForChild("Data"):WaitForChild("CreatureData"))
 
 local Server = ServerScriptService:WaitForChild("Server")
 local Services = Server:WaitForChild("Services")
@@ -33,10 +35,28 @@ local viewingPlayers = {}
 local BuildService = nil
 local BaseClaimService = nil
 local TotemService = nil
+local function _getGoldService()
+	return require(Services:WaitForChild("NPCShopService"))
+end
 -- Internal: Storage Management
 --========================================
 
 local PAL_STORAGE_ACCESS_DISTANCE = (Balance.HARVEST_RANGE or 10) + 6
+local MAX_STORAGE_SLOTS = 40
+
+local facilitySlotMap = {}
+for _, entry in ipairs(FacilityData) do
+	if entry and entry.id then
+		facilitySlotMap[entry.id] = tonumber(entry.storageSlots)
+	end
+end
+
+local creatureBagSlotMap = {}
+for _, entry in ipairs(CreatureData) do
+	if entry and entry.id then
+		creatureBagSlotMap[entry.id] = tonumber(entry.palBagSlots)
+	end
+end
 
 local function _canAccessPalStorage(player: Player, palUID: string): boolean
 	if not palUID or palUID == "" then
@@ -97,13 +117,53 @@ local function _canAccessStorage(player: Player, storageId: string): boolean
 	return false
 end
 
+local function _getStorageMaxSlots(storageId: string, player: Player?): number
+	if string.sub(storageId, 1, 4) == "PAL_" then
+		local palUID = string.sub(storageId, 5)
+		local ownerId = player and player.UserId
+		if ownerId then
+			local PalboxService = require(Services:WaitForChild("PalboxService"))
+			local pal = PalboxService and PalboxService.getPal and PalboxService.getPal(ownerId, palUID)
+			local configured = pal and creatureBagSlotMap[pal.creatureId]
+			if configured and configured > 0 then
+				return configured
+			end
+		end
+		return Balance.STORAGE_SLOTS
+	end
+
+	if BuildService and BuildService.get then
+		local structure = BuildService.get(storageId)
+		if structure and structure.facilityId then
+			local configured = facilitySlotMap[structure.facilityId]
+			if configured and configured > 0 then
+				return configured
+			end
+		end
+	end
+
+	return Balance.STORAGE_SLOTS
+end
+
 --- 기본 창고 스키마 생성
 local function _createDefaultStorage()
 	return {
 		slots = {},
+		gold = 0,
 		version = 1,
 		updatedAt = os.time(),
 	}
+end
+
+local function _ensureStorageShape(storage: any): any
+	if type(storage) ~= "table" then
+		storage = _createDefaultStorage()
+	end
+	storage.slots = type(storage.slots) == "table" and storage.slots or {}
+	storage.gold = math.max(0, math.floor(tonumber(storage.gold) or 0))
+	storage.version = storage.version or 1
+	storage.updatedAt = storage.updatedAt or os.time()
+	return storage
 end
 
 --- 특정 창고의 파티션 ID 찾기
@@ -146,14 +206,20 @@ local function _getOrCreateStorage(storageId: string): any
 	if not storages[storageId] then
 		storages[storageId] = _createDefaultStorage()
 	end
-	
+
+	storages[storageId] = _ensureStorageShape(storages[storageId])
 	return storages[storageId]
 end
 
 --- 특정 창고 가져오기 (없으면 nil)
 local function _getStorage(storageId: string): any?
 	local storages = _getStorages(storageId)
-	return storages[storageId]
+	local storage = storages[storageId]
+	if storage then
+		storage = _ensureStorageShape(storage)
+		storages[storageId] = storage
+	end
+	return storage
 end
 
 --- 창고 dirty 플래그 설정 (저장 필요 표시)
@@ -169,7 +235,7 @@ end
 --========================================
 
 --- Storage.Changed 이벤트 발생 (해당 창고를 보고 있는 유저에게만)
-local function _emitStorageChanged(storageId: string, changes: any)
+local function _emitStorageChanged(storageId: string, changes: any, goldValue: number?)
 	if NetController and viewingPlayers[storageId] then
 		for userId, _ in pairs(viewingPlayers[storageId]) do
 			local player = Players:GetPlayerByUserId(userId)
@@ -177,6 +243,7 @@ local function _emitStorageChanged(storageId: string, changes: any)
 				NetController.FireClient(player, "Storage.Changed", {
 					storageId = storageId,
 					changes = changes,
+					gold = goldValue,
 				})
 			end
 		end
@@ -248,6 +315,8 @@ function StorageService.open(player: Player, storageId: string): (boolean, strin
 				slot = slot,
 				itemId = slotData.itemId,
 				count = slotData.count,
+				durability = slotData.durability,
+				attributes = slotData.attributes,
 			})
 		end
 	end
@@ -257,7 +326,8 @@ function StorageService.open(player: Player, storageId: string): (boolean, strin
 	return true, nil, {
 		storageId = storageId,
 		slots = slots,
-		maxSlots = Balance.STORAGE_SLOTS,
+		gold = storage.gold or 0,
+		maxSlots = _getStorageMaxSlots(storageId, player),
 		maxStack = Balance.MAX_STACK,
 	}
 end
@@ -328,7 +398,7 @@ function StorageService.move(
 		sourceMaxSlots = Balance.MAX_INV_SLOTS
 	else
 		sourceContainer = storage
-		sourceMaxSlots = Balance.STORAGE_SLOTS
+		sourceMaxSlots = _getStorageMaxSlots(storageId, player)
 	end
 	
 	if targetType == "player" then
@@ -336,7 +406,7 @@ function StorageService.move(
 		targetMaxSlots = Balance.MAX_INV_SLOTS
 	else
 		targetContainer = storage
-		targetMaxSlots = Balance.STORAGE_SLOTS
+		targetMaxSlots = _getStorageMaxSlots(storageId, player)
 	end
 	
 	-- MoveInternal 호출
@@ -409,6 +479,61 @@ function StorageService.getStorageInfo(storageId: string): any?
 	return _getStorage(storageId)
 end
 
+function StorageService.moveGold(player: Player, storageId: string, sourceType: string, amount: number?): (boolean, string?, any?)
+	if not storageId or type(storageId) ~= "string" then
+		return false, Enums.ErrorCode.BAD_REQUEST, nil
+	end
+	if sourceType ~= "player" and sourceType ~= "storage" then
+		return false, Enums.ErrorCode.BAD_REQUEST, nil
+	end
+	if not _canAccessStorage(player, storageId) then
+		return false, Enums.ErrorCode.NO_PERMISSION, nil
+	end
+
+	local storage = _getOrCreateStorage(storageId)
+	local goldService = _getGoldService()
+	local userId = player.UserId
+	local available = sourceType == "player" and goldService.getGold(userId) or (storage.gold or 0)
+	local moveAmount = math.max(0, math.floor(tonumber(amount) or available))
+
+	if moveAmount <= 0 then
+		return false, Enums.ErrorCode.INVALID_COUNT, nil
+	end
+	if moveAmount > available then
+		return false, Enums.ErrorCode.INVALID_COUNT, nil
+	end
+
+	if sourceType == "player" then
+		local ok, err = goldService.removeGold(userId, moveAmount)
+		if not ok then
+			return false, err, nil
+		end
+		storage.gold = (storage.gold or 0) + moveAmount
+	else
+		local currentGold = goldService.getGold(userId)
+		local room = math.max(0, Balance.GOLD_CAP - currentGold)
+		moveAmount = math.min(moveAmount, room)
+		if moveAmount <= 0 then
+			return false, Enums.ErrorCode.GOLD_CAP_REACHED, nil
+		end
+		local ok, err = goldService.addGold(userId, moveAmount)
+		if not ok then
+			return false, err, nil
+		end
+		storage.gold = math.max(0, (storage.gold or 0) - moveAmount)
+	end
+
+	_markStorageDirty(storageId)
+	_emitStorageChanged(storageId, {}, storage.gold)
+
+	return true, nil, {
+		storageId = storageId,
+		gold = storage.gold,
+		movedGold = moveAmount,
+		sourceType = sourceType,
+	}
+end
+
 function StorageService.deleteStorageInternal(storageId: string)
 	if not storageId or type(storageId) ~= "string" then
 		return false
@@ -464,7 +589,7 @@ function StorageService.addItemInternal(storageId: string, itemId: string, count
 	-- 아이템별 스택 가능 여부 및 최대 스택 조회
 	local stackable = InventoryService and InventoryService.isStackable(itemId)
 	local maxStack = InventoryService and InventoryService.getMaxStackForItem(itemId) or 1
-	local maxSlots = Balance.STORAGE_SLOTS or 20
+	local maxSlots = math.min(_getStorageMaxSlots(storageId), MAX_STORAGE_SLOTS)
 	local remaining = count
 	local changes = {}
 	
@@ -549,6 +674,18 @@ local function handleMove(player: Player, payload: any)
 	return { success = true, data = data }
 end
 
+local function handleMoveGold(player: Player, payload: any)
+	local storageId = payload.storageId
+	local sourceType = payload.sourceType
+	local amount = payload.amount
+
+	local success, errorCode, data = StorageService.moveGold(player, storageId, sourceType, amount)
+	if not success then
+		return { success = false, errorCode = errorCode }
+	end
+	return { success = true, data = data }
+end
+
 --========================================
 -- Initialization
 --========================================
@@ -589,6 +726,7 @@ function StorageService.GetHandlers()
 		["Storage.Open.Request"] = handleOpen,
 		["Storage.Close.Request"] = handleClose,
 		["Storage.Move.Request"] = handleMove,
+		["Storage.MoveGold.Request"] = handleMoveGold,
 	}
 end
 

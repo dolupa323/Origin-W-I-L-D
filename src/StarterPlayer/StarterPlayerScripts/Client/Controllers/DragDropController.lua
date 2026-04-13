@@ -16,8 +16,12 @@ local mainGui
 local isDragging = false
 local draggingSlotIdx = nil
 local pendingDragIdx = nil
+local pendingSourceType = nil
+local pendingSourceWindow = "inventory"
 local dragStartPos = Vector2.zero
 local dragDummy = nil
+local draggingSourceType = nil
+local draggingSourceWindow = "inventory"
 
 -- Visual Effects State
 local dimmedSlotFrame = nil   -- 드래그 중인 원본 슬롯
@@ -105,14 +109,22 @@ function DragDropController.Init(_UIManager, _InventoryController, _Balance, _ma
 	mainGui = _mainGui
 end
 
-function DragDropController.handleDragStart(idx)
+function DragDropController.handleDragStart(idx, sourceType, sourceWindow)
 	if isDragging then return end
-	
-	local items = InventoryController.getItems()
-	local item = items[idx]
+
+	sourceWindow = sourceWindow or "inventory"
+	local item = nil
+	if sourceWindow == "storage" then
+		item = UIManager.getStorageDragItem and UIManager.getStorageDragItem(idx, sourceType) or nil
+	else
+		local items = InventoryController.getItems()
+		item = items[idx]
+	end
 	if not item or not item.itemId then return end
 
 	pendingDragIdx = idx
+	pendingSourceType = sourceType
+	pendingSourceWindow = sourceWindow
 	dragStartPos = UserInputService:GetMouseLocation()
 end
 
@@ -122,15 +134,28 @@ function DragDropController.handleDragUpdate()
 		if delta > 10 then -- 최소 드래그 거리 판정
 			isDragging = true
 			draggingSlotIdx = pendingDragIdx
+			draggingSourceType = pendingSourceType
+			draggingSourceWindow = pendingSourceWindow or "inventory"
 			pendingDragIdx = nil
+			pendingSourceType = nil
 			
-			local items = InventoryController.getItems()
-			local item = items[draggingSlotIdx]
+			local item = nil
+			if draggingSourceWindow == "storage" then
+				item = UIManager.getStorageDragItem and UIManager.getStorageDragItem(draggingSlotIdx, draggingSourceType) or nil
+			else
+				local items = InventoryController.getItems()
+				item = items[draggingSlotIdx]
+			end
 			
 			-- 원본 슬롯 시각적 약화
-			local invSlots = UIManager.getInvSlots()
-			if invSlots[draggingSlotIdx] then
-				dimSourceSlot(invSlots[draggingSlotIdx].frame)
+			local sourceSlots = nil
+			if draggingSourceWindow == "storage" then
+				sourceSlots = draggingSourceType == "storage" and UIManager.getStorageSlots() or UIManager.getStorageInventorySlots()
+			else
+				sourceSlots = UIManager.getInvSlots()
+			end
+			if sourceSlots and sourceSlots[draggingSlotIdx] then
+				dimSourceSlot(sourceSlots[draggingSlotIdx].frame)
 			end
 			
 			-- 드래그 고스트(Dummy) 생성: 실제 슬롯 미니어처 스타일
@@ -206,7 +231,39 @@ function DragDropController.handleDragUpdate()
 	local mousePos = Vector2.new(rawMouse.X, rawMouse.Y - insetTop.Y)
 	
 	-- 1. 인벤토리 슬롯 확인
-	if UIManager.isWindowOpen("INV") then
+	if draggingSourceWindow == "storage" then
+		for _, s in pairs(UIManager.getStorageSlots()) do
+			if isMouseOverSlot(mousePos, s.frame) then
+				local absPos = s.frame.AbsolutePosition
+				local absSize = s.frame.AbsoluteSize
+				local slotCenterX = absPos.X + absSize.X * 0.5
+				local slotCenterY = absPos.Y + absSize.Y * 0.5
+				local distX = mousePos.X - slotCenterX
+				local distY = mousePos.Y - slotCenterY
+				local distance = math.sqrt(distX * distX + distY * distY)
+				if distance < minDistance then
+					minDistance = distance
+					foundSlotFrame = s.frame
+				end
+			end
+		end
+
+		for _, s in pairs(UIManager.getStorageInventorySlots()) do
+			if isMouseOverSlot(mousePos, s.frame) then
+				local absPos = s.frame.AbsolutePosition
+				local absSize = s.frame.AbsoluteSize
+				local slotCenterX = absPos.X + absSize.X * 0.5
+				local slotCenterY = absPos.Y + absSize.Y * 0.5
+				local distX = mousePos.X - slotCenterX
+				local distY = mousePos.Y - slotCenterY
+				local distance = math.sqrt(distX * distX + distY * distY)
+				if distance < minDistance then
+					minDistance = distance
+					foundSlotFrame = s.frame
+				end
+			end
+		end
+	elseif UIManager.isWindowOpen("INV") then
 		for _, s in pairs(UIManager.getInvSlots()) do
 			if isMouseOverSlot(mousePos, s.frame) then
 				-- 마우스와 슬롯 중심 사이의 2D 거리 계산
@@ -227,7 +284,7 @@ function DragDropController.handleDragUpdate()
 	end
 	
 	-- 2. 핫바 슬롯 확인
-	if UIManager.isWindowOpen("INV") or true then  -- 핫바는 항상 확인
+	if draggingSourceWindow ~= "storage" and (UIManager.isWindowOpen("INV") or true) then  -- 핫바는 항상 확인
 		for _, s in pairs(UIManager.getHotbarSlots()) do
 			if isMouseOverSlot(mousePos, s.frame) then
 				-- 마우스와 슬롯 중심 사이의 2D 거리 계산
@@ -253,6 +310,8 @@ end
 function DragDropController.handleDragEnd()
 	if not isDragging then 
 		pendingDragIdx = nil
+		pendingSourceType = nil
+		pendingSourceWindow = "inventory"
 		return 
 	end
 	isDragging = false
@@ -274,7 +333,41 @@ function DragDropController.handleDragEnd()
 	local minDistance = math.huge
 	
 	-- 1. 인벤토리 확인
-	if UIManager.isWindowOpen("INV") then
+	if draggingSourceWindow == "storage" then
+		for i, s in pairs(UIManager.getStorageSlots()) do
+			if isMouseOverSlot(mousePos, s.frame) then
+				local absPos = s.frame.AbsolutePosition
+				local absSize = s.frame.AbsoluteSize
+				local slotCenterX = absPos.X + absSize.X * 0.5
+				local slotCenterY = absPos.Y + absSize.Y * 0.5
+				local distX = mousePos.X - slotCenterX
+				local distY = mousePos.Y - slotCenterY
+				local distance = math.sqrt(distX * distX + distY * distY)
+				if distance < minDistance then
+					minDistance = distance
+					foundSlot = i
+					foundType = "storage"
+				end
+			end
+		end
+
+		for i, s in pairs(UIManager.getStorageInventorySlots()) do
+			if isMouseOverSlot(mousePos, s.frame) then
+				local absPos = s.frame.AbsolutePosition
+				local absSize = s.frame.AbsoluteSize
+				local slotCenterX = absPos.X + absSize.X * 0.5
+				local slotCenterY = absPos.Y + absSize.Y * 0.5
+				local distX = mousePos.X - slotCenterX
+				local distY = mousePos.Y - slotCenterY
+				local distance = math.sqrt(distX * distX + distY * distY)
+				if distance < minDistance then
+					minDistance = distance
+					foundSlot = i
+					foundType = "player"
+				end
+			end
+		end
+	elseif UIManager.isWindowOpen("INV") then
 		for i, s in pairs(UIManager.getInvSlots()) do
 			if isMouseOverSlot(mousePos, s.frame) then
 				-- 마우스와 슬롯 중심 사이의 2D 거리 계산
@@ -296,7 +389,7 @@ function DragDropController.handleDragEnd()
 	end
 	
 	-- 2. 핫바 확인
-	if UIManager.isWindowOpen("INV") or true then  -- 핫바는 항상 확인
+	if draggingSourceWindow ~= "storage" and (UIManager.isWindowOpen("INV") or true) then  -- 핫바는 항상 확인
 		for i, s in pairs(UIManager.getHotbarSlots()) do
 			if isMouseOverSlot(mousePos, s.frame) then
 				-- 마우스와 슬롯 중심 사이의 2D 거리 계산
@@ -318,7 +411,7 @@ function DragDropController.handleDragEnd()
 	end
 
 	-- 3. 장비 확인
-	if UIManager.isWindowOpen("EQUIP") then
+	if draggingSourceWindow ~= "storage" and UIManager.isWindowOpen("EQUIP") then
 		for slotName, s in pairs(UIManager.getEquipSlots()) do
 			if isMouseOverSlot(mousePos, s.frame) then
 				-- 마우스와 슬롯 중심 사이의 2D 거리 계산
@@ -339,7 +432,11 @@ function DragDropController.handleDragEnd()
 		end
 	end
 
-	if foundSlot then
+	if draggingSourceWindow == "storage" then
+		if foundSlot then
+			UIManager.moveStorageItem(draggingSlotIdx, draggingSourceType, foundSlot, foundType)
+		end
+	elseif foundSlot then
 		InventoryController.moveItem(draggingSlotIdx, foundSlot, foundType)
 	else
 		-- 인벤토리가 열려있을 때만 바깥 드래그 → 월드 드랍
@@ -353,6 +450,9 @@ function DragDropController.handleDragEnd()
 	end
 	
 	draggingSlotIdx = nil
+	draggingSourceType = nil
+	draggingSourceWindow = "inventory"
+	pendingSourceWindow = "inventory"
 end
 
 function DragDropController.isDragging()

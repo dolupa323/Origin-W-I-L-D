@@ -37,11 +37,23 @@ local renderConn = nil
 --========================================
 
 local function getDropColor(itemId: string): Color3
+	if itemId == "GOLD" then
+		return Color3.fromRGB(255, 215, 64)
+	end
+	if not itemId or itemId == "" then
+		return Color3.fromRGB(200, 200, 200)
+	end
 	local itemData = DataHelper.GetData("ItemData", itemId:upper())
 	return (itemData and itemData.color) or Color3.fromRGB(200, 200, 200)
 end
 
-local function getItemDisplayName(itemId: string): string
+local function getItemDisplayName(itemId: string, dropType: string?): string
+	if dropType == "gold" or itemId == "GOLD" then
+		return "골드"
+	end
+	if not itemId or itemId == "" then
+		return "아이템"
+	end
 	local itemData = DataHelper.GetData("ItemData", itemId:upper())
 	return (itemData and itemData.name) or itemId
 end
@@ -119,7 +131,10 @@ end
 local function createDropModel(dropData)
 	if not dropData or not dropData.pos then return nil end
 	
-	local template, isDna = findLootModel(dropData.itemId)
+	local template, isDna = nil, false
+	if dropData.dropType ~= "gold" then
+		template, isDna = findLootModel(dropData.itemId)
+	end
 	local mainObject
 	local isModel = false
 	
@@ -196,7 +211,7 @@ local function createDropModel(dropData)
 		local targetSize = Balance.DROP_SIZE or Vector3.new(1, 1, 1)
 		mainObject.Size = targetSize * 0.1
 		mainObject.Shape = Enum.PartType.Ball
-		mainObject.Color = getDropColor(dropData.itemId)
+		mainObject.Color = getDropColor(dropData.dropType == "gold" and "GOLD" or dropData.itemId)
 		mainObject.Material = Enum.Material.SmoothPlastic
 		mainObject.Position = dropData.pos
 		mainObject.Anchored = true 
@@ -247,7 +262,8 @@ local function createDropModel(dropData)
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name = "PickupPrompt"
 	prompt.ActionText = UILocalizer.Localize("줍기")
-	prompt.ObjectText = getItemDisplayName(dropData.itemId) .. " (x" .. tostring(dropData.count) .. ")"
+	local amountText = dropData.dropType == "gold" and (tostring(dropData.goldAmount or dropData.count) .. " G") or ("x" .. tostring(dropData.count))
+	prompt.ObjectText = getItemDisplayName(dropData.itemId or "GOLD", dropData.dropType) .. " (" .. amountText .. ")"
 	prompt.MaxActivationDistance = Balance.DROP_PROMPT_RANGE
 	prompt.HoldDuration = 0
 	prompt.KeyboardKeyCode = Enum.KeyCode.R
@@ -282,8 +298,10 @@ local function updateDropModel(dropId, newCount)
 	-- [수정] BillboardGui 관련 로직 제거 및 ProximityPrompt 업데이트 통합
 	local prompt = model:FindFirstChild("PickupPrompt") or model:FindFirstChildWhichIsA("ProximityPrompt", true)
 	if prompt then
-		local itemId = dropsCache[dropId] and dropsCache[dropId].itemId or "Unknown"
-		prompt.ObjectText = getItemDisplayName(itemId) .. " (x" .. tostring(newCount) .. ")"
+		local drop = dropsCache[dropId]
+		local itemId = drop and drop.itemId or "Unknown"
+		local displayCount = (drop and drop.dropType == "gold") and ((tostring(drop.goldAmount or newCount)) .. " G") or ("x" .. tostring(newCount))
+		prompt.ObjectText = getItemDisplayName(itemId, drop and drop.dropType) .. " (" .. displayCount .. ")"
 	end
 end
 
@@ -340,6 +358,8 @@ local function onSpawned(data)
 		dropId = data.dropId,
 		pos = data.pos,
 		itemId = data.itemId,
+		dropType = data.dropType,
+		goldAmount = data.goldAmount,
 		count = data.count,
 		despawnAt = data.despawnAt,
 		inactive = data.inactive,
@@ -362,6 +382,7 @@ local function onChanged(data)
 	local drop = dropsCache[data.dropId]
 	if drop then
 		drop.count = data.count
+		drop.goldAmount = data.goldAmount or data.count
 		updateDropModel(data.dropId, data.count)
 		-- print(string.format("[WorldDropController] Changed: %s -> %d", data.dropId, data.count))
 	end

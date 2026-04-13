@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
 local SpawnConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("SpawnConfig"))
+local Balance = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("Balance"))
 
 local PortalService = {}
 local initialized = false
@@ -186,6 +187,109 @@ local function _getPortalObject(objectName)
 		end
 	end
 	return nil
+end
+
+local function _getArrivalPortalBasePart(portalObject)
+	if not portalObject then
+		return nil
+	end
+
+	if portalObject:IsA("BasePart") then
+		return portalObject
+	end
+
+	if portalObject:IsA("Model") then
+		local preferred = portalObject:FindFirstChild("TeleportAnchor", true)
+			or portalObject:FindFirstChild("TeleportPoint", true)
+			or portalObject.PrimaryPart
+		if preferred and preferred:IsA("BasePart") then
+			return preferred
+		end
+		return portalObject:FindFirstChildWhichIsA("BasePart", true)
+	end
+
+	return nil
+end
+
+local function _resolveArrivalPosition(zoneInfo, arrivalPortal, character)
+	local defaultArrival = zoneInfo.spawnPoint + Vector3.new(0, 5, 0)
+	local excludeList = { character }
+	local zoneCenter = zoneInfo.center or zoneInfo.spawnPoint
+	local zoneRadius = tonumber(zoneInfo.radius) or 0
+
+	if arrivalPortal then
+		table.insert(excludeList, arrivalPortal)
+	end
+
+	local function projectToSafeGround(candidatePos)
+		local rayParams = RaycastParams.new()
+		rayParams.FilterDescendantsInstances = excludeList
+		rayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+		local rayOrigin = candidatePos + Vector3.new(0, 80, 0)
+		local rayDir = Vector3.new(0, -320, 0)
+		local rayResult = workspace:Raycast(rayOrigin, rayDir, rayParams)
+		if rayResult and rayResult.Material ~= Enum.Material.Water then
+			local minSafeY = math.min(defaultArrival.Y, zoneCenter.Y + 5) - 40
+			if rayResult.Position.Y >= minSafeY then
+				return rayResult.Position + Vector3.new(0, 6, 0), true
+			end
+		end
+		return candidatePos, false
+	end
+
+	local function scanSafeGround(originPos)
+		local radialSamples = {
+			Vector3.new(0, 0, 0),
+			Vector3.new(10, 0, 0),
+			Vector3.new(-10, 0, 0),
+			Vector3.new(0, 0, 10),
+			Vector3.new(0, 0, -10),
+			Vector3.new(18, 0, 18),
+			Vector3.new(-18, 0, 18),
+			Vector3.new(18, 0, -18),
+			Vector3.new(-18, 0, -18),
+			Vector3.new(28, 0, 0),
+			Vector3.new(-28, 0, 0),
+			Vector3.new(0, 0, 28),
+			Vector3.new(0, 0, -28),
+		}
+
+		for _, offset in ipairs(radialSamples) do
+			local samplePos = originPos + offset
+			local flatDistance = (Vector2.new(samplePos.X, samplePos.Z) - Vector2.new(zoneCenter.X, zoneCenter.Z)).Magnitude
+			if zoneRadius <= 0 or flatDistance <= zoneRadius + 120 then
+				local groundedPos, ok = projectToSafeGround(samplePos)
+				if ok then
+					return groundedPos, true
+				end
+			end
+		end
+
+		return originPos, false
+	end
+
+	local portalBasePart = _getArrivalPortalBasePart(arrivalPortal)
+	if portalBasePart then
+		local candidatePos = portalBasePart.Position + Vector3.new(0, math.max(6, portalBasePart.Size.Y * 0.5 + 4), 0)
+		local flatDistance = (Vector2.new(candidatePos.X, candidatePos.Z) - Vector2.new(zoneCenter.X, zoneCenter.Z)).Magnitude
+		local minSafeY = (Balance.SEA_LEVEL or 0) - 5
+		if (zoneRadius <= 0 or flatDistance <= zoneRadius + 120) and candidatePos.Y >= minSafeY then
+			local groundedPos, ok = scanSafeGround(candidatePos)
+			if ok then
+				return groundedPos
+			end
+		else
+			warn(string.format("[PortalService] Arrival portal '%s' base position rejected, fallback to spawnPoint", tostring(arrivalPortal.Name)))
+		end
+	end
+
+	local groundedDefault, ok = scanSafeGround(defaultArrival)
+	if ok then
+		return groundedDefault
+	end
+
+	return defaultArrival
 end
 
 local function _distanceToPortalSurface(player, portalObject)
@@ -386,6 +490,28 @@ local function _requestPortalTeleport(player, payload)
 		end
 		task.wait(1.5) -- 클라이언트 페이드 완료 대기
 
+		local okParty, PartyService = pcall(function()
+			return require(game:GetService("ServerScriptService").Server.Services.PartyService)
+		end)
+		local okDebuff, DebuffService = pcall(function()
+			return require(game:GetService("ServerScriptService").Server.Services.DebuffService)
+		end)
+		if okParty and PartyService and PartyService.getSummon then
+			local summon = PartyService.getSummon(userId)
+			if summon then
+				if summon.isMounted and PartyService.dismount then
+					pcall(function()
+						PartyService.dismount(userId, false)
+					end)
+				end
+				if PartyService._recallPal then
+					pcall(function()
+						PartyService._recallPal(userId)
+					end)
+				end
+			end
+		end
+
 		local saveOk = SaveService.savePlayer(userId)
 		if not saveOk then
 			NetController.FireClient(player, "Portal.Error", { message = "데이터 저장 실패" })
@@ -399,40 +525,17 @@ local function _requestPortalTeleport(player, payload)
 			return
 		end
 
-		-- ★ 도착 좌표: zone spawnPoint를 기본으로 사용 (안전 보장)
-		-- 포탈 오브젝트 위치는 주변 지형(물 등)이 위험할 수 있으므로 spawnPoint 우선
-		local arrivalPos = zoneInfo.spawnPoint + Vector3.new(0, 5, 0)
-		local excludeList = { character }
-
-		-- ★ 포탈 오브젝트가 발견되면 해당 위치를 정교한 이동 기준점으로 사용
 		local arrivalPortal = _getPortalObject(arrivalPortalName)
-		if arrivalPortal then
-			table.insert(excludeList, arrivalPortal)
-			arrivalPos = arrivalPortal:GetPivot().Position + Vector3.new(0, 5, 0)
-		else
-			-- 도착 포탈 기준점이 없는 경우에만 레이캐스트로 지면 재확인 (공중 스폰 방지)
-			local rayOrigin = arrivalPos + Vector3.new(0, 50, 0)
-			local rayDir = Vector3.new(0, -250, 0)
-			local rayParams = RaycastParams.new()
-			rayParams.FilterDescendantsInstances = excludeList
-			rayParams.FilterType = Enum.RaycastFilterType.Exclude
+		local arrivalPos = _resolveArrivalPosition(zoneInfo, arrivalPortal, character)
 
-			local rayResult = workspace:Raycast(rayOrigin, rayDir, rayParams)
-			if rayResult and rayResult.Material ~= Enum.Material.Water then
-				-- [안전 장치] 레이캐스트 결과 지면이 기준점보다 너무 낮다면 기본값 유지
-				local hitY = rayResult.Position.Y
-				if hitY > (arrivalPos.Y - 20) then
-					arrivalPos = rayResult.Position + Vector3.new(0, 5, 0)
-				else
-					warn("[PortalService] Raycast hit too low surface (possibly underground), using default spawnPoint height.")
-				end
-			else
-				-- 지면 없음 또는 Water → spawnPoint 높이 그대로 사용 (공중 5스터드)
-				if rayResult then
-					warn("[PortalService] Water detected at spawnPoint, using raw spawnPoint")
-				end
-			end
+		if okDebuff and DebuffService and DebuffService.removeDebuff then
+			pcall(function()
+				DebuffService.removeDebuff(userId, "CHILLY")
+				DebuffService.removeDebuff(userId, "FREEZING")
+				DebuffService.removeDebuff(userId, "WARMTH")
+			end)
 		end
+		player:SetAttribute("PortalSafeUntil", os.clock() + 12)
 
 		-- ★ [원인파악 밎 근본 해결]
 		-- StreamingEnabled 환경에서는 서버가 PivotTo로 캐릭터를 순간 이동시키면,
@@ -457,8 +560,14 @@ local function _requestPortalTeleport(player, payload)
 		local ff = Instance.new("ForceField")
 		ff.Visible = false
 		ff.Parent = character
-		task.delay(5, function()
+		task.delay(12, function()
 			if ff and ff.Parent then ff:Destroy() end
+			if player.Parent then
+				local safeUntil = tonumber(player:GetAttribute("PortalSafeUntil"))
+				if safeUntil and safeUntil <= os.clock() then
+					player:SetAttribute("PortalSafeUntil", nil)
+				end
+			end
 		end)
 
 		if hrp then

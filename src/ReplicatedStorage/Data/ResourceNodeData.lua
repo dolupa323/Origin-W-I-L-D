@@ -231,7 +231,7 @@ local ResourceNodeData = {
 		level = 3,
 		modelName = "REED_BUSH",
 		nodeType = "FIBER",
-		optimalTool = "SICKLE",
+		optimalTool = "AXE",
 		resources = {
 			{ itemId = "REED", min = 2, max = 4, weight = 1.0 },
 			{ itemId = "FIBER", min = 1, max = 2, weight = 0.5 },

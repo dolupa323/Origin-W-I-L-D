@@ -171,6 +171,15 @@ local function getChillyEnvironmentState(player: Player)
 	}
 end
 
+local function hasPortalSafeWindow(player: Player): boolean
+	if not player then
+		return false
+	end
+
+	local safeUntil = tonumber(player:GetAttribute("PortalSafeUntil"))
+	return safeUntil ~= nil and safeUntil > os.clock()
+end
+
 --========================================
 -- Public API
 --========================================
@@ -308,11 +317,20 @@ function DebuffService._tickLoop()
 			end
 
 			if debuffId == "CHILLY" then
+				if hasPortalSafeWindow(player) then
+					table.insert(toRemove, debuffId)
+					continue
+				end
 				local env = getChillyEnvironmentState(player)
 				if env and not env.shouldBeChilly then
 					table.insert(toRemove, debuffId)
 					continue
 				end
+			end
+
+			if debuffId == "FREEZING" and hasPortalSafeWindow(player) then
+				table.insert(toRemove, debuffId)
+				continue
 			end
 			
 			-- 만료 체크 (duration == -1 이면 영구)
@@ -360,7 +378,7 @@ function DebuffService._environmentCheck()
 
 		-- ★ ForceField(포탈 무적) 중에는 환경 디버프 스킵
 		local char = player.Character
-		if char and char:FindFirstChildOfClass("ForceField") then
+		if hasPortalSafeWindow(player) or (char and char:FindFirstChildOfClass("ForceField")) then
 			DebuffService.removeDebuff(userId, "CHILLY")
 			DebuffService.removeDebuff(userId, "WARMTH")
 			DebuffService.removeDebuff(userId, "FREEZING")

@@ -32,6 +32,7 @@ Protocol.Commands = {
 	["Inventory.Split.Request"] = true,
 	["Inventory.Drop.Request"] = true,
 	["Inventory.DropByItemId.Request"] = true,  -- 동일 아이템 다중 슬롯 벌크 드랍
+	["Inventory.DropGold.Request"] = true,
 	["Inventory.Get.Request"] = true,      -- 전체 인벤 조회
 	["Inventory.ActiveSlot.Request"] = true, -- 활성 슬롯 변경
 	["Inventory.Use.Request"] = true,        -- 아이템 사용/장착
@@ -50,6 +51,7 @@ Protocol.Commands = {
 	["Storage.Open.Request"] = true,
 	["Storage.Close.Request"] = true,
 	["Storage.Move.Request"] = true,
+	["Storage.MoveGold.Request"] = true,
 	
 	-- Build 명령어
 	["Build.Place.Request"] = true,     -- 시설물 배치 요청

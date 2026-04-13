@@ -61,7 +61,8 @@ function PalboxService.Init(_NetController, _DataService, _SaveService)
 	
 	-- ★ HP 자동 회복 루프 (미소환/보관 중인 팰)
 	-- STORED / IN_PARTY: 10초마다 최대HP의 5% 회복
-	-- FAINTED: 60초 후 HP 20%로 회복 → IN_PARTY로 전환
+	-- FAINTED: 60초 후 HP 20%로 회복
+	-- 실제 파티 슬롯이 남아 있으면 IN_PARTY, 아니면 STORED로 복구
 	local PAL_REGEN_INTERVAL = 10   -- 초
 	local PAL_REGEN_PERCENT = 0.05  -- 10초당 최대HP의 5%
 	local FAINT_RECOVER_TIME = 60   -- 기절 후 회복까지 60초
@@ -101,7 +102,20 @@ function PalboxService.Init(_NetController, _DataService, _SaveService)
 						if elapsed >= FAINT_RECOVER_TIME then
 							-- 기절 해제 → HP 20%로 회복
 							pal.stats.currentHp = math.floor(maxHp * 0.2)
-							pal.state = "IN_PARTY"
+							local recoveredState = Enums.PalState.STORED
+							local partyOk, PartyService = pcall(function()
+								return require(game:GetService("ServerScriptService").Server.Services.PartyService)
+							end)
+							if partyOk and PartyService and PartyService.getParty then
+								local partySlots = PartyService.getParty(userId)
+								for _, partyPalUID in pairs(partySlots or {}) do
+									if partyPalUID == uid then
+										recoveredState = Enums.PalState.IN_PARTY
+										break
+									end
+								end
+							end
+							pal.state = recoveredState
 							faintTimers[userId][uid] = nil
 							
 							-- 클라이언트 알림
@@ -510,25 +524,40 @@ local function handleQuickSummonRequest(player: Player, payload)
 	-- 기존 소환 중인 팰이 있으면 먼저 회수
 	PartyService._recallPal(userId)
 
-	-- 파티에 추가 (이미 있으면 무시)
-	if pal.state == Enums.PalState.STORED then
+	local function findPartySlotForPal()
+		local partySlots = PartyService.getParty(userId)
+		if not partySlots then
+			return nil, nil
+		end
+		for slot, uid in pairs(partySlots) do
+			if uid == palUID then
+				return slot, partySlots
+			end
+		end
+		return nil, partySlots
+	end
+
+	if pal.state == Enums.PalState.WORKING then
+		return { success = false, errorCode = Enums.ErrorCode.PAL_ALREADY_ASSIGNED }
+	end
+
+	local targetSlot, partySlots = findPartySlotForPal()
+
+	-- 상태가 IN_PARTY인데 실제 슬롯이 없으면 상태를 STORED로 복구 후 다시 편성
+	if not targetSlot and pal.state == Enums.PalState.IN_PARTY then
+		PalboxService.updatePalState(userId, palUID, Enums.PalState.STORED)
+		pal.state = Enums.PalState.STORED
+	end
+
+	-- 파티에 없으면 실제 슬롯을 기준으로 다시 추가
+	if not targetSlot then
 		local addOk, addErr = PartyService.addToParty(userId, palUID)
 		if not addOk and addErr ~= Enums.ErrorCode.PAL_IN_PARTY then
 			return { success = false, errorCode = addErr or "PARTY_ADD_FAILED" }
 		end
-	end
-
-	-- 파티에서 슬롯 번호 찾기
-	local partySlots = PartyService.getParty(userId)
-	if not partySlots then
-		return { success = false, errorCode = "NO_PARTY" }
-	end
-
-	local targetSlot
-	for slot, uid in pairs(partySlots) do
-		if uid == palUID then
-			targetSlot = slot
-			break
+		targetSlot, partySlots = findPartySlotForPal()
+		if not partySlots then
+			return { success = false, errorCode = "NO_PARTY" }
 		end
 	end
 

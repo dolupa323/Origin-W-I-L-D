@@ -277,6 +277,9 @@ end
 --- 모델에서 가장 가까운 파트까지의 거리 계산
 local function getDistToModel(model: Instance, playerPos: Vector3): number
 	local minDist = math.huge
+	if model:IsA("BasePart") then
+		return getDistToSurface(model, playerPos)
+	end
 	-- Hitbox/InteractPart 우선
 	local hitbox = model:FindFirstChild("Hitbox") or model:FindFirstChild("InteractPart")
 	if hitbox and hitbox:IsA("BasePart") then

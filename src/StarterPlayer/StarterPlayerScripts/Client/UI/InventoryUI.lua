@@ -34,6 +34,7 @@ InventoryUI.Refs = {
 	},
 	DropModal = {
 		Frame = nil,
+		Title = nil,
 		Input = nil,
 		BtnConfirm = nil,
 		BtnCancel = nil,
@@ -125,7 +126,24 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	local rightHeader = Utils.mkFrame({size=UDim2.new(0.3, 0, 1, 0), pos=UDim2.new(1, -140, 0, 0), anchor=Vector2.new(1, 0), bgT=1, parent=header})
 	local hList = Instance.new("UIListLayout"); hList.FillDirection=Enum.FillDirection.Horizontal; hList.HorizontalAlignment=Enum.HorizontalAlignment.Right; hList.VerticalAlignment=Enum.VerticalAlignment.Center; hList.Padding=UDim.new(0, 15); hList.Parent=rightHeader
 	
-	InventoryUI.Refs.CurrencyText = Utils.mkLabel({text="골드: 0", ts=TS_BODY, color=C.GOLD, font=F.NUM, ax=Enum.TextXAlignment.Right, parent=rightHeader})
+	local goldBtn = Instance.new("TextButton")
+	goldBtn.Name = "CurrencyText"
+	goldBtn.Size = UDim2.new(0, isSmall and 120 or 150, 0, isSmall and 30 or 34)
+	goldBtn.BackgroundTransparency = 1
+	goldBtn.BorderSizePixel = 0
+	goldBtn.AutoButtonColor = false
+	goldBtn.Text = "골드: 0"
+	goldBtn.TextColor3 = C.GOLD
+	goldBtn.TextSize = TS_BODY
+	goldBtn.Font = F.NUM
+	goldBtn.TextXAlignment = Enum.TextXAlignment.Right
+	goldBtn.Parent = rightHeader
+	goldBtn.MouseButton1Click:Connect(function()
+		if UIManager.openGoldDropModal then
+			UIManager.openGoldDropModal()
+		end
+	end)
+	InventoryUI.Refs.CurrencyText = goldBtn
 	
 	-- Close Button
 	local closeBtnSize = isSmall and 34 or 36
@@ -530,11 +548,21 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	InventoryUI.Refs.Animal.EmptyLabel = Utils.mkLabel({name="EmptyGuide", text="길들인 동물이 없습니다.\n크리처를 포획하고 상자를 사용하세요.", size=UDim2.new(1, -20, 0, 80), pos=UDim2.new(0.5, 0, 0.4, 0), anchor=Vector2.new(0.5, 0.5), ts=isSmall and 13 or 15, color=C.GRAY, wrap=true, vis=false, parent=animalArea})
 
 	-- Drop/Split Modal Popup (반응형)
-	local dropModalFrame = Utils.mkFrame({name="DropModal", size=UDim2.new(isSmall and 0.7 or 0.3, 0, isSmall and 0.45 or 0.4, 0), pos=UDim2.new(0.5, 0, 0.5, 0), anchor=Vector2.new(0.5, 0.5), bg=C.BG_PANEL, stroke=2, vis=false, parent=InventoryUI.Refs.Frame, z=100})
+	local dropModalFrame = Utils.mkFrame({
+		name = "DropModal",
+		size = UDim2.new(isSmall and 0.7 or 0.3, 0, isSmall and 0.45 or 0.4, 0),
+		pos = UDim2.new(0.5, 0, 0.5, 0),
+		anchor = Vector2.new(0.5, 0.5),
+		bg = C.BG_PANEL,
+		stroke = 2,
+		vis = false,
+		parent = parent,
+		z = 200,
+	})
 	local mRatio = Instance.new("UIAspectRatioConstraint"); mRatio.AspectRatio=1.2; mRatio.Parent=dropModalFrame
 	InventoryUI.Refs.DropModal.Frame = dropModalFrame
 	
-	Utils.mkLabel({text="수량 입력", size=UDim2.new(1,0,0,40), pos=UDim2.new(0,0,0,10), ts=TS_TITLE, font=F.TITLE, parent=dropModalFrame})
+	InventoryUI.Refs.DropModal.Title = Utils.mkLabel({text="수량 입력", size=UDim2.new(1,0,0,40), pos=UDim2.new(0,0,0,10), ts=TS_TITLE, font=F.TITLE, parent=dropModalFrame})
 	local box = Instance.new("TextBox")
 	box.Name = "Input"; box.Size = UDim2.new(0.8,0,0, isSmall and 44 or 50); box.Position = UDim2.new(0.5,0,0.4,0); box.AnchorPoint = Vector2.new(0.5,0.5); box.BackgroundColor3 = C.BG_SLOT; box.TextColor3 = C.WHITE; box.Text = "1"; box.ClearTextOnFocus = true; box.Font = F.NUM; box.TextSize = isSmall and 22 or 24
 	local bRound = Instance.new("UICorner"); bRound.CornerRadius = UDim.new(0, 4); bRound.Parent = box

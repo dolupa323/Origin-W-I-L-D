@@ -31,6 +31,7 @@ local CreatureData = {
 		petDamage = 3,
 		petDefense = 5,
 		petHealth = 20,
+		palBagSlots = 1,
 	},
 	{
 		id = "COMPY",
@@ -57,6 +58,7 @@ local CreatureData = {
 		petDamage = 6,
 		petDefense = 8,
 		petHealth = 15,
+		palBagSlots = 1,
 	},
 	{
 		id = "PARASAUR",
@@ -87,9 +89,10 @@ local CreatureData = {
 		petDefense = 15,
 		petHealth = 80,
 		mountable = true,
-		mountSeatOffset = Vector3.new(0, 5.9, -7.8),
+		mountSeatOffset = Vector3.new(0, 4.5, -7.8),
 		mountSpeedMultiplier = 1.0,
 		mountJumpPower = 46,
+		palBagSlots = 8,
 	},
 
 	--========================================
@@ -123,6 +126,7 @@ local CreatureData = {
 		petDamage = 20,
 		petDefense = 30,
 		petHealth = 200,
+		palBagSlots = 24,
 	},
 	{
 		id = "BABY_TRICERATOPS",
@@ -149,6 +153,7 @@ local CreatureData = {
 		petDamage = 5,
 		petDefense = 10,
 		petHealth = 50,
+		palBagSlots = 4,
 	},
 	{
 		id = "STEGOSAURUS",
@@ -177,6 +182,7 @@ local CreatureData = {
 		petDamage = 18,
 		petDefense = 25,
 		petHealth = 180,
+		palBagSlots = 12,
 	},
 	{
 		id = "ANKYLOSAURUS",
@@ -235,9 +241,10 @@ local CreatureData = {
 		petDefense = 15,
 		petHealth = 60,
 		mountable = true,
-		mountSeatOffset = Vector3.new(0, 4.1, -5.5),
+		mountSeatOffset = Vector3.new(0, 3.0, -4.2),
 		mountSpeedMultiplier = 1.65,
 		mountJumpPower = 58,
+		palBagSlots = 6,
 	},
 	{
 		id = "TREX",

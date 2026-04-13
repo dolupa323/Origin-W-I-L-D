@@ -8,6 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
+local ServerStorage = game:GetService("ServerStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Enums = require(Shared.Enums.Enums)
@@ -107,6 +108,9 @@ local spawnedNodeCount = 0
 local spawnedNodesByType = {} -- { [nodeId] = count }
 local starterNodesSeededUsers = {} -- [userId] = true
 local templateCache = {} -- { [nodeId] = Model } 첫 성공 시 캐시
+local getNodeSceneRoot
+local applyNodeIdentity
+local ensureHiddenNodeFolder
 --========================================
 -- Internal Functions
 --========================================
@@ -115,6 +119,18 @@ local templateCache = {} -- { [nodeId] = Model } 첫 성공 시 캐시
 local function generateNodeUID(): string
 	nodeCount = nodeCount + 1
 	return string.format("node_%d_%d", os.time(), nodeCount)
+end
+
+local function calculateDamagePerGather(totalHealth: number, totalGathers: number): number
+	return math.max(1, math.ceil(totalHealth / math.max(1, totalGathers)))
+end
+
+local function calculateRemainingGatherCount(remainingHits: number, damagePerGather: number): number
+	if remainingHits <= 0 then
+		return 0
+	end
+
+	return math.ceil(remainingHits / math.max(1, damagePerGather))
 end
 
 --========================================
@@ -147,14 +163,28 @@ local function findResourceModel(modelsFolder, modelName, nodeId)
 		return false
 	end
 	
-	-- Folder 내부에서 Model 추출 헬퍼
-	local function getModelFromFolder(folder)
-		for _, inner in ipairs(folder:GetChildren()) do
-			if inner:IsA("Model") or inner:IsA("BasePart") then
-				return inner
-			end
+	local function cloneFolderAsModel(folder)
+		local wrapper = Instance.new("Model")
+		wrapper.Name = folder.Name
+		for attrName, attrValue in pairs(folder:GetAttributes()) do
+			wrapper:SetAttribute(attrName, attrValue)
 		end
-		return nil
+		for _, child in ipairs(folder:GetChildren()) do
+			child:Clone().Parent = wrapper
+		end
+		return wrapper
+	end
+
+	-- Folder 내부에서 구조 보존형 템플릿 생성 헬퍼
+	local function getModelFromFolder(folder)
+		local children = folder:GetChildren()
+		if #children == 0 then
+			return nil
+		end
+		if #children == 1 and (children[1]:IsA("Model") or children[1]:IsA("BasePart")) then
+			return children[1]
+		end
+		return cloneFolderAsModel(folder)
 	end
 	
 	-- ====== Pass 1: 정확 매칭만 시도 ======
@@ -163,7 +193,6 @@ local function findResourceModel(modelsFolder, modelName, nodeId)
 		if child:IsA("Folder") and exactMatch(child.Name) then
 			local found = getModelFromFolder(child)
 			if found then
-				print(string.format("[findResourceModel] EXACT match: '%s' in Folder '%s' for nodeId '%s'", found.Name, child.Name, nodeId))
 				return found
 			end
 		end
@@ -171,7 +200,6 @@ local function findResourceModel(modelsFolder, modelName, nodeId)
 	-- 1-B: 직접 Model/BasePart (정확)
 	for _, child in ipairs(modelsFolder:GetChildren()) do
 		if (child:IsA("Model") or child:IsA("BasePart")) and exactMatch(child.Name) then
-			print(string.format("[findResourceModel] EXACT match: direct child '%s' for nodeId '%s'", child.Name, nodeId))
 			return child
 		end
 	end
@@ -182,7 +210,6 @@ local function findResourceModel(modelsFolder, modelName, nodeId)
 		if child:IsA("Folder") and partialMatch(child.Name) then
 			local found = getModelFromFolder(child)
 			if found then
-				print(string.format("[findResourceModel] PARTIAL match: '%s' in Folder '%s' for nodeId '%s'", found.Name, child.Name, nodeId))
 				return found
 			end
 		end
@@ -190,7 +217,6 @@ local function findResourceModel(modelsFolder, modelName, nodeId)
 	-- 2-B: 직접 Model/BasePart (부분)
 	for _, child in ipairs(modelsFolder:GetChildren()) do
 		if (child:IsA("Model") or child:IsA("BasePart")) and partialMatch(child.Name) then
-			print(string.format("[findResourceModel] PARTIAL match: direct child '%s' for nodeId '%s'", child.Name, nodeId))
 			return child
 		end
 	end
@@ -212,9 +238,6 @@ local function cleanModelForHarvest(model: Model)
 			descendant:Destroy()
 			removed = removed + 1
 		end
-	end
-	if removed > 0 then
-		print(string.format("[HarvestService] Cleaned %d scripts/sounds from model", removed))
 	end
 end
 
@@ -384,7 +407,6 @@ function HarvestService.spawnNodeModel(nodeId: string, position: Vector3, nodeUI
 		model.Name = nodeId
 		model.Parent = nodeFolder -- Parent early to avoid joint warnings
 		model = setupModelForNode(model, position, nodeData, true)
-		print(string.format("[HarvestService] Loaded model '%s' for %s", template.Name, nodeId))
 	else
 		-- 폴백: 간단한 플레이스홀더 생성
 		warn(string.format("[HarvestService] Model '%s' not found in ResourceNodeModels, using placeholder", modelName))
@@ -966,6 +988,8 @@ function HarvestService.registerNode(nodeId: string, position: Vector3, isAutoSp
 		position = position,
 		isAutoSpawned = isAutoSpawned,
 		nodeModel = nil, -- 노드 모델 참조 (숨김 복원용)
+		nodeRoot = nil, -- 래퍼 폴더/모델 포함 실제 장면 루트
+		nodeOriginalParent = nil,
 	}
 	
 	-- 타입별 카운트 증가 (자동 스폰 노드만 추적 — 수동 배치 노드는 Cap 잠식 방지)
@@ -1105,7 +1129,6 @@ function HarvestService.registerCorpseNode(creatureId: string, position: Vector3
 				end
 				collapseTrack:AdjustSpeed(0)
 				deathTrack = collapseTrack
-				print(string.format("[HarvestService] Collapsed death anim frozen: %s (%.2fs → %.2fs)", deathAnimName, collapseTrack.Length, collapseTrack.TimePosition))
 			else
 				-- 애니메이션 못 찾을 경우 기존 트랙만 정지
 				for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
@@ -1134,22 +1157,7 @@ function HarvestService.registerCorpseNode(creatureId: string, position: Vector3
 			local animFolder = assetsFolder:FindFirstChild("Animations")
 			if animFolder then
 				animObj = animFolder:FindFirstChild(deathAnimName, true)
-				-- ★ 디버그: 검색 실패 시 폴더 내용 출력
-				if not animObj then
-					local childNames = {}
-					for _, c in ipairs(animFolder:GetChildren()) do
-						if c.Name:find("Parasaur") or c.Name:find("parasaur") or c.Name:find("Death") or c.Name:find("death") then
-							table.insert(childNames, c.Name .. "(" .. c.ClassName .. ")")
-						end
-					end
-					warn(string.format("[HarvestService] DEBUG: searching '%s' in Animations folder. Matching children: %s", 
-						deathAnimName, table.concat(childNames, ", ")))
-				end
-			else
-				warn("[HarvestService] DEBUG: Animations folder not found in Assets")
 			end
-		else
-			warn("[HarvestService] DEBUG: Assets folder not found in ReplicatedStorage")
 		end
 		if not animObj then
 			animObj = ReplicatedStorage:FindFirstChild(deathAnimName, true)
@@ -1160,7 +1168,6 @@ function HarvestService.registerCorpseNode(creatureId: string, position: Vector3
 			deathTrack.Looped = false
 			deathTrack.Priority = Enum.AnimationPriority.Action4
 			deathTrack:Play(0.2)
-			print(string.format("[HarvestService] Death anim playing: %s (AnimationId=%s)", deathAnimName, tostring(animObj.AnimationId)))
 		else
 			warn(string.format("[HarvestService] Death anim FAILED for %s: animObj=%s, class=%s", 
 				deathAnimName, 
@@ -1189,7 +1196,6 @@ function HarvestService.registerCorpseNode(creatureId: string, position: Vector3
 		RAPTOR = 4,
 	}
 	local groundOffset = CORPSE_GROUND_OFFSETS[creatureId] or 2
-	print(string.format("[HarvestService] Corpse offset for '%s' = %s (matched=%s)", creatureId, groundOffset, tostring(CORPSE_GROUND_OFFSETS[creatureId] ~= nil)))
 
 	-- 지면 스냅 헬퍼 (최종 포즈 상태에서 호출)
 	local function snapToGround()
@@ -1320,6 +1326,8 @@ function HarvestService.registerCorpseNode(creatureId: string, position: Vector3
 		position = position,
 		isAutoSpawned = false,
 		nodeModel = model,
+		nodeRoot = model,
+		nodeOriginalParent = model.Parent,
 		isCorpse = true,
 		resolvedResources = resolvedResources,  -- 확률 적용 완료된 자원 목록
 		resolvedMaxHealth = totalGathers,        -- 확률 적용 후 HP
@@ -1374,7 +1382,6 @@ function HarvestService.registerCorpseNode(creatureId: string, position: Vector3
 		end
 	end)
 
-	print(string.format("[HarvestService] Registered corpse node: %s (UID: %s) at %s", nodeId, nodeUID, tostring(position)))
 	return nodeUID
 end
 
@@ -1611,6 +1618,8 @@ function HarvestService.damageNode(nodeUID: string, damage: number, efficiency: 
 				respawnAt = os.time() + (nodeData.respawnTime or 300),
 				isAutoSpawned = nodeState.isAutoSpawned,
 				nodeModel = nodeState.nodeModel,
+				nodeRoot = nodeState.nodeRoot,
+				nodeOriginalParent = nodeState.nodeOriginalParent,
 			}
 			activeNodes[nodeUID] = nil
 			task.delay(nodeData.respawnTime or 300, function()
@@ -1633,40 +1642,86 @@ function HarvestService._destroyNodeModel(nodeUID: string)
 	if not nodeState then return nil end
 	
 	local nodeModel = nodeState.nodeModel
+	local nodeRoot = nodeState.nodeRoot
 	
 	-- 미리 배치된 모델이 없다면 (혹은 AutoSpawned 등) 폴더 스캔
 	if not nodeModel then
 		local nodeFolder = workspace:FindFirstChild("ResourceNodes")
 		if nodeFolder then
-			-- [수정] 하위 폴더까지 뒤져서 해당 UID를 가진 모델 검색
-			for _, m in ipairs(nodeFolder:GetDescendants()) do
-				if m:IsA("Model") and m:GetAttribute("NodeUID") == nodeUID then
-					nodeModel = m
+			-- [수정] 하위 폴더까지 뒤져서 해당 UID를 가진 인스턴스 검색
+			for _, inst in ipairs(nodeFolder:GetDescendants()) do
+				if inst:GetAttribute("NodeUID") == nodeUID then
+					nodeModel = getNodeSceneRoot(inst)
+					nodeRoot = nodeModel
 					break
 				end
 			end
 		end
 	end
+
+	if not nodeRoot then
+		nodeRoot = nodeModel
+	end
 	
-	if nodeModel then
+	if nodeModel or nodeRoot then
 		nodeState.nodeModel = nodeModel
-		nodeModel:SetAttribute("Depleted", true)
+		nodeState.nodeRoot = nodeRoot
+		if nodeModel then
+			nodeModel:SetAttribute("Depleted", true)
+		end
+		if nodeRoot and nodeRoot ~= nodeModel then
+			nodeRoot:SetAttribute("Depleted", true)
+		end
+
+		-- 일반 자원 노드는 초원섬과 동일하게 실제 인스턴스를 제거하고 필요 시 새로 스폰한다.
+		if not nodeState.isCorpse then
+			local destroyTarget = nodeRoot or nodeModel
+			if destroyTarget and destroyTarget.Parent then
+				destroyTarget:Destroy()
+			end
+			nodeState.nodeModel = nil
+			nodeState.nodeRoot = nil
+			return {}
+		end
 		
-		-- 삭제 대신 투명화/콜리전 비활성화 (리스폰시 복구 위해)
-		for _, part in ipairs(nodeModel:GetDescendants()) do
-			if part:IsA("BasePart") then
-				if part.Name ~= "Hitbox" then
-					part.Transparency = 1
-					if part:IsA("Texture") or part:IsA("Decal") then
-						part.Transparency = 1
-					end
+		-- 삭제 대신 투명화/상호작용 비활성화 (리스폰시 원래 상태 복구)
+		local targetRoot = nodeRoot or nodeModel
+		for _, descendant in ipairs(targetRoot:GetDescendants()) do
+			if descendant:IsA("BasePart") then
+				if descendant:GetAttribute("HarvestOriginalTransparency") == nil then
+					descendant:SetAttribute("HarvestOriginalTransparency", descendant.Transparency)
 				end
-				-- Hitbox 포함 콜리전은 전부 Off
-				part.CanCollide = false
-				part.CanQuery = false
-				part.CanTouch = false
-			elseif part:IsA("ParticleEmitter") or part:IsA("Trail") then
-				part.Enabled = false
+				if descendant:GetAttribute("HarvestOriginalCanCollide") == nil then
+					descendant:SetAttribute("HarvestOriginalCanCollide", descendant.CanCollide)
+				end
+				if descendant:GetAttribute("HarvestOriginalCanQuery") == nil then
+					descendant:SetAttribute("HarvestOriginalCanQuery", descendant.CanQuery)
+				end
+				if descendant:GetAttribute("HarvestOriginalCanTouch") == nil then
+					descendant:SetAttribute("HarvestOriginalCanTouch", descendant.CanTouch)
+				end
+				
+				if descendant.Name ~= "Hitbox" then
+					descendant.Transparency = 1
+				end
+				descendant.CanCollide = false
+				descendant.CanQuery = false
+				descendant.CanTouch = false
+			elseif descendant:IsA("Decal") or descendant:IsA("Texture") then
+				if descendant:GetAttribute("HarvestOriginalTransparency") == nil then
+					descendant:SetAttribute("HarvestOriginalTransparency", descendant.Transparency)
+				end
+				descendant.Transparency = 1
+			elseif descendant:IsA("ParticleEmitter") or descendant:IsA("Trail") or descendant:IsA("Beam") then
+				if descendant:GetAttribute("HarvestOriginalEnabled") == nil then
+					descendant:SetAttribute("HarvestOriginalEnabled", descendant.Enabled)
+				end
+				descendant.Enabled = false
+			elseif descendant:IsA("Highlight") then
+				if descendant:GetAttribute("HarvestOriginalEnabled") == nil then
+					descendant:SetAttribute("HarvestOriginalEnabled", descendant.Enabled)
+				end
+				descendant.Enabled = false
 			end
 		end
 		
@@ -1690,25 +1745,71 @@ function HarvestService._respawnNode(nodeUID: string)
 	if depletedNode.nodeModel then
 		-- 다시 보이게 하고 콜리전 복구
 		local nodeModel = depletedNode.nodeModel
-		nodeModel:SetAttribute("Depleted", false)
-		-- 투명도 복원 (원래 값 저장/복원을 완벽히 안 하더라도 0으로 통일하거나 기본값)
-		for _, part in ipairs(nodeModel:GetDescendants()) do
-			if part:IsA("BasePart") then
-				if part.Name ~= "Hitbox" then
-					part.Transparency = 0
+		local nodeRoot = depletedNode.nodeRoot or getNodeSceneRoot(nodeModel)
+		depletedNode.nodeRoot = nodeRoot
+		if nodeRoot and depletedNode.nodeOriginalParent and nodeRoot.Parent ~= depletedNode.nodeOriginalParent then
+			nodeRoot.Parent = depletedNode.nodeOriginalParent
+		end
+		if nodeModel then
+			nodeModel:SetAttribute("Depleted", false)
+		end
+		if nodeRoot and nodeRoot ~= nodeModel then
+			nodeRoot:SetAttribute("Depleted", false)
+		end
+		local targetRoot = nodeRoot or nodeModel
+		for _, descendant in ipairs(targetRoot:GetDescendants()) do
+			if descendant:IsA("BasePart") then
+				local originalTransparency = descendant:GetAttribute("HarvestOriginalTransparency")
+				local originalCanCollide = descendant:GetAttribute("HarvestOriginalCanCollide")
+				local originalCanQuery = descendant:GetAttribute("HarvestOriginalCanQuery")
+				local originalCanTouch = descendant:GetAttribute("HarvestOriginalCanTouch")
+				
+				if typeof(originalTransparency) == "number" then
+					descendant.Transparency = originalTransparency
 				end
-				-- 콜리전 복원 (CanCollide는 false 유지 — R키 상호작용)
-				part.CanCollide = false
-				part.CanQuery = true
-				part.CanTouch = true
-			elseif part:IsA("ParticleEmitter") or part:IsA("Trail") then
-				part.Enabled = true
+				if typeof(originalCanCollide) == "boolean" then
+					descendant.CanCollide = originalCanCollide
+				else
+					descendant.CanCollide = false
+				end
+				if typeof(originalCanQuery) == "boolean" then
+					descendant.CanQuery = originalCanQuery
+				else
+					descendant.CanQuery = true
+				end
+				if typeof(originalCanTouch) == "boolean" then
+					descendant.CanTouch = originalCanTouch
+				else
+					descendant.CanTouch = true
+				end
+			elseif descendant:IsA("Decal") or descendant:IsA("Texture") then
+				local originalTransparency = descendant:GetAttribute("HarvestOriginalTransparency")
+				if typeof(originalTransparency) == "number" then
+					descendant.Transparency = originalTransparency
+				else
+					descendant.Transparency = 0
+				end
+			elseif descendant:IsA("ParticleEmitter") or descendant:IsA("Trail") or descendant:IsA("Beam") then
+				local originalEnabled = descendant:GetAttribute("HarvestOriginalEnabled")
+				if typeof(originalEnabled) == "boolean" then
+					descendant.Enabled = originalEnabled
+				else
+					descendant.Enabled = true
+				end
+			elseif descendant:IsA("Highlight") then
+				local originalEnabled = descendant:GetAttribute("HarvestOriginalEnabled")
+				if typeof(originalEnabled) == "boolean" then
+					descendant.Enabled = originalEnabled
+				else
+					descendant.Enabled = true
+				end
 			end
 		end
 	else
 		-- 도저히 모델이 없으면 재생성 시도
 		local newModel = HarvestService.spawnNodeModel(depletedNode.nodeId, depletedNode.position, nodeUID)
 		depletedNode.nodeModel = newModel
+		depletedNode.nodeRoot = getNodeSceneRoot(newModel)
 	end
 	
 	activeNodes[nodeUID] = {
@@ -1719,6 +1820,8 @@ function HarvestService._respawnNode(nodeUID: string)
 		respawnAt = nil,
 		isAutoSpawned = depletedNode.isAutoSpawned,
 		nodeModel = depletedNode.nodeModel,
+		nodeRoot = depletedNode.nodeRoot,
+		nodeOriginalParent = depletedNode.nodeOriginalParent,
 	}
 	
 	-- 고갈된 노드 목록에서 제거
@@ -1793,6 +1896,40 @@ local function ensureResourceNodesFolder()
 	return nodeFolder
 end
 
+getNodeSceneRoot = function(nodeInstance: Instance?): Instance?
+	if not nodeInstance then
+		return nil
+	end
+
+	if nodeInstance:IsA("Model") then
+		return nodeInstance
+	end
+
+	return nodeInstance:FindFirstAncestorOfClass("Model") or nodeInstance
+end
+
+applyNodeIdentity = function(nodeInstance: Instance?, nodeId: string, nodeUID: string, depleted: boolean)
+	if not nodeInstance then
+		return
+	end
+
+	nodeInstance:SetAttribute("NodeId", nodeId)
+	nodeInstance:SetAttribute("NodeUID", nodeUID)
+	nodeInstance:SetAttribute("Depleted", depleted)
+	nodeInstance:SetAttribute("ResourceNode", true)
+	CollectionService:AddTag(nodeInstance, "ResourceNode")
+end
+
+ensureHiddenNodeFolder = function(): Folder
+	local folder = ServerStorage:FindFirstChild("HarvestHiddenNodes")
+	if not folder then
+		folder = Instance.new("Folder")
+		folder.Name = "HarvestHiddenNodes"
+		folder.Parent = ServerStorage
+	end
+	return folder
+end
+
 --- workspace.ResourceNodes 내 카테고리 폴더에서 템플릿 Clone 캐시
 --- _setupPrePlacedNodes 전에 호출하여 순수 원본 보존
 function HarvestService._cacheTemplatesFromFolders()
@@ -1830,10 +1967,32 @@ function HarvestService._cacheTemplatesFromFolders()
 	-- GetDescendants로 2단계 이상 하위 폴더(GRASSLAND/TREE_THIN 등)도 탐색
 	-- ★ Folder뿐 아니라 Model 컨테이너도 탐색 (FARM_TREE가 Model로 배치된 경우 대응)
 	for _, child in ipairs(nodeFolder:GetDescendants()) do
-		if child:IsA("Folder") or (child:IsA("Model") and child:FindFirstChildWhichIsA("Model")) then
+		if child:IsA("Folder") then
+			local folderTemplate = nil
+			local folderChildren = child:GetChildren()
+			if #folderChildren == 1 and (folderChildren[1]:IsA("Model") or folderChildren[1]:IsA("BasePart")) then
+				folderTemplate = folderChildren[1]:Clone()
+			elseif #folderChildren > 0 then
+				folderTemplate = Instance.new("Model")
+				folderTemplate.Name = child.Name
+				for attrName, attrValue in pairs(child:GetAttributes()) do
+					folderTemplate:SetAttribute(attrName, attrValue)
+				end
+				for _, folderChild in ipairs(folderChildren) do
+					folderChild:Clone().Parent = folderTemplate
+				end
+			end
+			if folderTemplate then
+				local resolvedId = resolveToNodeId(child.Name) or child.Name
+				if not templateCache[resolvedId] then
+					folderTemplate.Parent = nil
+					templateCache[resolvedId] = folderTemplate
+					cached = cached + 1
+				end
+			end
+		elseif child:IsA("Model") and child:FindFirstChildWhichIsA("Model") then
 			local firstModel = child:FindFirstChildWhichIsA("Model")
 			if firstModel then
-				-- 컨테이너 이름을 실제 nodeId로 해석 (BRANCH → GROUND_BRANCH)
 				local resolvedId = resolveToNodeId(child.Name) or child.Name
 				if not templateCache[resolvedId] then
 					local clone = firstModel:Clone()
@@ -1929,16 +2088,17 @@ function HarvestService._setupPrePlacedNodes()
 					
 					-- 등록 진행 (수동 배치 노드는 isAutoSpawned = false)
 					local uid = HarvestService.registerNode(nodeId, primaryPart.Position, false)
+					local nodeRoot = nodeModel
 					
 					-- ActiveNode의 모델 포인터 설정
 					if activeNodes[uid] then
 						activeNodes[uid].nodeModel = nodeModel
+						activeNodes[uid].nodeRoot = nodeRoot
+						activeNodes[uid].nodeOriginalParent = nodeRoot and nodeRoot.Parent or nodeModel.Parent
 					end
 					
-					-- 속성 설정 (setupModelForNode에서 일부 수행하지만 UID 등 명시적 설정)
-					nodeModel:SetAttribute("NodeId", nodeId)
-					nodeModel:SetAttribute("NodeUID", uid)
-					nodeModel:SetAttribute("Depleted", false)
+					-- 속성 설정 (래퍼 루트까지 동일하게 부여)
+					applyNodeIdentity(nodeModel, nodeId, uid, false)
 					
 					count = count + 1
 				end
@@ -1989,11 +2149,11 @@ function HarvestService.Init(
 		task.wait(1) -- 맵 로드 대기
 		HarvestService._cacheTemplatesFromFolders()
 		HarvestService._setupPrePlacedNodes()
-		
-		-- [추가] 초기 맵 전체 분포 스폰 (등록된 섬에서만)
-		if SpawnConfig.IsContentPlace() then
-			HarvestService._initialSpawn()
-		end
+
+		-- 일반 자원 노드는 워크스페이스 선행 배치만 사용한다.
+		-- 자동 스폰은 잔돌/나뭇가지/섬유 등 바닥 자원만 별도 루프에서 보충한다.
+		local hubZone = SpawnConfig.HUB_ZONE or "GRASSLAND"
+		spawnedZones[hubZone] = true
 	end)
 	
 	-- [수정] 자동스폰 루프 (등록된 섬에서만)
@@ -2068,169 +2228,18 @@ function HarvestService.Init(
 	print("[HarvestService] Initialized — PRE-PLACED + AUTO-SPAWN MIXED system")
 end
 
---- ★ 초기 대량 스폰 (서버 시작 시 허브 Zone만 자원 배치, 비허브는 SpawnZone으로 지연)
+--- 레거시 호환용: 일반 자원 초기 대량 스폰은 더 이상 사용하지 않는다.
 function HarvestService._initialSpawn()
-	local TOTAL_COUNT = Balance.INITIAL_NODE_COUNT or 150
-	local allZones = SpawnConfig.GetAllZoneNames()
-	local PER_ZONE_COUNT = math.floor(TOTAL_COUNT / math.max(1, #allZones))
-
-	local excludeList = {}
-	local nodeFolder = workspace:FindFirstChild("ResourceNodes")
-	if nodeFolder then table.insert(excludeList, nodeFolder) end
-	local creaturesFolder = workspace:FindFirstChild("Creatures")
-	if creaturesFolder then table.insert(excludeList, creaturesFolder) end
-
-	local totalSpawned = 0
-	local HUB_ZONE = SpawnConfig.HUB_ZONE or "GRASSLAND"
-
-	for _, zoneName in ipairs(allZones) do
-		-- 허브가 아닌 Zone은 초기 스폰에서 제외 (포탈 이동 시 SpawnZone으로 지연)
-		if zoneName ~= HUB_ZONE then
-			print(string.format("[HarvestService] Zone '%s' deferred (non-hub, will spawn on portal entry)", zoneName))
-			continue
-		end
-
-		local zoneInfo = SpawnConfig.GetZoneInfo(zoneName)
-		if not zoneInfo then continue end
-
-		local SPAWN_RADIUS = math.min(Balance.MAP_EXTENT or 1500, zoneInfo.radius)
-		local MAP_CENTER = zoneInfo.center
-
-		print(string.format("[HarvestService] Zone '%s' initial spawn: %d nodes, radius %.0f, center %s",
-			zoneName, PER_ZONE_COUNT, SPAWN_RADIUS, tostring(MAP_CENTER)))
-
-		local spawned = 0
-		local attempts = 0
-		local MAX_ATTEMPTS = PER_ZONE_COUNT * 10
-
-		while spawned < PER_ZONE_COUNT and attempts < MAX_ATTEMPTS do
-			attempts = attempts + 1
-
-			local xOffset = (math.random() * 2 - 1) * SPAWN_RADIUS
-			local zOffset = (math.random() * 2 - 1) * SPAWN_RADIUS
-			local x = MAP_CENTER.X + xOffset
-			local z = MAP_CENTER.Z + zOffset
-			local origin = Vector3.new(x, MAP_CENTER.Y + 400, z)
-
-			local params = RaycastParams.new()
-			local filterList = { workspace.Terrain }
-			if workspace:FindFirstChild("Map") then
-				table.insert(filterList, workspace.Map)
-			end
-			params.FilterDescendantsInstances = filterList
-			params.FilterType = Enum.RaycastFilterType.Include
-
-			local result = workspace:Raycast(origin, Vector3.new(0, -800, 0), params)
-			if result then
-				local isWater = result.Material == Enum.Material.Water
-					or result.Material == Enum.Material.CrackedLava
-				local belowSeaLevel = result.Position.Y < SEA_LEVEL
-
-				if not isWater and not belowSeaLevel then
-					local tooClose = false
-					if nodeFolder then
-						for _, existing in ipairs(nodeFolder:GetDescendants()) do
-							if existing:IsA("Model") then
-								local ePart = existing.PrimaryPart or existing:FindFirstChildWhichIsA("BasePart")
-								if ePart and (ePart.Position - result.Position).Magnitude < 12 then
-									tooClose = true
-									break
-								end
-							end
-						end
-					end
-
-					if not tooClose then
-						local pos = result.Position + Vector3.new(0, 0.5, 0)
-						-- Zone별 Harvests 테이블에서 선택 (섬마다 다른 자원 배치)
-						local nodeId = SpawnConfig.GetRandomHarvestForZone(zoneName)
-						if nodeId then
-							local uid = HarvestService.registerNode(nodeId, pos, false)
-							HarvestService.spawnNodeModel(nodeId, pos, uid)
-							spawned = spawned + 1
-						end
-					end
-				end
-			end
-		end
-		totalSpawned = totalSpawned + spawned
-	end
-
-	spawnedZones[HUB_ZONE] = true
-	print(string.format("[HarvestService] Initial spawn complete: %d nodes (hub zone only)", totalSpawned))
+	local hubZone = SpawnConfig.HUB_ZONE or "GRASSLAND"
+	spawnedZones[hubZone] = true
 end
 
---- Zone별 지연 스폰 (포탈 이동 시 호출)
+--- 레거시 호환용: 일반 자원 Zone 스폰은 더 이상 사용하지 않는다.
 function HarvestService.SpawnZone(zoneName)
-	if spawnedZones[zoneName] then return end
-	spawnedZones[zoneName] = true
-
-	local TOTAL_COUNT = Balance.INITIAL_NODE_COUNT or 150
-	local allZones = SpawnConfig.GetAllZoneNames()
-	local PER_ZONE_COUNT = math.floor(TOTAL_COUNT / math.max(1, #allZones))
-
-	local zoneInfo = SpawnConfig.GetZoneInfo(zoneName)
-	if not zoneInfo then return end
-
-	local SPAWN_RADIUS = math.min(Balance.MAP_EXTENT or 1500, zoneInfo.radius)
-	local MAP_CENTER = zoneInfo.center
-	local nodeFolder = workspace:FindFirstChild("ResourceNodes")
-
-	print(string.format("[HarvestService] SpawnZone '%s': %d nodes, radius %.0f", zoneName, PER_ZONE_COUNT, SPAWN_RADIUS))
-
-	local spawned = 0
-	local attempts = 0
-	local MAX_ATTEMPTS = PER_ZONE_COUNT * 10
-
-	while spawned < PER_ZONE_COUNT and attempts < MAX_ATTEMPTS do
-		attempts = attempts + 1
-		-- ★ 10회마다 yield: 게임 루프 블로킹 방지 (포탈, Totem 등 다른 요청 처리 가능)
-		if attempts % 10 == 0 then task.wait() end
-		local xOffset = (math.random() * 2 - 1) * SPAWN_RADIUS
-		local zOffset = (math.random() * 2 - 1) * SPAWN_RADIUS
-		local x = MAP_CENTER.X + xOffset
-		local z = MAP_CENTER.Z + zOffset
-		local origin = Vector3.new(x, MAP_CENTER.Y + 400, z)
-
-		local params = RaycastParams.new()
-		local filterList = { workspace.Terrain }
-		if workspace:FindFirstChild("Map") then
-			table.insert(filterList, workspace.Map)
-		end
-		params.FilterDescendantsInstances = filterList
-		params.FilterType = Enum.RaycastFilterType.Include
-
-		local result = workspace:Raycast(origin, Vector3.new(0, -800, 0), params)
-		if result then
-			local isWater = result.Material == Enum.Material.Water or result.Material == Enum.Material.CrackedLava
-			if not isWater and result.Position.Y >= SEA_LEVEL then
-				local tooClose = false
-				if nodeFolder then
-					for _, existing in ipairs(nodeFolder:GetDescendants()) do
-						if existing:IsA("Model") then
-							local ePart = existing.PrimaryPart or existing:FindFirstChildWhichIsA("BasePart")
-							if ePart and (ePart.Position - result.Position).Magnitude < 12 then
-								tooClose = true
-								break
-							end
-						end
-					end
-				end
-
-				if not tooClose then
-					local pos = result.Position + Vector3.new(0, 0.5, 0)
-					local nodeId = SpawnConfig.GetRandomHarvestForZone(zoneName)
-					if nodeId then
-						local uid = HarvestService.registerNode(nodeId, pos, false)
-						HarvestService.spawnNodeModel(nodeId, pos, uid)
-						spawned = spawned + 1
-					end
-				end
-			end
-		end
+	if not zoneName or spawnedZones[zoneName] then
+		return
 	end
-
-	print(string.format("[HarvestService] SpawnZone '%s' complete: %d nodes spawned", zoneName, spawned))
+	spawnedZones[zoneName] = true
 end
 
 --- 보충 스폰 루프 (CAP까지 부족한 수만큼만 보충)
@@ -2392,8 +2401,8 @@ local function handleGatherRequest(player: Player, payload: any)
 	for _, res in ipairs(reqResList) do
 		totalMaxGathers = totalMaxGathers + (res.count or res.max or 1)
 	end
-	local damagePerGather = math.max(1, math.ceil(reqEffectiveMaxHealth / math.max(1, totalMaxGathers)))
-	local remainingGathers = math.floor(nodeState.remainingHits / damagePerGather)
+	local damagePerGather = calculateDamagePerGather(reqEffectiveMaxHealth, totalMaxGathers)
+	local remainingGathers = calculateRemainingGatherCount(nodeState.remainingHits, damagePerGather)
 
 	return {
 		success = true,
@@ -2456,7 +2465,7 @@ local function handleGatherComplete(player: Player, payload: any)
 		for _, res in ipairs(zeroResList) do
 			zeroTotalMax = zeroTotalMax + (res.count or res.max or 1)
 		end
-		local zeroDmgPerGather = math.max(1, math.ceil(zeroEffMaxHP / math.max(1, zeroTotalMax)))
+		local zeroDmgPerGather = calculateDamagePerGather(zeroEffMaxHP, zeroTotalMax)
 		nodeState.remainingHits = math.max(0, nodeState.remainingHits - zeroDmgPerGather)
 
 		-- 고갈 시 노드 제거
@@ -2480,6 +2489,8 @@ local function handleGatherComplete(player: Player, payload: any)
 					respawnAt = os.time() + (nodeData.respawnTime or 300),
 					isAutoSpawned = nodeState.isAutoSpawned,
 					nodeModel = nodeState.nodeModel,
+					nodeRoot = nodeState.nodeRoot,
+					nodeOriginalParent = nodeState.nodeOriginalParent,
 				}
 				activeNodes[nodeUID] = nil
 				task.delay(nodeData.respawnTime or 300, function()
@@ -2548,11 +2559,11 @@ local function handleGatherComplete(player: Player, payload: any)
 	for _, res in ipairs(complResList) do
 		totalMaxGathers = totalMaxGathers + (res.count or res.max or 1)
 	end
-	local damagePerGather = math.max(1, math.ceil(complEffMaxHP / math.max(1, totalMaxGathers)))
+	local damagePerGather = calculateDamagePerGather(complEffMaxHP, totalMaxGathers)
 	nodeState.remainingHits = math.max(0, nodeState.remainingHits - damagePerGather)
 
 	-- 남은 채집 가능 횟수 응답에 포함
-	local remainingGathers = math.floor(nodeState.remainingHits / damagePerGather)
+	local remainingGathers = calculateRemainingGatherCount(nodeState.remainingHits, damagePerGather)
 
 	-- HP 브로드캐스트
 	if NetController then
@@ -2586,6 +2597,8 @@ local function handleGatherComplete(player: Player, payload: any)
 				respawnAt = os.time() + (nodeData.respawnTime or 300),
 				isAutoSpawned = nodeState.isAutoSpawned,
 				nodeModel = nodeState.nodeModel,
+				nodeRoot = nodeState.nodeRoot,
+				nodeOriginalParent = nodeState.nodeOriginalParent,
 			}
 			activeNodes[nodeUID] = nil
 			task.delay(nodeData.respawnTime or 300, function()
@@ -2625,8 +2638,8 @@ local function handleGatherInfo(player: Player, payload: any)
 		-- resolvedResources의 경우 count가 실제 횟수, 일반 노드는 max
 		totalMaxGathers = totalMaxGathers + (res.count or res.max or 1)
 	end
-	local damagePerGather = math.max(1, math.ceil(effectiveMaxHealth / math.max(1, totalMaxGathers)))
-	local remainingTotal = math.floor(nodeState.remainingHits / damagePerGather)
+	local damagePerGather = calculateDamagePerGather(effectiveMaxHealth, totalMaxGathers)
+	local remainingTotal = calculateRemainingGatherCount(nodeState.remainingHits, damagePerGather)
 
 	-- 각 리소스별 비율로 분배 (floor 손실분 보정)
 	local resourceCounts = {}
