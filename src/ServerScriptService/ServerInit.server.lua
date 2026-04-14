@@ -473,6 +473,21 @@ CreatureService.SetProtectedZoneChecker(function(position)
 	return TotemService.getProtectionInfoAt(position)
 end)
 
+-- BlockBuildService 초기화 (핫바 블럭 건축)
+local BlockBuildService = require(Services.BlockBuildService)
+BlockBuildService.Init(NetController, DataService, InventoryService, SaveService, PlayerStatService)
+BlockBuildService.SetBaseClaimService(BaseClaimService)
+BlockBuildService.SetTotemService(TotemService)
+BlockBuildService.SetWorldDropService(WorldDropService)
+BlockBuildService.SetDurabilityService(DurabilityService)
+BlockBuildService.SetQuestCallback(function(userId, blockTypeId)
+	TutorialQuestService.onBuilt(userId, blockTypeId)
+end)
+
+for command, handler in pairs(BlockBuildService.GetHandlers()) do
+	NetController.RegisterHandler(command, handler)
+end
+
 -- StaminaService 핸들러 등록 (이미 초기화됨)
 for command, handler in pairs(StaminaService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)

@@ -2,6 +2,8 @@
 -- 클라이언트 초기화 스크립트
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local StarterPlayerScripts = script.Parent
 
 local Client = StarterPlayerScripts:WaitForChild("Client")
@@ -10,6 +12,142 @@ local Controllers = Client:WaitForChild("Controllers")
 local NetClient = require(Client.NetClient)
 local InputManager = require(Client.InputManager)
 local UIManager = require(Client.UIManager)
+
+local function createStudioAdminGoldPanel()
+	if not RunService:IsStudio() then
+		return
+	end
+
+	local player = Players.LocalPlayer
+	local playerGui = player:FindFirstChild("PlayerGui")
+	if not playerGui or playerGui:FindFirstChild("StudioAdminGoldUI") then
+		return
+	end
+
+	local gui = Instance.new("ScreenGui")
+	gui.Name = "StudioAdminGoldUI"
+	gui.ResetOnSpawn = false
+	gui.DisplayOrder = 200
+	gui.Parent = playerGui
+
+	local frame = Instance.new("Frame")
+	frame.AnchorPoint = Vector2.new(1, 0)
+	frame.Position = UDim2.new(1, -12, 0, 12)
+	frame.Size = UDim2.new(0, 220, 0, 122)
+	frame.BackgroundColor3 = Color3.fromRGB(22, 24, 28)
+	frame.BackgroundTransparency = 0.18
+	frame.BorderSizePixel = 0
+	frame.Parent = gui
+	local frameCorner = Instance.new("UICorner")
+	frameCorner.CornerRadius = UDim.new(0, 10)
+	frameCorner.Parent = frame
+	local frameStroke = Instance.new("UIStroke")
+	frameStroke.Color = Color3.fromRGB(185, 155, 80)
+	frameStroke.Thickness = 1
+	frameStroke.Parent = frame
+
+	local title = Instance.new("TextLabel")
+	title.Size = UDim2.new(1, -16, 0, 22)
+	title.Position = UDim2.new(0, 8, 0, 8)
+	title.BackgroundTransparency = 1
+	title.Text = "Studio Admin Gold"
+	title.TextColor3 = Color3.fromRGB(255, 220, 120)
+	title.TextSize = 16
+	title.Font = Enum.Font.GothamBold
+	title.TextXAlignment = Enum.TextXAlignment.Left
+	title.Parent = frame
+
+	local goldLabel = Instance.new("TextLabel")
+	goldLabel.Size = UDim2.new(1, -16, 0, 18)
+	goldLabel.Position = UDim2.new(0, 8, 0, 34)
+	goldLabel.BackgroundTransparency = 1
+	goldLabel.Text = "현재 골드: --"
+	goldLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+	goldLabel.TextSize = 14
+	goldLabel.Font = Enum.Font.Gotham
+	goldLabel.TextXAlignment = Enum.TextXAlignment.Left
+	goldLabel.Parent = frame
+
+	local amountBox = Instance.new("TextBox")
+	amountBox.Size = UDim2.new(1, -16, 0, 32)
+	amountBox.Position = UDim2.new(0, 8, 0, 58)
+	amountBox.BackgroundColor3 = Color3.fromRGB(38, 42, 48)
+	amountBox.BorderSizePixel = 0
+	amountBox.Text = "5000"
+	amountBox.PlaceholderText = "지급 골드"
+	amountBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+	amountBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+	amountBox.TextSize = 16
+	amountBox.Font = Enum.Font.Gotham
+	amountBox.ClearTextOnFocus = false
+	amountBox.Parent = frame
+	local amountCorner = Instance.new("UICorner")
+	amountCorner.CornerRadius = UDim.new(0, 8)
+	amountCorner.Parent = amountBox
+
+	local grantButton = Instance.new("TextButton")
+	grantButton.Size = UDim2.new(0.58, -10, 0, 28)
+	grantButton.Position = UDim2.new(0, 8, 1, -36)
+	grantButton.BackgroundColor3 = Color3.fromRGB(196, 164, 74)
+	grantButton.BorderSizePixel = 0
+	grantButton.Text = "골드 지급"
+	grantButton.TextColor3 = Color3.fromRGB(20, 20, 20)
+	grantButton.TextSize = 14
+	grantButton.Font = Enum.Font.GothamBold
+	grantButton.Parent = frame
+	local grantCorner = Instance.new("UICorner")
+	grantCorner.CornerRadius = UDim.new(0, 8)
+	grantCorner.Parent = grantButton
+
+	local refreshButton = Instance.new("TextButton")
+	refreshButton.Size = UDim2.new(0.42, -10, 0, 28)
+	refreshButton.Position = UDim2.new(0.58, 2, 1, -36)
+	refreshButton.BackgroundColor3 = Color3.fromRGB(70, 78, 92)
+	refreshButton.BorderSizePixel = 0
+	refreshButton.Text = "새로고침"
+	refreshButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+	refreshButton.TextSize = 14
+	refreshButton.Font = Enum.Font.GothamBold
+	refreshButton.Parent = frame
+	local refreshCorner = Instance.new("UICorner")
+	refreshCorner.CornerRadius = UDim.new(0, 8)
+	refreshCorner.Parent = refreshButton
+
+	local ShopController = require(Controllers.ShopController)
+
+	local function refreshGold()
+		ShopController.requestGold(function(ok, amount)
+			if ok then
+				goldLabel.Text = string.format("현재 골드: %d", tonumber(amount) or 0)
+			end
+		end)
+	end
+
+	ShopController.onGoldChanged(function(amount)
+		goldLabel.Text = string.format("현재 골드: %d", tonumber(amount) or 0)
+	end)
+
+	refreshButton.MouseButton1Click:Connect(refreshGold)
+	grantButton.MouseButton1Click:Connect(function()
+		local amount = math.floor(tonumber(amountBox.Text) or 0)
+		if amount <= 0 then
+			UIManager.notify("지급 골드를 올바르게 입력하세요.", Color3.fromRGB(255, 100, 100))
+			return
+		end
+
+		local ok, data = NetClient.Request("Shop.Admin.GrantGold.Request", {
+			amount = amount,
+		})
+		if ok and type(data) == "table" then
+			UIManager.notify(string.format("Studio 골드 %d 지급 완료", amount), Color3.fromRGB(255, 220, 120))
+			refreshGold()
+		else
+			UIManager.notify("골드 지급에 실패했습니다.", Color3.fromRGB(255, 100, 100))
+		end
+	end)
+
+	refreshGold()
+end
 
 -- NetClient 초기화
 local success = NetClient.Init()
@@ -104,6 +242,11 @@ if success then
 	
 	-- UIManager 초기화 (UI 생성 - 컨트롤러들 초기화 후)
 	UIManager.Init()
+	createStudioAdminGoldPanel()
+
+	-- BlockBuildController 초기화 (핫바 블럭 건축)
+	local BlockBuildController = require(Controllers.BlockBuildController)
+	BlockBuildController.Init()
 
 	-- TutorialController 초기화 (첫 진입 튜토리얼)
 	local TutorialController = require(Controllers.TutorialController)
@@ -370,7 +513,7 @@ if success then
 		else
 			local errMsg = "귀환 실패"
 			if data == "NO_SLEEP_LOCATION" then
-				errMsg = "취침한 장소가 없습니다. 간이천막에서 수면 후 사용하세요."
+				errMsg = "취침한 장소가 없습니다. 침대에서 수면 후 사용하세요."
 			elseif data == "PLAYER_DEAD" then
 				errMsg = "사망 상태에서는 귀환할 수 없습니다."
 			elseif data == "COOLDOWN" then

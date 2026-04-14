@@ -1673,8 +1673,9 @@ function HarvestService._destroyNodeModel(nodeUID: string)
 			nodeRoot:SetAttribute("Depleted", true)
 		end
 
-		-- 일반 자원 노드는 초원섬과 동일하게 실제 인스턴스를 제거하고 필요 시 새로 스폰한다.
-		if not nodeState.isCorpse then
+		-- 자동 스폰 노드만 실제 인스턴스를 제거하고 필요 시 새로 스폰한다.
+		-- 워크스페이스에 미리 배치된 노드는 같은 인스턴스를 숨겼다가 제자리에서 복구해야 한다.
+		if nodeState.isAutoSpawned then
 			local destroyTarget = nodeRoot or nodeModel
 			if destroyTarget and destroyTarget.Parent then
 				destroyTarget:Destroy()
@@ -1684,7 +1685,7 @@ function HarvestService._destroyNodeModel(nodeUID: string)
 			return {}
 		end
 		
-		-- 삭제 대신 투명화/상호작용 비활성화 (리스폰시 원래 상태 복구)
+		-- 프리배치 노드/시체 노드는 삭제 대신 투명화 + 상호작용 비활성화 (리스폰시 원래 상태 복구)
 		local targetRoot = nodeRoot or nodeModel
 		for _, descendant in ipairs(targetRoot:GetDescendants()) do
 			if descendant:IsA("BasePart") then
@@ -1748,7 +1749,21 @@ function HarvestService._respawnNode(nodeUID: string)
 		local nodeRoot = depletedNode.nodeRoot or getNodeSceneRoot(nodeModel)
 		depletedNode.nodeRoot = nodeRoot
 		if nodeRoot and depletedNode.nodeOriginalParent and nodeRoot.Parent ~= depletedNode.nodeOriginalParent then
-			nodeRoot.Parent = depletedNode.nodeOriginalParent
+			local ok, err = pcall(function()
+				nodeRoot.Parent = depletedNode.nodeOriginalParent
+			end)
+			if not ok then
+				warn(string.format(
+					"[HarvestService] Failed to restore depleted node root for %s (%s): %s",
+					tostring(nodeUID),
+					tostring(depletedNode.nodeId),
+					tostring(err)
+				))
+				depletedNode.nodeModel = nil
+				depletedNode.nodeRoot = nil
+				nodeModel = nil
+				nodeRoot = nil
+			end
 		end
 		if nodeModel then
 			nodeModel:SetAttribute("Depleted", false)
@@ -1757,7 +1772,7 @@ function HarvestService._respawnNode(nodeUID: string)
 			nodeRoot:SetAttribute("Depleted", false)
 		end
 		local targetRoot = nodeRoot or nodeModel
-		for _, descendant in ipairs(targetRoot:GetDescendants()) do
+		for _, descendant in ipairs((targetRoot and targetRoot:GetDescendants()) or {}) do
 			if descendant:IsA("BasePart") then
 				local originalTransparency = descendant:GetAttribute("HarvestOriginalTransparency")
 				local originalCanCollide = descendant:GetAttribute("HarvestOriginalCanCollide")
@@ -1805,7 +1820,9 @@ function HarvestService._respawnNode(nodeUID: string)
 				end
 			end
 		end
-	else
+	end
+
+	if not depletedNode.nodeModel then
 		-- 도저히 모델이 없으면 재생성 시도
 		local newModel = HarvestService.spawnNodeModel(depletedNode.nodeId, depletedNode.position, nodeUID)
 		depletedNode.nodeModel = newModel
@@ -2015,6 +2032,32 @@ function HarvestService._setupPrePlacedNodes()
 	local count = 0
 	local unmappedCount = 0
 	local unmappedSamples = {}
+	local processedRoots = {}
+
+	local function getTopLevelNodeRoot(inst: Instance): Model?
+		if not inst then
+			return nil
+		end
+
+		local model = inst:IsA("Model") and inst or inst:FindFirstAncestorOfClass("Model")
+		if not model then
+			return nil
+		end
+
+		local current = model
+		while current do
+			local parent = current.Parent
+			if not parent or parent == nodeFolder then
+				break
+			end
+			if parent:IsA("Model") then
+				current = parent
+			else
+				break
+			end
+		end
+		return current
+	end
 
 	local function normalizeNodeName(name)
 		return tostring(name or ""):lower():gsub("[%s_%-]", "")
@@ -2078,37 +2121,43 @@ function HarvestService._setupPrePlacedNodes()
 	-- [수정] GetChildren 대신 GetDescendants를 사용하여 하위 폴더(TREE_THIN 등) 안의 모델도 모두 등록
 	for _, nodeModel in ipairs(nodeFolder:GetDescendants()) do
 		if nodeModel:IsA("Model") then
-			local nodeId, nodeData = resolveNodeId(nodeModel)
+			local sceneRoot = getTopLevelNodeRoot(nodeModel)
+			if not sceneRoot or processedRoots[sceneRoot] then
+				continue
+			end
+			processedRoots[sceneRoot] = true
+
+			local nodeId, nodeData = resolveNodeId(sceneRoot)
 			
 			if nodeData then
-				local primaryPart = nodeModel.PrimaryPart or nodeModel:FindFirstChildWhichIsA("BasePart", true)
+				local primaryPart = sceneRoot.PrimaryPart or sceneRoot:FindFirstChildWhichIsA("BasePart", true)
 				if primaryPart then
 					-- [수정] 미리 배치된 모델도 셋업 로직을 거치게 함 (히트박스, 태그, 앵커링 등)
-					setupModelForNode(nodeModel, primaryPart.Position, nodeData, false)
+					setupModelForNode(sceneRoot, primaryPart.Position, nodeData, false)
 					
 					-- 등록 진행 (수동 배치 노드는 isAutoSpawned = false)
 					local uid = HarvestService.registerNode(nodeId, primaryPart.Position, false)
-					local nodeRoot = nodeModel
+					local nodeRoot = sceneRoot
 					
 					-- ActiveNode의 모델 포인터 설정
 					if activeNodes[uid] then
-						activeNodes[uid].nodeModel = nodeModel
+						activeNodes[uid].nodeModel = sceneRoot
 						activeNodes[uid].nodeRoot = nodeRoot
-						activeNodes[uid].nodeOriginalParent = nodeRoot and nodeRoot.Parent or nodeModel.Parent
+						activeNodes[uid].nodeOriginalParent = nodeRoot and nodeRoot.Parent or sceneRoot.Parent
 					end
 					
 					-- 속성 설정 (래퍼 루트까지 동일하게 부여)
-					applyNodeIdentity(nodeModel, nodeId, uid, false)
+					applyNodeIdentity(sceneRoot, nodeId, uid, false)
 					
 					count = count + 1
 				end
 			else
-				local isExplicitResourceNode = nodeModel:GetAttribute("ResourceNode") == true
-					or nodeModel:GetAttribute("NodeId") ~= nil
+				local isExplicitResourceNode = sceneRoot:GetAttribute("ResourceNode") == true
+					or sceneRoot:GetAttribute("NodeId") ~= nil
 				if isExplicitResourceNode then
 					unmappedCount += 1
 					if #unmappedSamples < 5 then
-						table.insert(unmappedSamples, nodeModel.Name)
+						table.insert(unmappedSamples, sceneRoot.Name)
 					end
 				end
 			end

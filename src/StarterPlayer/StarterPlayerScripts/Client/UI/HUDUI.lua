@@ -76,7 +76,7 @@ local TUTORIAL_STEP_EN = {
 	},
 	BUILD_LEAN_TO = {
 		currentStepText = "Secure a sleep/respawn point",
-		stepCommand = "Place 1 LEAN_TO",
+		stepCommand = "Place 1 BED_T1",
 	},
 }
 

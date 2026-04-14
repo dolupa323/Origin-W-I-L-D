@@ -160,13 +160,13 @@ local STEPS = {
 	{
 		key = "BUILD_LEAN_TO",
 		text = "수면/복귀 지점 확보",
-		command = "LEAN_TO 1개 설치",
+		command = "BED_T1 1개 설치",
 		tip = "모닥불 온기 범위 인근에 설치하되 이동 경로를 방해하지 않도록 배치하십시오.",
-		voiceIntro = "거의 다 왔다. 밤추위가 오기 전에 임시 대피소(린투)를 세워. 거기서 잠을 자고 위치를 기억해 둬야, 쓰러져도 다시 일어날 수 있다.",
-		voiceHint = "대피소 하나만 세우면 끝이다. 조금만 더 버텨.",
+		voiceIntro = "거의 다 왔다. 밤추위가 오기 전에 침대를 설치해라. 거기서 잠을 자고 위치를 기억해 둬야, 쓰러져도 다시 일어날 수 있다.",
+		voiceHint = "침대 하나만 세우면 끝이다. 조금만 더 버텨.",
 		voiceReady = "좋아. 이제 기초 작업대를 세워 더 강한 물품 제작을 준비해라.",
 		kind = "BUILD",
-		target = "LEAN_TO",
+		target = "BED_T1",
 		reward = {
 			xp = 15,
 			gold = 25,

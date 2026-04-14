@@ -75,6 +75,9 @@ Balance.BUILD_MAX_GROUND_SLOPE_DEG = 42      -- 일반 공간의 허용 경사
 Balance.BUILD_STRICT_MAX_GROUND_SLOPE_DEG = 12 -- 엄격 모드 허용 경사
 Balance.BUILD_MAX_GROUND_GAP = 3.5           -- 일반 공간 지면 오차 허용
 Balance.BUILD_STRICT_MAX_GROUND_GAP = 1.2    -- 엄격 모드 지면 오차 허용
+Balance.BLOCK_GRID_SIZE = 4                  -- 블럭 건축 그리드 크기
+Balance.BLOCK_BUILD_RANGE = 35               -- 블럭 건축 가능 거리
+Balance.BLOCK_STRUCTURE_CAP = 3000           -- 서버 전체 블럭 최대 개수
 
 --========================================
 -- 제작 (Craft)
@@ -203,6 +206,9 @@ Balance.HARVEST_BAREHAND_HP_PENALTY = 2 -- 맨손으로 나무/바위 타격 시
 Balance.BASE_DEFAULT_RADIUS = 30       -- 기본 베이스 반경
 Balance.BASE_MAX_RADIUS = 100          -- 최대 베이스 반경
 Balance.BASE_RADIUS_PER_LEVEL = 10     -- 레벨당 추가 반경
+Balance.BASE_DIRECTIONAL_EXPAND_STEP = 8 -- 방향 확장 1회 길이
+Balance.BASE_DIRECTIONAL_EXPAND_COST_BASE = 500 -- 방향 확장 기본 골드
+Balance.BASE_DIRECTIONAL_EXPAND_COST_STEP = 500 -- 방향 확장 단계당 추가 골드
 Balance.BASE_MAX_PER_PLAYER = 1        -- 플레이어당 최대 베이스 수
 Balance.TOTEM_UPKEEP_DAY_SECONDS = 86400 -- 유지비 단위 시간(24시간)
 Balance.TOTEM_UPKEEP_COST_1D = 100       -- 1일 유지비

@@ -414,7 +414,7 @@ SkillTreeData.BUILD = {
 		spCost = 0,
 		prereqs = { "BUILD_T0" },
 		effects = {},
-		description = "추후 기획 반영 예정",
+		description = "기초작업대 이상의 블럭 가공과 기본 블럭 건축을 해금합니다.",
 	},
 	{
 		id = "BUILD_T2",

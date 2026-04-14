@@ -124,7 +124,7 @@ local function showSleepConfirm(structureId: string)
 	title.Size = UDim2.new(1, 0, 0, 50)
 	title.Position = UDim2.new(0, 0, 0, 15)
 	title.BackgroundTransparency = 1
-	title.Text = "간이천막에서 취침하시겠습니까?"
+	title.Text = "침대에서 취침하시겠습니까?"
 	title.TextColor3 = Color3.fromRGB(255, 255, 255)
 	title.TextSize = 18
 	title.Font = Enum.Font.GothamBold
@@ -239,7 +239,7 @@ playSleepTransitionAndRequest = function(structureId: string)
 
 	if ok then
 		if UIManager then
-			UIManager.notify("간이천막에서 휴식했습니다. 상쾌한 아침입니다.")
+			UIManager.notify("침대에서 휴식했습니다. 상쾌한 아침입니다.")
 		end
 	else
 		if UIManager then

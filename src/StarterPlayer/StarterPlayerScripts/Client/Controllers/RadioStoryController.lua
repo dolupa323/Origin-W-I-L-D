@@ -134,8 +134,8 @@ local TUTORIAL_STEP_EN = {
 	BUILD_LEAN_TO = {
 		currentStepText = "Secure a sleep/respawn point",
 		stepTip = "Keep it close enough to the campfire warmth, but don't block movement paths.",
-		stepVoiceIntro = "Almost done. Build a lean-to before the night cold hits. Sleep there and lock your position so you can recover if you go down.",
-		stepVoiceHint = "One shelter and you're done. Just a little more.",
+		stepVoiceIntro = "Almost done. Build a bed before the night cold hits. Sleep there and lock your position so you can recover if you go down.",
+		stepVoiceHint = "One bed and you're done. Just a little more.",
 		stepVoiceReady = "Good, now build a basic workbench to unlock stronger crafting.",
 	},
 	BUILD_WORKBENCH = {

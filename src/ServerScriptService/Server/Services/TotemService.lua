@@ -105,9 +105,9 @@ local function isInStarterProtectionZone(position: Vector3): boolean
 	end
 
 	local radius = Balance.STARTER_PROTECTION_RADIUS or 45
-	local dx = position.X - center.X
-	local dz = position.Z - center.Z
-	return (dx * dx + dz * dz) <= (radius * radius)
+	local dx = math.abs(position.X - center.X)
+	local dz = math.abs(position.Z - center.Z)
+	return dx <= radius and dz <= radius
 end
 
 local function getState(userId)
@@ -254,6 +254,10 @@ local function buildInfoPayload(requesterId, structure)
 		canManage = requesterId == ownerId,
 		radius = (base and base.radius) or (Balance.BASE_DEFAULT_RADIUS or 30),
 		centerPosition = base and base.centerPosition or structure.position,
+		westExtent = base and base.westExtent or (Balance.BASE_DEFAULT_RADIUS or 30),
+		eastExtent = base and base.eastExtent or (Balance.BASE_DEFAULT_RADIUS or 30),
+		northExtent = base and base.northExtent or (Balance.BASE_DEFAULT_RADIUS or 30),
+		southExtent = base and base.southExtent or (Balance.BASE_DEFAULT_RADIUS or 30),
 		upkeep = {
 			active = active,
 			expiresAt = expiresAt,
@@ -264,6 +268,7 @@ local function buildInfoPayload(requesterId, structure)
 				{ days = 7, cost = ALLOWED_DURATIONS[7] },
 			},
 		},
+		expansion = BaseClaimService and BaseClaimService.getExpandInfo and BaseClaimService.getExpandInfo(ownerId) or nil,
 		gold = NPCShopService and NPCShopService.getGold and NPCShopService.getGold(requesterId) or 0,
 	}
 end
@@ -352,6 +357,10 @@ function TotemService.getProtectionInfoAt(position)
 				ownerId = 0,
 				centerPosition = center,
 				radius = Balance.STARTER_PROTECTION_RADIUS or 45,
+				westExtent = Balance.STARTER_PROTECTION_RADIUS or 45,
+				eastExtent = Balance.STARTER_PROTECTION_RADIUS or 45,
+				northExtent = Balance.STARTER_PROTECTION_RADIUS or 45,
+				southExtent = Balance.STARTER_PROTECTION_RADIUS or 45,
 			}
 		end
 	end
@@ -375,6 +384,10 @@ function TotemService.getProtectionInfoAt(position)
 		ownerId = ownerId,
 		centerPosition = base.centerPosition,
 		radius = base.radius,
+		westExtent = base.westExtent,
+		eastExtent = base.eastExtent,
+		northExtent = base.northExtent,
+		southExtent = base.southExtent,
 	}
 end
 
@@ -534,6 +547,59 @@ local function handlePayUpkeep(player, payload)
 	return { success = true, data = info }
 end
 
+local function handleExpand(player, payload)
+	local structureId = payload and payload.structureId
+	local direction = payload and payload.direction
+	if not structureId or type(direction) ~= "string" then
+		return { success = false, errorCode = Enums.ErrorCode.BAD_REQUEST }
+	end
+
+	local structure = BuildService and BuildService.get and BuildService.get(structureId)
+	if not structure or structure.facilityId ~= "CAMP_TOTEM" then
+		return { success = false, errorCode = Enums.ErrorCode.TOTEM_NOT_FOUND }
+	end
+	if structure.ownerId ~= player.UserId then
+		return { success = false, errorCode = Enums.ErrorCode.TOTEM_NOT_OWNER }
+	end
+	if not TotemService.isProtectionActiveForOwner(player.UserId) then
+		return { success = false, errorCode = Enums.ErrorCode.TOTEM_UPKEEP_EXPIRED }
+	end
+	if not BaseClaimService or not BaseClaimService.getExpandInfo or not BaseClaimService.expand then
+		return { success = false, errorCode = Enums.ErrorCode.INVALID_STATE }
+	end
+
+	local expandInfo = BaseClaimService.getExpandInfo(player.UserId)
+	if not expandInfo then
+		return { success = false, errorCode = Enums.ErrorCode.TOTEM_NOT_FOUND }
+	end
+
+	local useAvailablePoint = (tonumber(expandInfo.availablePoints) or 0) > 0
+	local paidCost = 0
+	if not useAvailablePoint then
+		paidCost = tonumber(expandInfo.nextCost) or 0
+		if paidCost > 0 then
+			local okGold, errGold = NPCShopService.removeGold(player.UserId, paidCost)
+			if not okGold then
+				return { success = false, errorCode = errGold or Enums.ErrorCode.INSUFFICIENT_GOLD }
+			end
+		end
+	end
+
+	local success, errorCode = BaseClaimService.expand(player.UserId, direction, useAvailablePoint)
+	if not success then
+		if paidCost > 0 and NPCShopService and NPCShopService.addGold then
+			NPCShopService.addGold(player.UserId, paidCost)
+		end
+		return { success = false, errorCode = errorCode }
+	end
+
+	local info = buildInfoPayload(player.UserId, structure)
+	if NetController and info then
+		NetController.FireClient(player, "Totem.Upkeep.Changed", info)
+	end
+	return { success = true, data = info }
+end
+
 function TotemService.Init(netController, saveService, baseClaimService, buildService, npcShopService)
 	if initialized then
 		return
@@ -554,6 +620,7 @@ function TotemService.GetHandlers()
 	return {
 		["Totem.GetInfo.Request"] = handleGetInfo,
 		["Totem.PayUpkeep.Request"] = handlePayUpkeep,
+		["Totem.Expand.Request"] = handleExpand,
 	}
 end
 

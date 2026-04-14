@@ -45,6 +45,16 @@ local OWN_PREVIEW_COLOR_INACTIVE = Color3.fromRGB(235, 175, 95)
 local STARTER_PREVIEW_COLOR = Color3.fromRGB(170, 210, 255)
 local PREVIEW_BORDER_WIDTH = 1.2
 
+local function getExtentsFromInfo(info, fallbackRadius)
+	local radius = tonumber(fallbackRadius) or tonumber(info and info.radius) or (Balance.BASE_DEFAULT_RADIUS or 30)
+	return {
+		west = tonumber(info and info.westExtent) or radius,
+		east = tonumber(info and info.eastExtent) or radius,
+		north = tonumber(info and info.northExtent) or radius,
+		south = tonumber(info and info.southExtent) or radius,
+	}
+end
+
 local function destroyPreviewParts()
 	for _, seg in ipairs(fenceSegments) do
 		if seg and seg.Parent then
@@ -208,6 +218,10 @@ local function getStarterZoneInfo()
 	return {
 		centerPosition = center,
 		radius = Balance.STARTER_PROTECTION_RADIUS or 45,
+		westExtent = Balance.STARTER_PROTECTION_RADIUS or 45,
+		eastExtent = Balance.STARTER_PROTECTION_RADIUS or 45,
+		northExtent = Balance.STARTER_PROTECTION_RADIUS or 45,
+		southExtent = Balance.STARTER_PROTECTION_RADIUS or 45,
 	}
 end
 
@@ -264,11 +278,10 @@ local function checkTerritoryEntry(hrpPos)
 		if type(info) == "table" and typeof(info.centerPosition) == "Vector3" and info.ownerId then
 			local ownerId = tonumber(info.ownerId)
 			if ownerId and ownerId ~= localUserId then
-				local radius = tonumber(info.radius) or (Balance.BASE_DEFAULT_RADIUS or 30)
-				local dx = hrpPos.X - info.centerPosition.X
-				local dz = hrpPos.Z - info.centerPosition.Z
-				local dist = math.sqrt(dx * dx + dz * dz)
-				if dist <= radius then
+				local extents = getExtentsFromInfo(info, Balance.BASE_DEFAULT_RADIUS or 30)
+				local dxLeft = hrpPos.X - info.centerPosition.X
+				local dzForward = hrpPos.Z - info.centerPosition.Z
+				if dxLeft >= -extents.west and dxLeft <= extents.east and dzForward >= -extents.south and dzForward <= extents.north then
 					detectedOwner = ownerId
 					break
 				end
@@ -294,11 +307,12 @@ local function checkTerritoryEntry(hrpPos)
 	end
 end
 
-local function renderPreviewRing(centerPos: Vector3, radius: number, _color: Color3, transparency: number, _excludeModel: Instance?)
+local function renderPreviewRing(centerPos: Vector3, infoOrRadius: any, _color: Color3, transparency: number, _excludeModel: Instance?)
 	local template = getFenceTemplate()
 	if not template then return end
 
 	local centerX, centerY, centerZ = centerPos.X, centerPos.Y, centerPos.Z
+	local extents = type(infoOrRadius) == "table" and getExtentsFromInfo(infoOrRadius) or getExtentsFromInfo(nil, tonumber(infoOrRadius) or (Balance.BASE_DEFAULT_RADIUS or 30))
 
 	-- 지형 높이 추적
 	local terrainY = centerY
@@ -311,10 +325,15 @@ local function renderPreviewRing(centerPos: Vector3, radius: number, _color: Col
 	end
 
 	ensureFolder()
-	local halfSide = math.max(1, radius - PREVIEW_BORDER_WIDTH)
-	local sideLen = halfSide * 2
-	local segPerSide = math.max(1, math.ceil(sideLen / fenceSegmentWidth))
-	local totalNeeded = segPerSide * 4
+	local west = math.max(1, extents.west - PREVIEW_BORDER_WIDTH)
+	local east = math.max(1, extents.east - PREVIEW_BORDER_WIDTH)
+	local north = math.max(1, extents.north - PREVIEW_BORDER_WIDTH)
+	local south = math.max(1, extents.south - PREVIEW_BORDER_WIDTH)
+	local sideLenX = west + east
+	local sideLenZ = north + south
+	local segPerNorthSouth = math.max(1, math.ceil(sideLenX / fenceSegmentWidth))
+	local segPerEastWest = math.max(1, math.ceil(sideLenZ / fenceSegmentWidth))
+	local totalNeeded = segPerNorthSouth * 2 + segPerEastWest * 2
 
 	-- 세그먼트 수가 바뀌면 재생성
 	if totalNeeded ~= prevSegmentCount then
@@ -356,25 +375,24 @@ local function renderPreviewRing(centerPos: Vector3, radius: number, _color: Col
 
 	-- 4면에 울타리 배치
 	local baseY = terrainY + fencePivotOffsetY
-	local spacing = sideLen / segPerSide
 
 	-- 각 면: {along축, edge오프셋, 회전Y}
 	local sides = {
-		{ "X",  Vector3.new(0, 0,  halfSide), 0 },            -- 북(+Z)
-		{ "X",  Vector3.new(0, 0, -halfSide), math.pi },       -- 남(-Z)
-		{ "Z",  Vector3.new( halfSide, 0, 0), math.pi / 2 },   -- 동(+X)
-		{ "Z",  Vector3.new(-halfSide, 0, 0), -math.pi / 2 },  -- 서(-X)
+		{ axis = "X", count = segPerNorthSouth, offset = Vector3.new((east - west) * 0.5, 0, north), length = sideLenX, rotY = 0 },
+		{ axis = "X", count = segPerNorthSouth, offset = Vector3.new((east - west) * 0.5, 0, -south), length = sideLenX, rotY = math.pi },
+		{ axis = "Z", count = segPerEastWest, offset = Vector3.new(east, 0, (north - south) * 0.5), length = sideLenZ, rotY = math.pi / 2 },
+		{ axis = "Z", count = segPerEastWest, offset = Vector3.new(-west, 0, (north - south) * 0.5), length = sideLenZ, rotY = -math.pi / 2 },
 	}
 
 	local idx = 0
 	for _, side in ipairs(sides) do
-		local axis, offset, rotY = side[1], side[2], side[3]
-		for s = 1, segPerSide do
+		local axis, offset, rotY = side.axis, side.offset, side.rotY
+		for s = 1, side.count do
 			idx += 1
 			local seg = fenceSegments[idx]
 			if not seg then continue end
 
-			local along = ((s - 0.5) / segPerSide - 0.5) * sideLen
+			local along = ((s - 0.5) / side.count - 0.5) * side.length
 			local pos
 			if axis == "X" then
 				pos = Vector3.new(centerX + along, baseY, centerZ) + offset
@@ -426,11 +444,10 @@ local function refreshNearbyPreview()
 	-- 캐시 만료 시에도 이전 데이터로 계속 표시
 	ownInfo = ownInfo or ownInfoCache
 	if type(ownInfo) == "table" and typeof(ownInfo.centerPosition) == "Vector3" then
-		local ownRadius = tonumber(ownInfo.radius) or (Balance.BASE_DEFAULT_RADIUS or 30)
 		local ownActive = ownInfo.upkeep and ownInfo.upkeep.active
 		renderPreviewRing(
 			ownInfo.centerPosition,
-			ownRadius,
+			ownInfo,
 			ownActive and OWN_PREVIEW_COLOR_ACTIVE or OWN_PREVIEW_COLOR_INACTIVE,
 			ownActive and 0.3 or 0.5,
 			nil
@@ -452,7 +469,7 @@ local function refreshNearbyPreview()
 			return
 		end
 
-		renderPreviewRing(starterZone.centerPosition, starterZone.radius, STARTER_PREVIEW_COLOR, 0.3, nil)
+		renderPreviewRing(starterZone.centerPosition, starterZone, STARTER_PREVIEW_COLOR, 0.3, nil)
 		return
 	end
 
@@ -470,10 +487,9 @@ local function refreshNearbyPreview()
 	local structureId = totemModel:GetAttribute("StructureId") or totemModel.Name
 	local info = getCachedInfo(structureId)
 
-	local radius = (info and tonumber(info.radius)) or (Balance.BASE_DEFAULT_RADIUS or 30)
 	local active = info and info.upkeep and info.upkeep.active
 	local centerPos = (info and info.centerPosition) or pp.Position
-	renderPreviewRing(centerPos, radius, active and PREVIEW_COLOR_ACTIVE or PREVIEW_COLOR_INACTIVE, active and 0.3 or 0.5, totemModel)
+	renderPreviewRing(centerPos, info or { radius = Balance.BASE_DEFAULT_RADIUS or 30 }, active and PREVIEW_COLOR_ACTIVE or PREVIEW_COLOR_INACTIVE, active and 0.3 or 0.5, totemModel)
 end
 
 function TotemController.getCurrentStructureId()
@@ -529,6 +545,35 @@ function TotemController.requestPay(days, callback)
 			data = data,
 			fetchedAt = tick(),
 		}
+	end
+
+	if callback then
+		callback(ok, data)
+	end
+end
+
+function TotemController.requestExpand(direction, callback)
+	if not currentStructureId then
+		if callback then
+			callback(false, "TOTEM_NOT_FOUND")
+		end
+		return
+	end
+
+	local ok, data = NetClient.Request("Totem.Expand.Request", {
+		structureId = currentStructureId,
+		direction = direction,
+	})
+
+	if ok and type(data) == "table" then
+		infoCache[currentStructureId] = {
+			data = data,
+			fetchedAt = tick(),
+		}
+		if tonumber(data.ownerId) == Players.LocalPlayer.UserId then
+			ownInfoCache = data
+			ownInfoFetchedAt = tick()
+		end
 	end
 
 	if callback then
@@ -655,6 +700,10 @@ function TotemController.Init()
 			if data.radius then
 				ownInfoCache.radius = data.radius
 			end
+			if data.westExtent then ownInfoCache.westExtent = data.westExtent end
+			if data.eastExtent then ownInfoCache.eastExtent = data.eastExtent end
+			if data.northExtent then ownInfoCache.northExtent = data.northExtent end
+			if data.southExtent then ownInfoCache.southExtent = data.southExtent end
 			ownInfoFetchedAt = tick()
 		end
 		-- 캐시 없으면 즉시 재요청
@@ -662,6 +711,20 @@ function TotemController.Init()
 			task.spawn(function()
 				requestOwnInfo()
 			end)
+		end
+	end)
+
+	NetClient.On("Base.Expanded", function(data)
+		if type(data) ~= "table" then
+			return
+		end
+		if type(ownInfoCache) == "table" then
+			if data.radius then ownInfoCache.radius = data.radius end
+			if data.westExtent then ownInfoCache.westExtent = data.westExtent end
+			if data.eastExtent then ownInfoCache.eastExtent = data.eastExtent end
+			if data.northExtent then ownInfoCache.northExtent = data.northExtent end
+			if data.southExtent then ownInfoCache.southExtent = data.southExtent end
+			ownInfoFetchedAt = tick()
 		end
 	end)
 

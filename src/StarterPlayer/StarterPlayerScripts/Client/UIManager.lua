@@ -529,7 +529,8 @@ local function getItemIcon(itemId: string): string
 		pushCandidate("PRIMITIVE_WORKBENCH")
 		pushCandidate("PrimitiveWorkbench")
 	end
-	if itemId == "LEAN_TO" then
+	if itemId == "BED_T1" then
+		pushCandidate("BED_T1")
 		pushCandidate("LeanTo")
 		pushCandidate("Lean_To")
 	end
@@ -1651,7 +1652,7 @@ function UIManager._onOpenFacility(structureId, data)
 
 	if FacilityUI.Refs and FacilityUI.Refs.Title then
 		if currentFacilityType == "CRAFTING_T1" then
-			FacilityUI.Refs.Title.Text = UILocalizer.Localize("기초 작업대 제작")
+			FacilityUI.Refs.Title.Text = UILocalizer.Localize("기초 작업대 제작 / 나무 블럭가공")
 		elseif currentFacilityType == "COOKING" then
 			FacilityUI.Refs.Title.Text = UILocalizer.Localize("요리")
 		elseif currentFacilityType and string.find(currentFacilityType, "SMELTING") then
@@ -1752,6 +1753,31 @@ function UIManager.requestTotemPay(days)
 		else
 			local code = tostring(data)
 			UIManager.notify(friendlyError(code, "유지비 결제"), C.RED)
+		end
+	end)
+end
+
+function UIManager.requestTotemExpand(direction)
+	if not currentTotemStructureId then
+		UIManager.notify("토템 정보를 먼저 열어주세요.", C.RED)
+		return
+	end
+
+	local directionNames = {
+		NORTH = "북쪽",
+		SOUTH = "남쪽",
+		EAST = "동쪽",
+		WEST = "서쪽",
+	}
+
+	local TotemController = require(Controllers.TotemController)
+	TotemController.requestExpand(direction, function(ok, data)
+		if ok then
+			TotemUI.Refresh(data)
+			UIManager.notify((directionNames[direction] or "선택한 방향") .. " 영토를 확장했습니다.", C.GOLD)
+		else
+			local code = tostring(data)
+			UIManager.notify(friendlyError(code, "영토 확장"), C.RED)
 		end
 	end)
 end
@@ -1886,7 +1912,10 @@ function UIManager.refreshFacility()
 		local recipes = {}
 		for _, r in pairs(allRecipes) do
 			if r.requiredFacility == currentFacilityType then
+				local buildSkillId = r.buildSkillId
+				if not buildSkillId or SkillController.isSkillUnlocked(buildSkillId) then
 				table.insert(recipes, r)
+				end
 			end
 		end
 
@@ -1896,8 +1925,11 @@ function UIManager.refreshFacility()
 				CRAFT_FIRM_STONE_AXE = 2,
 				CRAFT_FIRM_STONE_PICKAXE = 3,
 				CRAFT_BONE_SWORD = 4,
-				CRAFT_LEATHER_ARMOR = 5,
-				CRAFT_FEATHER_HELMET = 6,
+				CRAFT_LOG_BLOCK = 5,
+				CRAFT_PALM_BLOCK = 6,
+				CRAFT_REED_BLOCK = 7,
+				CRAFT_LEATHER_ARMOR = 8,
+				CRAFT_FEATHER_HELMET = 9,
 			}
 			table.sort(recipes, function(a, b)
 				local ap = pinnedOrder[a.id] or 999
@@ -2076,7 +2108,12 @@ function UIManager.hideHarvestProgress()
 end
 
 -- 건축 조작 가이드 표시
-function UIManager.showBuildPrompt(visible)
+function UIManager.showBuildPrompt(visible, mode)
+	if mode == "BLOCK" then
+		InteractUI.SetBuildVisible(false)
+		return
+	end
+	InteractUI.SetBuildMode(mode)
 	InteractUI.SetBuildVisible(visible)
 end
 

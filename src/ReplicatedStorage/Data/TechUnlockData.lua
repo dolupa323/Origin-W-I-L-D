@@ -18,12 +18,11 @@ local TechUnlockData = {
 				"CRAFT_SPLIT_LOG_TO_PLANK", "CRAFT_FIRM_STONE_AXE", "CRAFT_FIRM_STONE_PICKAXE"
 			}, 
 			facilities = { 
-				"CAMPFIRE", "BASIC_WORKBENCH", "STORAGE_BOX",
-				"WOODEN_FOUNDATION", "WOODEN_WALL", "WOODEN_ROOF", "WOODEN_DOOR"
+				"CAMPFIRE", "BASIC_WORKBENCH", "STORAGE_BOX"
 			} 
 		},
 		category = "SURVIVAL",
-		description = "맨손으로 재료를 모아 기초 도구와 모닥불, 그리고 기본적인 나무 가옥을 건설합니다. (기본 지급)",
+		description = "맨손으로 재료를 모아 기초 도구와 모닥불, 그리고 정착용 핵심 시설을 마련합니다. (기본 지급)",
 	},
 	{
 		id = "TECH_SETTLEMENT",

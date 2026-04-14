@@ -29,6 +29,9 @@ local BuildService = nil
 local bases = {}
 local baseSpatialGrid = {} -- ["gx_gz"] = { [ownerId] = true }
 local BASE_GRID_SIZE = Balance.BASE_GRID_SIZE or math.max(64, (Balance.BASE_DEFAULT_RADIUS or 30) * 2)
+local DEFAULT_EXTENT = Balance.BASE_DEFAULT_RADIUS or 30
+local MAX_EXTENT = Balance.BASE_MAX_RADIUS or 100
+local EXPAND_STEP = Balance.BASE_DIRECTIONAL_EXPAND_STEP or 8
 
 -- BaseClaim 구조
 -- {
@@ -56,6 +59,192 @@ local function getGridRange(radius: number): number
 	return math.max(0, math.ceil(radius / BASE_GRID_SIZE))
 end
 
+local function getBaseExtents(baseClaim: any): (number, number, number, number)
+	local fallback = tonumber(baseClaim and baseClaim.radius) or DEFAULT_EXTENT
+	local west = tonumber(baseClaim and baseClaim.westExtent) or fallback
+	local east = tonumber(baseClaim and baseClaim.eastExtent) or fallback
+	local north = tonumber(baseClaim and baseClaim.northExtent) or fallback
+	local south = tonumber(baseClaim and baseClaim.southExtent) or fallback
+	return west, east, north, south
+end
+
+local function computeBaseRadiusFromExtents(baseClaim: any): number
+	local west, east, north, south = getBaseExtents(baseClaim)
+	return math.max(west, east, north, south)
+end
+
+local function syncBaseDerivedFields(baseClaim: any)
+	if not baseClaim then
+		return
+	end
+
+	local west, east, north, south = getBaseExtents(baseClaim)
+	baseClaim.westExtent = west
+	baseClaim.eastExtent = east
+	baseClaim.northExtent = north
+	baseClaim.southExtent = south
+	baseClaim.radius = math.max(west, east, north, south)
+	baseClaim.purchasedExpansions = math.max(0, math.floor(tonumber(baseClaim.purchasedExpansions) or math.max(0, (tonumber(baseClaim.level) or 1) - 1)))
+	baseClaim.availableExpansionPoints = math.max(0, math.floor(tonumber(baseClaim.availableExpansionPoints) or 0))
+	baseClaim.level = 1 + baseClaim.purchasedExpansions
+	baseClaim.resetOnNextTotemPlacement = baseClaim.resetOnNextTotemPlacement == true
+end
+
+local function getBaseBounds(baseClaim: any, centerOverride: Vector3?, extentsOverride: any?): (number, number, number, number)
+	local center = centerOverride or baseClaim.centerPosition
+	local west, east, north, south
+	if type(extentsOverride) == "table" then
+		west = tonumber(extentsOverride.westExtent or extentsOverride.west) or DEFAULT_EXTENT
+		east = tonumber(extentsOverride.eastExtent or extentsOverride.east) or DEFAULT_EXTENT
+		north = tonumber(extentsOverride.northExtent or extentsOverride.north) or DEFAULT_EXTENT
+		south = tonumber(extentsOverride.southExtent or extentsOverride.south) or DEFAULT_EXTENT
+	else
+		west, east, north, south = getBaseExtents(baseClaim)
+	end
+	return center.X - west, center.X + east, center.Z - south, center.Z + north
+end
+
+local function isPointInBaseArea(centerPosition: Vector3, radius: number, position: Vector3): boolean
+	return math.abs(position.X - centerPosition.X) <= radius
+		and math.abs(position.Z - centerPosition.Z) <= radius
+end
+
+local function isPointInExtents(centerPosition: Vector3, extents: any, position: Vector3): boolean
+	local west = tonumber(extents.westExtent or extents.west) or DEFAULT_EXTENT
+	local east = tonumber(extents.eastExtent or extents.east) or DEFAULT_EXTENT
+	local north = tonumber(extents.northExtent or extents.north) or DEFAULT_EXTENT
+	local south = tonumber(extents.southExtent or extents.south) or DEFAULT_EXTENT
+	return position.X >= (centerPosition.X - west)
+		and position.X <= (centerPosition.X + east)
+		and position.Z >= (centerPosition.Z - south)
+		and position.Z <= (centerPosition.Z + north)
+end
+
+local function isPointInBaseClaim(baseClaim: any, position: Vector3): boolean
+	return isPointInExtents(baseClaim.centerPosition, baseClaim, position)
+end
+
+local function doBaseAreasOverlap(centerA: Vector3, extentsA: any, centerB: Vector3, extentsB: any): boolean
+	local minXA, maxXA, minZA, maxZA = getBaseBounds({ centerPosition = centerA }, centerA, extentsA)
+	local minXB, maxXB, minZB, maxZB = getBaseBounds({ centerPosition = centerB }, centerB, extentsB)
+	return minXA < maxXB and maxXA > minXB and minZA < maxZB and maxZA > minZB
+end
+
+local function getAxisAlignedBaseCorners(centerPosition: Vector3, radius: number): { Vector2 }
+	return {
+		Vector2.new(centerPosition.X - radius, centerPosition.Z - radius),
+		Vector2.new(centerPosition.X - radius, centerPosition.Z + radius),
+		Vector2.new(centerPosition.X + radius, centerPosition.Z - radius),
+		Vector2.new(centerPosition.X + radius, centerPosition.Z + radius),
+	}
+end
+
+local function getOrientedBoxCornersXZ(boxCFrame: CFrame, boxSize: Vector3): { Vector2 }
+	local halfX = boxSize.X * 0.5
+	local halfZ = boxSize.Z * 0.5
+	local corners = {}
+	for _, sx in ipairs({ -1, 1 }) do
+		for _, sz in ipairs({ -1, 1 }) do
+			local worldPos = boxCFrame:PointToWorldSpace(Vector3.new(halfX * sx, 0, halfZ * sz))
+			table.insert(corners, Vector2.new(worldPos.X, worldPos.Z))
+		end
+	end
+	return corners
+end
+
+local function projectCorners(axis: Vector2, corners: { Vector2 }): (number, number)
+	local minProj = math.huge
+	local maxProj = -math.huge
+	for _, corner in ipairs(corners) do
+		local projection = corner:Dot(axis)
+		if projection < minProj then
+			minProj = projection
+		end
+		if projection > maxProj then
+			maxProj = projection
+		end
+	end
+	return minProj, maxProj
+end
+
+local function rangesOverlap(minA: number, maxA: number, minB: number, maxB: number): boolean
+	return not (maxA < minB or maxB < minA)
+end
+
+local function normalizeXZAxis(vector: Vector3, fallback: Vector2): Vector2
+	local axis = Vector2.new(vector.X, vector.Z)
+	if axis.Magnitude < 1e-4 then
+		return fallback
+	end
+	return axis.Unit
+end
+
+local function doesBaseAreaOverlapOrientedBox(centerPosition: Vector3, radius: number, boxCFrame: CFrame, boxSize: Vector3): boolean
+	local baseCorners = getAxisAlignedBaseCorners(centerPosition, radius)
+	local boxCorners = getOrientedBoxCornersXZ(boxCFrame, boxSize)
+	local axes = {
+		Vector2.new(1, 0),
+		Vector2.new(0, 1),
+		normalizeXZAxis(boxCFrame.RightVector, Vector2.new(1, 0)),
+		normalizeXZAxis(boxCFrame.LookVector, Vector2.new(0, 1)),
+	}
+
+	for _, axis in ipairs(axes) do
+		local minBase, maxBase = projectCorners(axis, baseCorners)
+		local minBox, maxBox = projectCorners(axis, boxCorners)
+		if not rangesOverlap(minBase, maxBase, minBox, maxBox) then
+			return false
+		end
+	end
+
+	return true
+end
+
+local function doesExtentsOverlapOrientedBox(centerPosition: Vector3, extents: any, boxCFrame: CFrame, boxSize: Vector3): boolean
+	local west = tonumber(extents.westExtent or extents.west) or DEFAULT_EXTENT
+	local east = tonumber(extents.eastExtent or extents.east) or DEFAULT_EXTENT
+	local north = tonumber(extents.northExtent or extents.north) or DEFAULT_EXTENT
+	local south = tonumber(extents.southExtent or extents.south) or DEFAULT_EXTENT
+	local baseCorners = {
+		Vector2.new(centerPosition.X - west, centerPosition.Z - south),
+		Vector2.new(centerPosition.X - west, centerPosition.Z + north),
+		Vector2.new(centerPosition.X + east, centerPosition.Z - south),
+		Vector2.new(centerPosition.X + east, centerPosition.Z + north),
+	}
+	local boxCorners = getOrientedBoxCornersXZ(boxCFrame, boxSize)
+	local axes = {
+		Vector2.new(1, 0),
+		Vector2.new(0, 1),
+		normalizeXZAxis(boxCFrame.RightVector, Vector2.new(1, 0)),
+		normalizeXZAxis(boxCFrame.LookVector, Vector2.new(0, 1)),
+	}
+
+	for _, axis in ipairs(axes) do
+		local minBase, maxBase = projectCorners(axis, baseCorners)
+		local minBox, maxBox = projectCorners(axis, boxCorners)
+		if not rangesOverlap(minBase, maxBase, minBox, maxBox) then
+			return false
+		end
+	end
+
+	return true
+end
+
+local function makeDefaultExtents(): any
+	return {
+		westExtent = DEFAULT_EXTENT,
+		eastExtent = DEFAULT_EXTENT,
+		northExtent = DEFAULT_EXTENT,
+		southExtent = DEFAULT_EXTENT,
+	}
+end
+
+local function getNextExpandCost(baseClaim: any): number
+	local purchased = math.max(0, math.floor(tonumber(baseClaim and baseClaim.purchasedExpansions) or 0))
+	return (Balance.BASE_DIRECTIONAL_EXPAND_COST_BASE or 500)
+		+ purchased * (Balance.BASE_DIRECTIONAL_EXPAND_COST_STEP or 500)
+end
+
 local function unindexBase(baseClaim: any)
 	if not baseClaim or type(baseClaim._gridCells) ~= "table" then
 		return
@@ -79,8 +268,9 @@ local function indexBase(baseClaim: any)
 		return
 	end
 
+	syncBaseDerivedFields(baseClaim)
 	local gx, gz = getGridKey(baseClaim.centerPosition)
-	local radius = baseClaim.radius or (Balance.BASE_DEFAULT_RADIUS or 30)
+	local radius = baseClaim.radius or DEFAULT_EXTENT
 	local range = getGridRange(radius)
 	local cells = {}
 
@@ -133,7 +323,7 @@ local function forEachNearbyBase(position: Vector3, radius: number, callback: (n
 	return false
 end
 
-local function hasWildernessStructureConflict(centerPosition: Vector3, radius: number, ownerId: number): boolean
+local function hasWildernessStructureConflict(centerPosition: Vector3, extents: any, ownerId: number): boolean
 	local facilitiesFolder = Workspace:FindFirstChild("Facilities")
 	if not facilitiesFolder then
 		return false
@@ -143,7 +333,13 @@ local function hasWildernessStructureConflict(centerPosition: Vector3, radius: n
 	overlapParams.FilterType = Enum.RaycastFilterType.Include
 	overlapParams.FilterDescendantsInstances = { facilitiesFolder }
 
-	local parts = Workspace:GetPartBoundsInRadius(centerPosition, radius, overlapParams)
+	local west = tonumber(extents.westExtent or extents.west) or DEFAULT_EXTENT
+	local east = tonumber(extents.eastExtent or extents.east) or DEFAULT_EXTENT
+	local north = tonumber(extents.northExtent or extents.north) or DEFAULT_EXTENT
+	local south = tonumber(extents.southExtent or extents.south) or DEFAULT_EXTENT
+	local queryCenter = Vector3.new(centerPosition.X + ((east - west) * 0.5), centerPosition.Y + 128, centerPosition.Z + ((north - south) * 0.5))
+	local querySize = Vector3.new(west + east, 256, south + north)
+	local parts = Workspace:GetPartBoundsInBox(CFrame.new(queryCenter), querySize, overlapParams)
 	local checkedStructures = {}
 
 	for _, part in ipairs(parts) do
@@ -159,9 +355,7 @@ local function hasWildernessStructureConflict(centerPosition: Vector3, radius: n
 					local isInsideOwnerBase = false
 					local structPos = container:GetPivot().Position
 					if ownerBase then
-						local dx = structPos.X - ownerBase.centerPosition.X
-						local dz = structPos.Z - ownerBase.centerPosition.Z
-						isInsideOwnerBase = math.sqrt(dx * dx + dz * dz) <= ownerBase.radius
+						isInsideOwnerBase = isPointInBaseClaim(ownerBase, structPos)
 					end
 
 					if not isInsideOwnerBase then
@@ -175,16 +369,7 @@ local function hasWildernessStructureConflict(centerPosition: Vector3, radius: n
 	return false
 end
 
-local function distanceToOrientedBoxSurface(position: Vector3, boxCFrame: CFrame, boxSize: Vector3): number
-	local localPos = boxCFrame:PointToObjectSpace(position)
-	local half = boxSize * 0.5
-	local dx = math.max(math.abs(localPos.X) - half.X, 0)
-	local dy = math.max(math.abs(localPos.Y) - half.Y, 0)
-	local dz = math.max(math.abs(localPos.Z) - half.Z, 0)
-	return math.sqrt(dx * dx + dy * dy + dz * dz)
-end
-
-local function overlapsPortalRestrictionZone(centerPosition: Vector3, radius: number): boolean
+local function overlapsPortalRestrictionZone(centerPosition: Vector3, extents: any): boolean
 	if typeof(centerPosition) ~= "Vector3" then
 		return false
 	end
@@ -209,8 +394,7 @@ local function overlapsPortalRestrictionZone(centerPosition: Vector3, radius: nu
 		boxSize.Z + PORTAL_RESTRICTION_MARGIN * 2
 	)
 
-	local edgeDistance = distanceToOrientedBoxSurface(centerPosition, boxCFrame, expandedSize)
-	return edgeDistance <= math.max(0, radius)
+	return doesExtentsOverlapOrientedBox(centerPosition, extents, boxCFrame, expandedSize)
 end
 
 --- 고유 베이스 ID 생성
@@ -234,6 +418,7 @@ local function loadBases()
 					local pos = baseData.centerPosition
 					baseData.centerPosition = Vector3.new(pos.X or pos.x or 0, pos.Y or pos.y or 0, pos.Z or pos.z or 0)
 				end
+				syncBaseDerivedFields(baseData)
 				bases[baseData.ownerId] = baseData
 				indexBase(baseData)
 				
@@ -272,7 +457,14 @@ local function saveBase(baseClaim: any)
 				Z = baseClaim.centerPosition.Z,
 			},
 			radius = baseClaim.radius,
+			westExtent = baseClaim.westExtent,
+			eastExtent = baseClaim.eastExtent,
+			northExtent = baseClaim.northExtent,
+			southExtent = baseClaim.southExtent,
 			level = baseClaim.level,
+			purchasedExpansions = baseClaim.purchasedExpansions,
+			availableExpansionPoints = baseClaim.availableExpansionPoints,
+			resetOnNextTotemPlacement = baseClaim.resetOnNextTotemPlacement == true,
 			createdAt = baseClaim.createdAt,
 		}
 		state.bases[baseClaim.id] = saveData
@@ -298,21 +490,15 @@ function BaseClaimService.create(userId: number, position: Vector3): (boolean, s
 	end
 	
 	-- 중첩 검사 (Overlap Protection: (NewRadius + OtherRadius) < Distance)
-	local newRadius = Balance.BASE_DEFAULT_RADIUS or 30
-	if overlapsPortalRestrictionZone(position, newRadius) then
+	local defaultExtents = makeDefaultExtents()
+	if overlapsPortalRestrictionZone(position, defaultExtents) then
 		return false, Enums.ErrorCode.NO_PERMISSION, nil
 	end
-	local hasCollision = forEachNearbyBase(position, newRadius, function(otherOwnerId, otherBase)
+	local hasCollision = forEachNearbyBase(position, DEFAULT_EXTENT, function(otherOwnerId, otherBase)
 		if otherOwnerId == userId then
 			return false
 		end
-		local dx = position.X - otherBase.centerPosition.X
-		local dz = position.Z - otherBase.centerPosition.Z
-		local dist = math.sqrt(dx * dx + dz * dz)
-		
-		-- 안전 마진 포함 (중첩 원천 차단)
-		local minSafeDist = newRadius + otherBase.radius
-		if dist < minSafeDist then
+		if doBaseAreasOverlap(position, defaultExtents, otherBase.centerPosition, otherBase) then
 			print(string.format("[BaseClaimService] Create failed: Overlap with player %d's base", otherBase.ownerId))
 			return true
 		end
@@ -328,10 +514,18 @@ function BaseClaimService.create(userId: number, position: Vector3): (boolean, s
 		id = baseId,
 		ownerId = userId,
 		centerPosition = position,
-		radius = newRadius,
+		radius = DEFAULT_EXTENT,
+		westExtent = DEFAULT_EXTENT,
+		eastExtent = DEFAULT_EXTENT,
+		northExtent = DEFAULT_EXTENT,
+		southExtent = DEFAULT_EXTENT,
 		level = 1,
+		purchasedExpansions = 0,
+		availableExpansionPoints = 0,
+		resetOnNextTotemPlacement = false,
 		createdAt = os.time(),
 	}
+	syncBaseDerivedFields(baseClaim)
 	
 	bases[userId] = baseClaim
 	indexBase(baseClaim)
@@ -351,6 +545,10 @@ function BaseClaimService.create(userId: number, position: Vector3): (boolean, s
 				baseId = baseId,
 				centerPosition = position,
 				radius = baseClaim.radius,
+				westExtent = baseClaim.westExtent,
+				eastExtent = baseClaim.eastExtent,
+				northExtent = baseClaim.northExtent,
+				southExtent = baseClaim.southExtent,
 			})
 		end
 	end
@@ -363,18 +561,18 @@ end
 
 --- 베이스 조회
 function BaseClaimService.getBase(userId: number): any?
-	return bases[userId]
+	local baseClaim = bases[userId]
+	if baseClaim then
+		syncBaseDerivedFields(baseClaim)
+	end
+	return baseClaim
 end
 
 --- 해당 위치를 소유한 베이스 주인 ID 반환
 function BaseClaimService.getOwnerAt(position: Vector3): number?
 	local ownerIdAt = nil
 	forEachNearbyBase(position, 0, function(userId, baseClaim)
-		local dx = position.X - baseClaim.centerPosition.X
-		local dz = position.Z - baseClaim.centerPosition.Z
-		local dist = math.sqrt(dx * dx + dz * dz)
-		
-		if dist <= baseClaim.radius then
+		if isPointInBaseClaim(baseClaim, position) then
 			ownerIdAt = userId
 			return true
 		end
@@ -391,40 +589,56 @@ end
 function BaseClaimService.isInBase(userId: number, position: Vector3): boolean
 	local baseClaim = bases[userId]
 	if not baseClaim then return false end
-	
-	-- XZ 평면에서 거리 계산 (높이 무시)
-	local dx = position.X - baseClaim.centerPosition.X
-	local dz = position.Z - baseClaim.centerPosition.Z
-	local distance = math.sqrt(dx * dx + dz * dz)
-	
-	return distance <= baseClaim.radius
+
+	return isPointInBaseClaim(baseClaim, position)
 end
 
---- 베이스 반경 확장
-function BaseClaimService.expand(userId: number): (boolean, string?)
+function BaseClaimService.getExpandInfo(userId: number): any?
+	local baseClaim = bases[userId]
+	if not baseClaim then
+		return nil
+	end
+
+	syncBaseDerivedFields(baseClaim)
+	return {
+		nextCost = getNextExpandCost(baseClaim),
+		availablePoints = baseClaim.availableExpansionPoints,
+		purchasedExpansions = baseClaim.purchasedExpansions,
+		step = EXPAND_STEP,
+		maxExtent = MAX_EXTENT,
+	}
+end
+
+--- 베이스 방향 확장
+function BaseClaimService.expand(userId: number, direction: string, consumeAvailablePoint: boolean?): (boolean, string?)
 	local baseClaim = bases[userId]
 	if not baseClaim then
 		return false, Enums.ErrorCode.NOT_FOUND
 	end
-	
-	local maxRadius = Balance.BASE_MAX_RADIUS or 100
-	local radiusIncrease = Balance.BASE_RADIUS_PER_LEVEL or 10
-	
-	local requestedRadius = math.min(baseClaim.radius + radiusIncrease, maxRadius)
-	if requestedRadius <= baseClaim.radius then
+
+	syncBaseDerivedFields(baseClaim)
+	direction = string.upper(tostring(direction or ""))
+	if direction ~= "NORTH" and direction ~= "SOUTH" and direction ~= "EAST" and direction ~= "WEST" then
+		return false, Enums.ErrorCode.BAD_REQUEST
+	end
+
+	local requested = {
+		westExtent = baseClaim.westExtent,
+		eastExtent = baseClaim.eastExtent,
+		northExtent = baseClaim.northExtent,
+		southExtent = baseClaim.southExtent,
+	}
+	requested[string.lower(direction) .. "Extent"] += EXPAND_STEP
+
+	if requested.westExtent > MAX_EXTENT or requested.eastExtent > MAX_EXTENT
+		or requested.northExtent > MAX_EXTENT or requested.southExtent > MAX_EXTENT then
 		return false, Enums.ErrorCode.INVALID_STATE
 	end
 
-	-- [보안/기획] 중첩 검사 (Overlap Protection)
-	-- 확장 시에도 타 유저의 베이스 영역을 침범하지 않도록 확인
+	local requestedRadius = math.max(requested.westExtent, requested.eastExtent, requested.northExtent, requested.southExtent)
 	local hasCollision = forEachNearbyBase(baseClaim.centerPosition, requestedRadius, function(otherUserId, otherBase)
 		if otherUserId ~= userId then
-			local dx = baseClaim.centerPosition.X - otherBase.centerPosition.X
-			local dz = baseClaim.centerPosition.Z - otherBase.centerPosition.Z
-			local dist = math.sqrt(dx * dx + dz * dz)
-			
-			local minSafeDist = requestedRadius + otherBase.radius
-			if dist < minSafeDist then
+			if doBaseAreasOverlap(baseClaim.centerPosition, requested, otherBase.centerPosition, otherBase) then
 				print(string.format("[BaseClaimService] Expand failed for player %d: Would overlap with player %d's base", userId, otherUserId))
 				return true
 			end
@@ -435,13 +649,25 @@ function BaseClaimService.expand(userId: number): (boolean, string?)
 		return false, Enums.ErrorCode.COLLISION
 	end
 
-	if hasWildernessStructureConflict(baseClaim.centerPosition, requestedRadius, userId) then
+	if overlapsPortalRestrictionZone(baseClaim.centerPosition, requested) then
+		return false, Enums.ErrorCode.NO_PERMISSION
+	end
+
+	if hasWildernessStructureConflict(baseClaim.centerPosition, requested, userId) then
 		warn(string.format("[BaseClaimService] Expand blocked for player %d: foreign wilderness structure detected in target radius", userId))
 		return false, Enums.ErrorCode.COLLISION
 	end
-	
-	baseClaim.radius = requestedRadius
-	baseClaim.level = baseClaim.level + 1
+
+	baseClaim.westExtent = requested.westExtent
+	baseClaim.eastExtent = requested.eastExtent
+	baseClaim.northExtent = requested.northExtent
+	baseClaim.southExtent = requested.southExtent
+	if consumeAvailablePoint and baseClaim.availableExpansionPoints > 0 then
+		baseClaim.availableExpansionPoints -= 1
+	else
+		baseClaim.purchasedExpansions += 1
+	end
+	syncBaseDerivedFields(baseClaim)
 	reindexBase(baseClaim)
 	saveBase(baseClaim)
 	
@@ -452,7 +678,13 @@ function BaseClaimService.expand(userId: number): (boolean, string?)
 			NetController.FireClient(player, "Base.Expanded", {
 				baseId = baseClaim.id,
 				radius = baseClaim.radius,
+				westExtent = baseClaim.westExtent,
+				eastExtent = baseClaim.eastExtent,
+				northExtent = baseClaim.northExtent,
+				southExtent = baseClaim.southExtent,
 				level = baseClaim.level,
+				availableExpansionPoints = baseClaim.availableExpansionPoints,
+				purchasedExpansions = baseClaim.purchasedExpansions,
 			})
 		end
 	end
@@ -468,17 +700,13 @@ function BaseClaimService.moveBaseCenter(userId: number, newPosition: Vector3, s
 		return false, Enums.ErrorCode.NOT_FOUND
 	end
 
-	if not skipPortalCheck and overlapsPortalRestrictionZone(newPosition, baseClaim.radius or (Balance.BASE_DEFAULT_RADIUS or 30)) then
+	if not skipPortalCheck and overlapsPortalRestrictionZone(newPosition, baseClaim) then
 		return false, Enums.ErrorCode.NO_PERMISSION
 	end
 
-	local hasCollision = forEachNearbyBase(newPosition, baseClaim.radius or (Balance.BASE_DEFAULT_RADIUS or 30), function(otherUserId, otherBase)
+	local hasCollision = forEachNearbyBase(newPosition, baseClaim.radius or DEFAULT_EXTENT, function(otherUserId, otherBase)
 		if otherUserId ~= userId then
-			local dx = newPosition.X - otherBase.centerPosition.X
-			local dz = newPosition.Z - otherBase.centerPosition.Z
-			local dist = math.sqrt(dx * dx + dz * dz)
-			local minSafeDist = (baseClaim.radius or (Balance.BASE_DEFAULT_RADIUS or 30)) + otherBase.radius
-			if dist < minSafeDist then
+			if doBaseAreasOverlap(newPosition, baseClaim, otherBase.centerPosition, otherBase) then
 				return true
 			end
 		end
@@ -499,6 +727,10 @@ function BaseClaimService.moveBaseCenter(userId: number, newPosition: Vector3, s
 				baseId = baseClaim.id,
 				centerPosition = newPosition,
 				radius = baseClaim.radius,
+				westExtent = baseClaim.westExtent,
+				eastExtent = baseClaim.eastExtent,
+				northExtent = baseClaim.northExtent,
+				southExtent = baseClaim.southExtent,
 				level = baseClaim.level,
 			})
 		end
@@ -575,7 +807,13 @@ function BaseClaimService.getAllBases(): {any}
 			ownerId = baseClaim.ownerId,
 			centerPosition = baseClaim.centerPosition,
 			radius = baseClaim.radius,
+			westExtent = baseClaim.westExtent,
+			eastExtent = baseClaim.eastExtent,
+			northExtent = baseClaim.northExtent,
+			southExtent = baseClaim.southExtent,
 			level = baseClaim.level,
+			purchasedExpansions = baseClaim.purchasedExpansions,
+			availableExpansionPoints = baseClaim.availableExpansionPoints,
 		})
 	end
 	return result
@@ -592,6 +830,62 @@ function BaseClaimService.onStructurePlaced(userId: number, position: Vector3)
 	BaseClaimService.create(userId, position)
 end
 
+function BaseClaimService.onTotemRemoved(userId: number)
+	local baseClaim = bases[userId]
+	if not baseClaim then
+		return
+	end
+
+	syncBaseDerivedFields(baseClaim)
+	baseClaim.availableExpansionPoints = baseClaim.purchasedExpansions
+	baseClaim.resetOnNextTotemPlacement = baseClaim.purchasedExpansions > 0
+	saveBase(baseClaim)
+end
+
+function BaseClaimService.onTotemPlaced(userId: number, position: Vector3): (boolean, string?)
+	local baseClaim = bases[userId]
+	if not baseClaim then
+		local created, err = BaseClaimService.create(userId, position)
+		if not created then
+			return false, err
+		end
+		baseClaim = bases[userId]
+	end
+	if not baseClaim then
+		return false, Enums.ErrorCode.NOT_FOUND
+	end
+
+	syncBaseDerivedFields(baseClaim)
+	if baseClaim.resetOnNextTotemPlacement then
+		local prevWest = baseClaim.westExtent
+		local prevEast = baseClaim.eastExtent
+		local prevNorth = baseClaim.northExtent
+		local prevSouth = baseClaim.southExtent
+		local defaults = makeDefaultExtents()
+		baseClaim.westExtent = defaults.westExtent
+		baseClaim.eastExtent = defaults.eastExtent
+		baseClaim.northExtent = defaults.northExtent
+		baseClaim.southExtent = defaults.southExtent
+		syncBaseDerivedFields(baseClaim)
+		local moved, err = BaseClaimService.moveBaseCenter(userId, position, true)
+		if moved then
+			baseClaim.resetOnNextTotemPlacement = false
+			saveBase(baseClaim)
+			return true, nil
+		end
+		baseClaim.westExtent = prevWest
+		baseClaim.eastExtent = prevEast
+		baseClaim.northExtent = prevNorth
+		baseClaim.southExtent = prevSouth
+		baseClaim.resetOnNextTotemPlacement = true
+		syncBaseDerivedFields(baseClaim)
+		saveBase(baseClaim)
+		return false, err
+	end
+
+	return BaseClaimService.moveBaseCenter(userId, position, true)
+end
+
 --========================================
 -- Network Handlers
 --========================================
@@ -606,7 +900,13 @@ local function handleGetBase(player: Player, payload: any)
 				id = baseClaim.id,
 				centerPosition = baseClaim.centerPosition,
 				radius = baseClaim.radius,
+				westExtent = baseClaim.westExtent,
+				eastExtent = baseClaim.eastExtent,
+				northExtent = baseClaim.northExtent,
+				southExtent = baseClaim.southExtent,
 				level = baseClaim.level,
+				purchasedExpansions = baseClaim.purchasedExpansions,
+				availableExpansionPoints = baseClaim.availableExpansionPoints,
 			}
 		}
 	else
@@ -615,7 +915,9 @@ local function handleGetBase(player: Player, payload: any)
 end
 
 local function handleExpand(player: Player, payload: any)
-	local success, errorCode = BaseClaimService.expand(player.UserId)
+	local direction = payload and payload.direction
+	local consumeAvailablePoint = payload and payload.consumeAvailablePoint == true
+	local success, errorCode = BaseClaimService.expand(player.UserId, direction, consumeAvailablePoint)
 	
 	if success then
 		return { success = true }

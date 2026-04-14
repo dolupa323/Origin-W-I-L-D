@@ -96,9 +96,19 @@ local function isInStarterProtectedZone(position: Vector3): boolean
 		return false
 	end
 	local radius = Balance.STARTER_PROTECTION_RADIUS or 45
-	local dx = position.X - center.X
-	local dz = position.Z - center.Z
-	return (dx * dx + dz * dz) <= (radius * radius)
+	local dx = math.abs(position.X - center.X)
+	local dz = math.abs(position.Z - center.Z)
+	return dx <= radius and dz <= radius
+end
+
+local function getTotemExtents(info)
+	local radius = (info and tonumber(info.radius)) or (Balance.BASE_DEFAULT_RADIUS or 30)
+	return {
+		west = tonumber(info and info.westExtent) or radius,
+		east = tonumber(info and info.eastExtent) or radius,
+		north = tonumber(info and info.northExtent) or radius,
+		south = tonumber(info and info.southExtent) or radius,
+	}
 end
 
 local function requestTotemInfoAsync(structureId: string)
@@ -173,9 +183,10 @@ local function getProtectedZoneBlockCode(position: Vector3): string?
 
 		local radius = (info and tonumber(info.radius)) or (Balance.BASE_DEFAULT_RADIUS or 30)
 		local center = (info and info.centerPosition) or pp.Position
+		local extents = getTotemExtents(info)
 		local dx = position.X - center.X
 		local dz = position.Z - center.Z
-		if (dx * dx + dz * dz) <= (radius * radius) then
+		if dx >= -extents.west and dx <= extents.east and dz >= -extents.south and dz <= extents.north then
 			if not info then
 				return "NO_PERMISSION"
 			end
@@ -330,7 +341,7 @@ local function resolvePlacementTiltOffset(facilityId: string, facilityData: any,
 	end
 
 	-- 모델 피벗의 기울기를 보정 (서버와 동일 로직)
-	if facilityId == "LEAN_TO" and ghost then
+	if string.sub(tostring(facilityId or ""), 1, 4) == "BED_" and ghost then
 		local rx, _, rz = ghost:GetPivot():ToOrientation()
 		return Vector3.new(math.deg(rx), 0, math.deg(rz))
 	end

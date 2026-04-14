@@ -57,6 +57,8 @@ Protocol.Commands = {
 	["Build.Place.Request"] = true,     -- 시설물 배치 요청
 	["Build.Remove.Request"] = true,    -- 시설물 해체 요청
 	["Build.GetAll.Request"] = true,    -- 전체 시설물 조회
+	["BlockBuild.Place.Request"] = true, -- 블럭 배치 요청
+	["BlockBuild.Remove.Request"] = true, -- 블럭 파괴 요청
 	
 	-- Craft 명령어
 	["Craft.Start.Request"] = true,     -- 제작 시작 요청
@@ -129,6 +131,7 @@ Protocol.Commands = {
 	-- Totem 명령어
 	["Totem.GetInfo.Request"] = true,          -- 토템 상태/유지비 정보 조회
 	["Totem.PayUpkeep.Request"] = true,       -- 토템 유지비 결제
+	["Totem.Expand.Request"] = true,          -- 토템 방향 확장
 	
 	-- (Quest 시스템 삭제됨)
 	
@@ -141,6 +144,7 @@ Protocol.Commands = {
 	["Shop.Buy.Request"] = true,               -- 아이템 구매
 	["Shop.Sell.Request"] = true,              -- 아이템 판매
 	["Shop.GetGold.Request"] = true,           -- 보유 골드 조회
+	["Shop.Admin.GrantGold.Request"] = true,   -- 어드민 전용 골드 지급
 	
 	-- Movement 명령어 (Phase 10)
 	["Movement.StartSprint"] = true,           -- 스프린트 시작

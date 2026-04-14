@@ -73,16 +73,25 @@ local function _isArmorItemId(itemId: string): boolean
 	return itemData and itemData.type == "ARMOR" or false
 end
 
---- 아이템 스택 가능 여부 (화살/탄약만 스택 가능)
+--- 아이템 스택 가능 여부 (탄약 + 명시적 stackable 플래그만 허용)
 local function _isStackable(itemId: string): boolean
 	if not (DataService and DataService.getItem and itemId) then
 		return false
 	end
 	local itemData = DataService.getItem(itemId)
-	return itemData and itemData.type == "AMMO"
+	if not itemData then
+		return false
+	end
+	if itemData.durability then
+		return false
+	end
+	if itemData.type == "AMMO" then
+		return true
+	end
+	return itemData.stackable == true
 end
 
---- 아이템별 최대 스택 수량 (AMMO: 개별 maxStack, 그 외: 1)
+--- 아이템별 최대 스택 수량
 local function _getMaxStack(itemId: string): number
 	if not _isStackable(itemId) then return 1 end
 	if DataService then

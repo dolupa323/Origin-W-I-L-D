@@ -18,6 +18,10 @@ InteractUI.Refs = {
 	PromptDurabilityFill = nil,
 	PromptDurabilityLabel = nil,
 	BuildPrompt = nil,
+	BuildTitleLabel = nil,
+	BuildPrimaryLabel = nil,
+	BuildSecondaryLabel = nil,
+	BuildCancelLabel = nil,
 }
 
 function InteractUI.SetVisible(visible)
@@ -30,6 +34,29 @@ function InteractUI.SetBuildVisible(visible)
 	if InteractUI.Refs.BuildPrompt then
 		InteractUI.Refs.BuildPrompt.Visible = visible
 	end
+end
+
+function InteractUI.SetBuildMode(mode)
+	local title = InteractUI.Refs.BuildTitleLabel
+	local primary = InteractUI.Refs.BuildPrimaryLabel
+	local secondary = InteractUI.Refs.BuildSecondaryLabel
+	local cancel = InteractUI.Refs.BuildCancelLabel
+	if not title or not primary or not secondary or not cancel then
+		return
+	end
+
+	if mode == "BLOCK" then
+		title.Text = UILocalizer.Localize("블럭 건축")
+		primary.Text = UILocalizer.Localize("LMB : 블럭 배치")
+		secondary.Text = UILocalizer.Localize("무기/도구 공격 : 블럭 파괴")
+		cancel.Text = UILocalizer.Localize("X : 배치 취소")
+		return
+	end
+
+	title.Text = UILocalizer.Localize("🛠️ 건축 컨트롤")
+	primary.Text = UILocalizer.Localize("LMB : 배치 확정")
+	secondary.Text = UILocalizer.Localize("R : 시설 회전")
+	cancel.Text = UILocalizer.Localize("X : 건축 취소")
 end
 
 function InteractUI.UpdatePrompt(nameText, keyText)
@@ -194,10 +221,10 @@ function InteractUI.Init(parent, isMobile)
 	local p = Instance.new("UIPadding")
 	p.PaddingLeft = UDim.new(0, 15); p.PaddingTop = UDim.new(0, 12); p.Parent = build
 
-	Utils.mkLabel({text = UILocalizer.Localize("🛠️ 건축 컨트롤"), ts = 16, font=F.TITLE, color = C.GOLD_SEL, ax = Enum.TextXAlignment.Left, parent = build})
-	Utils.mkLabel({text = UILocalizer.Localize("LMB : 배치 확정"), ts = 14, color = C.WHITE, ax = Enum.TextXAlignment.Left, parent = build})
-	Utils.mkLabel({text = UILocalizer.Localize("R : 시설 회전"), ts = 14, color = C.WHITE, ax = Enum.TextXAlignment.Left, parent = build})
-	Utils.mkLabel({text = UILocalizer.Localize("X : 건축 취소"), ts = 14, color = Color3.fromRGB(200, 90, 70), ax = Enum.TextXAlignment.Left, parent = build})
+	InteractUI.Refs.BuildTitleLabel = Utils.mkLabel({text = UILocalizer.Localize("🛠️ 건축 컨트롤"), ts = 16, font=F.TITLE, color = C.GOLD_SEL, ax = Enum.TextXAlignment.Left, parent = build})
+	InteractUI.Refs.BuildPrimaryLabel = Utils.mkLabel({text = UILocalizer.Localize("LMB : 배치 확정"), ts = 14, color = C.WHITE, ax = Enum.TextXAlignment.Left, parent = build})
+	InteractUI.Refs.BuildSecondaryLabel = Utils.mkLabel({text = UILocalizer.Localize("R : 시설 회전"), ts = 14, color = C.WHITE, ax = Enum.TextXAlignment.Left, parent = build})
+	InteractUI.Refs.BuildCancelLabel = Utils.mkLabel({text = UILocalizer.Localize("X : 건축 취소"), ts = 14, color = Color3.fromRGB(200, 90, 70), ax = Enum.TextXAlignment.Left, parent = build})
 end
 
 return InteractUI

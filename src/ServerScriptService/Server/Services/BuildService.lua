@@ -386,7 +386,7 @@ local function resolveServerPlacementTiltOffset(facilityId: string, facilityData
 		end
 	end
 
-	if facilityId == "LEAN_TO" and model then
+	if string.sub(tostring(facilityId or ""), 1, 4) == "BED_" and model then
 		local rx, _, rz = model:GetPivot():ToOrientation()
 		return Vector3.new(math.deg(rx), 0, math.deg(rz))
 	end
@@ -757,8 +757,8 @@ function BuildService.place(player: Player, facilityId: string, position: Vector
 		TotemService.onTotemPlaced(userId)
 	end
 
-	if isCampTotem and BaseClaimService and BaseClaimService.moveBaseCenter then
-		local moved, moveErr = BaseClaimService.moveBaseCenter(userId, position, true)
+	if isCampTotem and BaseClaimService and BaseClaimService.onTotemPlaced then
+		local moved, moveErr = BaseClaimService.onTotemPlaced(userId, position)
 		if not moved then
 			warn(string.format("[BuildService] Failed to move base center for totem placement (user=%d, err=%s)", userId, tostring(moveErr)))
 		end
@@ -851,6 +851,9 @@ function BuildService.removeStructure(structureId: string, reason: string)
 	-- 토템 캐시 무효화 (해체된 건물이 CAMP_TOTEM인 경우)
 	if structure.facilityId == "CAMP_TOTEM" and TotemService and TotemService.invalidateTotemCache then
 		TotemService.invalidateTotemCache(structure.ownerId)
+	end
+	if structure.facilityId == "CAMP_TOTEM" and BaseClaimService and BaseClaimService.onTotemRemoved then
+		BaseClaimService.onTotemRemoved(structure.ownerId)
 	end
 	
 	-- Workspace에서 제거

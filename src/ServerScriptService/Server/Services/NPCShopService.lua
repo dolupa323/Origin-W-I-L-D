@@ -16,6 +16,7 @@ local DataService
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
+local RunService = game:GetService("RunService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Enums = require(Shared.Enums.Enums)
@@ -53,6 +54,13 @@ local TYPE_SELL_MULTIPLIER = {
 	AMMO = 1.1,
 	PLACEABLE = 1.6,
 }
+
+local function _isAdmin(userId: number): boolean
+	if RunService:IsStudio() then
+		return true
+	end
+	return userId == game.CreatorId
+end
 
 local function _getPlayerStateWithRetry(userId: number, timeoutSeconds: number?): any
 	if not SaveService or not SaveService.getPlayerState then
@@ -1013,6 +1021,32 @@ local function _onShopGetGoldRequest(player: Player, _payload: any)
 	}
 end
 
+local function _onAdminGrantGoldRequest(player: Player, payload: any)
+	if not _isAdmin(player.UserId) then
+		return { success = false, errorCode = Enums.ErrorCode.NO_PERMISSION }
+	end
+
+	local amount = math.floor(tonumber(payload and payload.amount) or 0)
+	if amount <= 0 then
+		return { success = false, errorCode = Enums.ErrorCode.INVALID_COUNT }
+	end
+
+	local targetUserId = math.floor(tonumber(payload and payload.targetUserId) or player.UserId)
+	local ok, err = NPCShopService.addGold(targetUserId, amount)
+	if not ok then
+		return { success = false, errorCode = err or Enums.ErrorCode.INVALID_STATE }
+	end
+
+	return {
+		success = true,
+		data = {
+			targetUserId = targetUserId,
+			amount = amount,
+			gold = NPCShopService.getGold(targetUserId),
+		},
+	}
+end
+
 --========================================
 -- Player Events
 --========================================
@@ -1084,6 +1118,7 @@ function NPCShopService.GetHandlers()
 		["Shop.Buy.Request"] = _onShopBuyRequest,
 		["Shop.Sell.Request"] = _onShopSellRequest,
 		["Shop.GetGold.Request"] = _onShopGetGoldRequest,
+		["Shop.Admin.GrantGold.Request"] = _onAdminGrantGoldRequest,
 	}
 end
 

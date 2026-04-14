@@ -160,6 +160,21 @@ local function isBowWeapon(itemData, toolType: string?): boolean
 	return opt == "BOW" or opt == "CROSSBOW"
 end
 
+local function canBreakBlocksWithItem(itemData): boolean
+	if type(itemData) ~= "table" then
+		return false
+	end
+	local itemType = tostring(itemData.type or "")
+	if itemType == "TOOL" then
+		return true
+	end
+	if itemType ~= "WEAPON" then
+		return false
+	end
+	local toolKind = string.upper(tostring(itemData.optimalTool or ""))
+	return toolKind ~= "BOW" and toolKind ~= "CROSSBOW"
+end
+
 local function getBowMuzzleOrigin(): Vector3?
 	local character = player.Character
 	if not character then return nil end
@@ -1282,6 +1297,19 @@ function CombatController.Init()
 			fireBowInstant(hitPos)
 			return
 		end
+
+		local BlockBuildController = require(Client.Controllers.BlockBuildController)
+		local hoveredBlockId = BlockBuildController.getHoveredBlockId and BlockBuildController.getHoveredBlockId() or nil
+		if hoveredBlockId and canBreakBlocksWithItem(itm) then
+			local ok, err = NetClient.Request("BlockBuild.Remove.Request", {
+				blockId = hoveredBlockId,
+			})
+			if not ok then
+				UIManager.notify(BlockBuildController.getFriendlyError(err), Color3.fromRGB(255, 100, 100))
+			end
+			return
+		end
+
 		CombatController.attack()
 	end)
 
