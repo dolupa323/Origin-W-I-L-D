@@ -61,6 +61,33 @@ local function getQueue(userId: number): { [string]: any }
 	return craftQueues[userId]
 end
 
+local function getRecipeXPSource(recipe: any): string
+	if not recipe then
+		return Enums.XPSource.CRAFT_ITEM
+	end
+
+	local requiredFacility = tostring(recipe.requiredFacility or "")
+	local category = tostring(recipe.category or "")
+	if requiredFacility == Enums.FacilityType.COOKING or category == "FOOD" then
+		return Enums.XPSource.COOK_ITEM
+	end
+	if string.find(requiredFacility, "SMELTING_", 1, true) or category == "BLOCK_PROCESS" or category == "RESOURCE" then
+		return Enums.XPSource.PROCESS_ITEM
+	end
+	return Enums.XPSource.CRAFT_ITEM
+end
+
+local function getRecipeXPAmount(recipe: any): number
+	local source = getRecipeXPSource(recipe)
+	local baseAmount = Balance.XP_CRAFT_ITEM or 5
+	if source == Enums.XPSource.COOK_ITEM then
+		baseAmount = Balance.XP_COOK_ITEM or baseAmount
+	elseif source == Enums.XPSource.PROCESS_ITEM then
+		baseAmount = Balance.XP_PROCESS_ITEM or baseAmount
+	end
+	return baseAmount * (recipe and (recipe.xpMultiplier or 1) or 1)
+end
+
 --========================================
 -- Internal: 큐 크기 카운트
 --========================================
@@ -128,6 +155,22 @@ local function validateFacilityAccess(player: Player, structureId: string?, requ
 	end
 	
 	return true, nil
+end
+
+local function recipeAllowsFacilityId(recipe: any, facilityId: string?): boolean
+	local allowedFacilityIds = recipe and recipe.allowedFacilityIds
+	if type(allowedFacilityIds) ~= "table" or #allowedFacilityIds == 0 then
+		return true
+	end
+	if not facilityId then
+		return false
+	end
+	for _, allowedId in ipairs(allowedFacilityIds) do
+		if allowedId == facilityId then
+			return true
+		end
+	end
+	return false
 end
 
 --========================================
@@ -475,6 +518,13 @@ function CraftingService.start(player: Player, recipeId: string, structureId: st
 	if not facilityOk then
 		return false, facilityErr, nil
 	end
+	if recipe.requiredFacility and structureId then
+		local structure = BuildService.get(structureId)
+		local facilityId = structure and structure.facilityId or nil
+		if not recipeAllowsFacilityId(recipe, facilityId) then
+			return false, Enums.ErrorCode.NO_FACILITY, nil
+		end
+	end
 	
 	-- 4. 재료 보유 검증
 	local requiredInputs = scaleInputs(recipe.inputs, craftCount)
@@ -569,7 +619,10 @@ function CraftingService.start(player: Player, recipeId: string, structureId: st
 		
 		-- Phase 6: XP 보상
 		if PlayerStatService then
-			PlayerStatService.addXP(userId, (Balance.XP_CRAFT_ITEM or 5) * (recipe.xpMultiplier or 1), Enums.XPSource.CRAFT_ITEM)
+			PlayerStatService.grantActionXP(userId, getRecipeXPAmount(recipe), {
+				source = getRecipeXPSource(recipe),
+				actionKey = "RECIPE:" .. tostring(recipeId),
+			})
 		end
 		
 		-- Phase 8: 퀘스트 콜백
@@ -780,7 +833,12 @@ function CraftingService.collect(player: Player, craftId: string, count: number?
 	
 	-- 3a. 경험치 보상 (Phase 6)
 	if PlayerStatService then
-		PlayerStatService.addXP(userId, ((Balance.XP_CRAFT_ITEM or 5) * (recipe.xpMultiplier or 1)) * collectCount, Enums.XPSource.CRAFT_ITEM)
+		for _ = 1, collectCount do
+			PlayerStatService.grantActionXP(userId, getRecipeXPAmount(recipe), {
+				source = getRecipeXPSource(recipe),
+				actionKey = "RECIPE:" .. tostring(entry.recipeId),
+			})
+		end
 	end
 	
 	-- 3b. 퀘스트 콜백 (Phase 8)

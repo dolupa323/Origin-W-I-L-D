@@ -23,6 +23,7 @@ local DataHelper = require(Shared.Util.DataHelper)
 --========================================
 local playerStats = {}  -- [userId] = { level, currentXP, totalXP, techPointsSpent, statPoints = { StatId -> Level } }
 local totalXPTable = {} -- [level] = totalXPRequired (Pre-calculated lookup table)
+local recentActionXP = {} -- [userId] = { [bucketKey] = { count, lastAt } }
 
 -- Level up callback (Phase 8)
 local levelUpCallback = nil
@@ -149,6 +150,56 @@ local function _savePlayerStats(userId: number)
 	end
 end
 
+local function _cleanupRecentActionXP(userId: number, nowTime: number)
+	local byUser = recentActionXP[userId]
+	if not byUser then
+		return
+	end
+
+	local expireAfter = (Balance.XP_REPEAT_WINDOW or 120) * 2
+	for bucketKey, entry in pairs(byUser) do
+		if not entry or (nowTime - (entry.lastAt or 0)) > expireAfter then
+			byUser[bucketKey] = nil
+		end
+	end
+
+	if next(byUser) == nil then
+		recentActionXP[userId] = nil
+	end
+end
+
+local function _getActionXPMultiplier(userId: number, bucketKey: string?): number
+	if not bucketKey or bucketKey == "" then
+		return 1
+	end
+
+	local nowTime = os.clock()
+	local repeatWindow = Balance.XP_REPEAT_WINDOW or 120
+	local repeatStep = Balance.XP_REPEAT_STEP or 0.12
+	local repeatMinMult = Balance.XP_REPEAT_MIN_MULT or 0.25
+
+	_cleanupRecentActionXP(userId, nowTime)
+	local byUser = recentActionXP[userId]
+	if not byUser then
+		byUser = {}
+		recentActionXP[userId] = byUser
+	end
+
+	local entry = byUser[bucketKey]
+	if entry and (nowTime - (entry.lastAt or 0)) <= repeatWindow then
+		entry.count = (entry.count or 1) + 1
+		entry.lastAt = nowTime
+	else
+		entry = {
+			count = 1,
+			lastAt = nowTime,
+		}
+		byUser[bucketKey] = entry
+	end
+
+	return math.clamp(1 - ((entry.count - 1) * repeatStep), repeatMinMult, 1)
+end
+
 --========================================
 -- XP Addition (Updated with logging)
 --========================================
@@ -209,6 +260,37 @@ function PlayerStatService.addXP(userId: number, amount: number, source: string?
 	end
 	
 	return leveledUp, stats.level
+end
+
+function PlayerStatService.grantActionXP(userId: number, baseAmount: number, payload: any?): (boolean, number, number)
+	if typeof(baseAmount) ~= "number" or baseAmount <= 0 then
+		return false, PlayerStatService.getLevel(userId), 0
+	end
+
+	local source = nil
+	local actionKey = nil
+	local disableDiminishing = false
+	if type(payload) == "table" then
+		source = payload.source
+		actionKey = payload.actionKey
+		disableDiminishing = payload.disableDiminishing == true
+	else
+		source = payload
+	end
+
+	local bucketKey = nil
+	if source and actionKey then
+		bucketKey = tostring(source) .. "::" .. tostring(actionKey)
+	elseif actionKey then
+		bucketKey = tostring(actionKey)
+	elseif source then
+		bucketKey = tostring(source)
+	end
+
+	local multiplier = disableDiminishing and 1 or _getActionXPMultiplier(userId, bucketKey)
+	local finalAmount = math.max(1, math.floor(baseAmount * multiplier + 0.0001))
+	local leveledUp, level = PlayerStatService.addXP(userId, finalAmount, source)
+	return leveledUp, level, finalAmount
 end
 
 --========================================
@@ -621,6 +703,7 @@ function PlayerStatService.Init(netController, saveService, dataService, stamina
 	game:GetService("Players").PlayerRemoving:Connect(function(player)
 		_savePlayerStats(player.UserId)
 		playerStats[player.UserId] = nil
+		recentActionXP[player.UserId] = nil
 	end)
 	
 	-- 이미 접속한 플레이어 처리

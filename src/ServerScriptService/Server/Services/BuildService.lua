@@ -377,12 +377,17 @@ end
 local function resolveServerPlacementTiltOffset(facilityId: string, facilityData: any, model: Model): Vector3
 	if type(facilityData) == "table" then
 		local configured = facilityData.placementTiltOffset or facilityData.placementRotationOffset
+		local yawOffset = tonumber(facilityData.placementYawOffset) or 0
 		if typeof(configured) == "Vector3" then
-			return Vector3.new(configured.X, 0, configured.Z)
+			return Vector3.new(configured.X, yawOffset + configured.Y, configured.Z)
 		elseif type(configured) == "table" then
 			local x = tonumber(configured.X or configured.x) or 0
+			local y = tonumber(configured.Y or configured.y) or 0
 			local z = tonumber(configured.Z or configured.z) or 0
-			return Vector3.new(x, 0, z)
+			return Vector3.new(x, yawOffset + y, z)
+		end
+		if yawOffset ~= 0 then
+			return Vector3.new(0, yawOffset, 0)
 		end
 	end
 
@@ -698,7 +703,10 @@ function BuildService.place(player: Player, facilityId: string, position: Vector
 	
 	-- 11a. 경험치 보상 (Phase 6)
 	if PlayerStatService then
-		PlayerStatService.addXP(userId, Balance.XP_BUILD or 30, "BUILD")
+		PlayerStatService.grantActionXP(userId, Balance.XP_BUILD or 30, {
+			source = Enums.XPSource.BUILD,
+			actionKey = "FACILITY:" .. tostring(facilityId),
+		})
 	end
 	
 	-- 11b. 퀘스트 콜백 (Phase 8)

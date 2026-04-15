@@ -76,6 +76,7 @@ local MIN_SPAWN_DIST = 40
 local MAX_SPAWN_DIST = 80
 local WANDER_RADIUS = 18
 local DESPAWN_DIST = Balance.CREATURE_DESPAWN_DIST or 300 -- 150 -> 300 (LOD가 있으므로 시야 상향)
+local CREATURE_DESPAWN_GRACE_AFTER_COMBAT = 60
 local CREATURE_ATTACK_COOLDOWN = 2 -- 크리처 공격 쿨다운 (초)
 local DEATH_FADE_TIME = 1.1
 local DEATH_SINK_DISTANCE = 2.5
@@ -104,6 +105,8 @@ local AGGRO_COOLDOWN = 5 -- 어그로 다시 끌리기까지의 최소 시간 ->
 local SEA_LEVEL = Balance.SEA_LEVEL or 2 -- Balance 기준 해수면 높이 사용
 local WATER_CHECK_DISTANCE = 5 -- 이동 전 물 체크 거리
 local WATER_MARGIN = 10 -- 물 반경 접근 금지 거리 (studs)
+local CREATURE_MIN_SPAWN_SEPARATION = 18
+local isSpawnPositionOccupied
 
 -- Torpor 관련 (Phase 6)
 local TORPOR_DECAY_RATE = 2 -- 초당 Torpor 감소량
@@ -558,6 +561,10 @@ function CreatureService.spawn(creatureId, position)
 		return nil
 	end
 
+	if not position or isSpawnPositionOccupied(position) then
+		return nil
+	end
+
 	local data = DataService.getCreature(creatureId)
 	if not data then
 		warn("[CreatureService] Invalid creature ID:", creatureId)
@@ -928,6 +935,8 @@ function CreatureService.processAttack(instanceId: string, hpDamage: number, tor
 	if not creature or not creature.humanoid or creature.currentHealth <= 0 then
 		return false, nil
 	end
+
+	creature.lastDamagedAt = tick()
 	
 	-- 1. 데미지 및 기절 수치 적용
 	creature.currentHealth = math.max(0, creature.currentHealth - hpDamage)
@@ -1092,7 +1101,10 @@ function CreatureService.processAttack(instanceId: string, hpDamage: number, tor
 		-- 경험치 보상 및 도감 등록
 		if PlayerStatService and attacker then
 			local xpAmount = creature.data.xpReward or 25
-			PlayerStatService.addXP(attacker.UserId, xpAmount, Enums.XPSource.CREATURE_KILL)
+			PlayerStatService.grantActionXP(attacker.UserId, xpAmount, {
+				source = Enums.XPSource.CREATURE_KILL,
+				actionKey = "CREATURE:" .. tostring(creature.creatureId),
+			})
 			
 			-- 개별 도감 누적 (DNA 획득)
 			PlayerStatService.addCollectionDna(attacker.UserId, creature.creatureId, 1)
@@ -1273,7 +1285,7 @@ function CreatureService._findSpawnPosition(playerRootPart: Part): Vector3?
 			if not isWater and not belowSeaLevel then
 				local spawnPos = result.Position + Vector3.new(0, 0.5, 0)
 				-- 추가 안전 체크: 물 반경 이내 스폰 방지
-				if not CreatureService._isNearWater(spawnPos) then
+				if not CreatureService._isNearWater(spawnPos) and not isSpawnPositionOccupied(spawnPos) then
 					return spawnPos
 				end
 			end
@@ -1314,13 +1326,20 @@ function CreatureService._findMapSpawnPosition(center: Vector3, radius: number):
 			if not isWater and not belowSeaLevel then
 				local pos = result.Position + Vector3.new(0, 0.5, 0)
 				-- 물 반경 이내 스폰 방지
-				if not CreatureService._isNearWater(pos) then
+				if not CreatureService._isNearWater(pos) and not isSpawnPositionOccupied(pos) then
 					return pos
 				end
 			end
 		end
 	end
 	return nil
+end
+
+local function getZoneCreatureSpawnRadius(zoneInfo, fallbackRadius)
+	if zoneInfo and tonumber(zoneInfo.creatureSpawnRadius) then
+		return tonumber(zoneInfo.creatureSpawnRadius)
+	end
+	return fallbackRadius
 end
 
 	-- ★ 초기 대량 스폰 (서버 시작 시 허브 Zone만 크리처 배치, 비허브는 SpawnZone으로 지연)
@@ -1341,7 +1360,7 @@ function CreatureService._initialSpawn()
 		if not zoneInfo then continue end
 
 		local zoneCenter = zoneInfo.center
-		local zoneRadius = math.min(SPAWN_RADIUS, zoneInfo.radius)
+		local zoneRadius = math.min(getZoneCreatureSpawnRadius(zoneInfo, SPAWN_RADIUS), zoneInfo.radius)
 
 		print(string.format("[CreatureService] Zone '%s' initial spawn: %d creatures, radius %.0f, center %s",
 			zoneName, PER_ZONE_COUNT, zoneRadius, tostring(zoneCenter)))
@@ -1403,7 +1422,7 @@ function CreatureService.SpawnZone(zoneName)
 	if not zoneInfo then return end
 
 	local zoneCenter = zoneInfo.center
-	local zoneRadius = math.min(SPAWN_RADIUS, zoneInfo.radius)
+	local zoneRadius = math.min(getZoneCreatureSpawnRadius(zoneInfo, SPAWN_RADIUS), zoneInfo.radius)
 
 	print(string.format("[CreatureService] SpawnZone '%s': %d creatures, radius %.0f", zoneName, PER_ZONE_COUNT, zoneRadius))
 
@@ -1484,6 +1503,13 @@ function CreatureService._replenishLoop()
 			if not zoneName then continue end
 
 			local pos = CreatureService._findSpawnPosition(char.HumanoidRootPart)
+			if not pos then
+				local zoneInfo = SpawnConfig.GetZoneInfo(zoneName)
+				if zoneInfo then
+					local fallbackRadius = getZoneCreatureSpawnRadius(zoneInfo, Balance.CREATURE_INITIAL_SPAWN_RADIUS or 300)
+					pos = CreatureService._findMapSpawnPosition(zoneInfo.center, math.min(fallbackRadius, zoneInfo.radius))
+				end
+			end
 			if pos then
 				local cid = SpawnConfig.GetRandomCreatureForZone(zoneName)
 				if not cid then continue end
@@ -1541,6 +1567,18 @@ local function getSmartWanderTarget(hrpPos, currentDir, radius)
 	local newAngle = baseAngle + deviation
 	local dist = radius * (0.4 + math.random() * 0.6) -- 거리도 변동
 	return hrpPos + Vector3.new(math.sin(newAngle) * dist, 0, math.cos(newAngle) * dist)
+end
+
+isSpawnPositionOccupied = function(position: Vector3, minDistance: number?): boolean
+	local requiredDistance = minDistance or CREATURE_MIN_SPAWN_SEPARATION
+	for _, creature in pairs(activeCreatures) do
+		if creature and creature.rootPart and creature.model and creature.model.Parent then
+			if (creature.rootPart.Position - position).Magnitude < requiredDistance then
+				return true
+			end
+		end
+	end
+	return false
 end
 
 --- AI 업데이트 루프 (상태 머신)
@@ -1660,6 +1698,10 @@ function CreatureService._updateAILoop()
 			creatureCount = creatureCount - 1
 			continue
 		end
+
+		if (creature.currentHealth or 0) <= 0 or creature.state == "DEAD" then
+			continue
+		end
 		
 		local hrp = creature.rootPart
 		if not hrp then continue end
@@ -1700,12 +1742,17 @@ function CreatureService._updateAILoop()
 		-- [FIX] 플레이어가 1명이라도 있을 때만 Despawn 체크 수행 (서버 시작 시 멸종 방지)
 		-- 또한 minDist가 9999(초기값)라는 것은 주변에 플레이어가 아예 없다는 뜻임.
 		if #allPlayers > 0 and minDist > DESPAWN_DIST then
-			local CombatService = require(game:GetService("ServerScriptService").Server.Services.CombatService)
-			if CombatService.disengageCreature then CombatService.disengageCreature(id) end
-			creature.model:Destroy()
-			activeCreatures[id] = nil
-			creatureCount = creatureCount - 1
-			continue
+			local recentlyEngaged = creature.lastDamagedAt and ((now - creature.lastDamagedAt) < CREATURE_DESPAWN_GRACE_AFTER_COMBAT)
+			local isWounded = creature.currentHealth and creature.maxHealth and creature.currentHealth < creature.maxHealth
+			local isInActiveCombatState = creature.state == "CHASE" or creature.state == "ATTACK" or creature.state == "FLEE" or creature.state == "STUNNED"
+			if not recentlyEngaged and not isWounded and not isInActiveCombatState then
+				local CombatService = require(game:GetService("ServerScriptService").Server.Services.CombatService)
+				if CombatService.disengageCreature then CombatService.disengageCreature(id) end
+				creature.model:Destroy()
+				activeCreatures[id] = nil
+				creatureCount = creatureCount - 1
+				continue
+			end
 		end
 		
 		-- 2.5 Torpor Decay (Phase 6)
@@ -2443,6 +2490,7 @@ function CreatureService._updateAILoop()
 								task.delay(attackDelay, function()
 									local currentCreature = activeCreatures[id]
 									if not currentCreature or not currentCreature.model or not currentCreature.model.Parent then return end
+									if (currentCreature.currentHealth or 0) <= 0 or currentCreature.state == "DEAD" then return end
 
 									local player = Players:GetPlayerByUserId(closestPlayerUserId)
 									if not player then return end
@@ -2544,6 +2592,7 @@ function CreatureService._updateAILoop()
 								-- 1. 크리처 활성 상태 재확인
 								local currentCreature = activeCreatures[id]
 								if not currentCreature or not currentCreature.model or not currentCreature.model.Parent then return end
+								if (currentCreature.currentHealth or 0) <= 0 or currentCreature.state == "DEAD" then return end
 
 								if getProtectedZoneInfo(currentCreature.rootPart.Position) then
 									return

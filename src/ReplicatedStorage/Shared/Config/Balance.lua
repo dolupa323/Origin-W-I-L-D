@@ -122,6 +122,11 @@ Balance.XP_CRAFT_ITEM = 50000          -- 아이템 제작 (2000 -> 50000)
 Balance.XP_CAPTURE_PAL = 500000         -- 팰 포획 성공 (20000 -> 500000)
 Balance.XP_HARVEST_RESOURCE = 1000000     -- 자원 채집 (100000 -> 1000000)
 Balance.XP_BUILD = 30                  -- 구조물 배치 보상 XP
+Balance.XP_COOK_ITEM = 50000           -- 요리 XP
+Balance.XP_PROCESS_ITEM = 50000        -- 가공/제련 XP
+Balance.XP_REPEAT_WINDOW = 120         -- 동일 행동 반복 판정 시간(초)
+Balance.XP_REPEAT_STEP = 0.12          -- 동일 행동 반복 시 회당 효율 감소량
+Balance.XP_REPEAT_MIN_MULT = 0.25      -- 반복 행동 최소 XP 배율
 
 --========================================
 -- 플레이어 스탯 보너스 (Phase 6)
@@ -204,7 +209,7 @@ Balance.HARVEST_BAREHAND_HP_PENALTY = 2 -- 맨손으로 나무/바위 타격 시
 -- 베이스 시스템 (Phase 7)
 --========================================
 Balance.BASE_DEFAULT_RADIUS = 30       -- 기본 베이스 반경
-Balance.BASE_MAX_RADIUS = 100          -- 최대 베이스 반경
+Balance.BASE_MAX_RADIUS = 60           -- 최대 베이스 반경/방향 확장 상한
 Balance.BASE_RADIUS_PER_LEVEL = 10     -- 레벨당 추가 반경
 Balance.BASE_DIRECTIONAL_EXPAND_STEP = 8 -- 방향 확장 1회 길이
 Balance.BASE_DIRECTIONAL_EXPAND_COST_BASE = 500 -- 방향 확장 기본 골드

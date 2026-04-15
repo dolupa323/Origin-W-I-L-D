@@ -15,11 +15,13 @@ local ZONES = {
 		center = Vector3.new(-128, 0, -278),      -- 초원 섬 중심 좌표 (Studio SpawnLocation 기준)
 		radius = 2500,                             -- 영역 반경 (studs)
 		spawnPoint = Vector3.new(-128, 20, -278),  -- 초원 섬 기본 스폰 지점
+		creatureSpawnRadius = 300,                 -- 크리처 스폰용 실제 육지 반경
 	},
 	TROPICAL = {
 		center = Vector3.new(-184, 10, 2788),            -- 열대 섬 중심 좌표 (귀환 포탈 기준)
 		radius = 2500,                                  -- 영역 반경 (studs)
 		spawnPoint = Vector3.new(-184, 45, 2788),       -- 열대 섬 기본 스폰 지점 (귀환 포탈 근처)
+		creatureSpawnRadius = 180,                      -- 열대섬은 육지 폭이 좁아서 스폰 반경을 별도로 줄인다
 	},
 }
 

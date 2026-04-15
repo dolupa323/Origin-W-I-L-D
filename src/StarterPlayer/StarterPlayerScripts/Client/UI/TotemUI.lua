@@ -12,6 +12,8 @@ TotemUI.Refs = {}
 
 local currentUIManager = nil
 local expandSelectionVisible = false
+local latestInfo = nil
+local countdownThreadStarted = false
 
 local function setExpandSelectionVisible(visible)
 	expandSelectionVisible = visible == true
@@ -37,6 +39,115 @@ local function formatRemaining(seconds)
 		return string.format("%d시간 %d분", h, m)
 	end
 	return string.format("%d분", m)
+end
+
+local function getLiveUpkeepState(info)
+	local upkeep = type(info) == "table" and info.upkeep or {}
+	local expiresAt = tonumber(upkeep and upkeep.expiresAt) or 0
+	if expiresAt > 0 then
+		local remainingSeconds = math.max(0, expiresAt - os.time())
+		return remainingSeconds > 0, remainingSeconds
+	end
+	local remainingSeconds = math.max(0, math.floor(tonumber(upkeep and upkeep.remainingSeconds) or 0))
+	return remainingSeconds > 0, remainingSeconds
+end
+
+local function refreshLiveCountdown()
+	if not TotemUI.Refs.Frame or not TotemUI.Refs.Frame.Visible or type(latestInfo) ~= "table" then
+		return
+	end
+
+	local active, remainingSeconds = getLiveUpkeepState(latestInfo)
+	local upkeep = latestInfo.upkeep or {}
+	local west = tonumber(latestInfo.westExtent) or tonumber(latestInfo.radius) or 0
+	local east = tonumber(latestInfo.eastExtent) or tonumber(latestInfo.radius) or 0
+	local north = tonumber(latestInfo.northExtent) or tonumber(latestInfo.radius) or 0
+	local south = tonumber(latestInfo.southExtent) or tonumber(latestInfo.radius) or 0
+	local gold = tonumber(latestInfo.gold) or 0
+	local expand = latestInfo.expansion or {}
+	local nextCost = tonumber(expand.nextCost) or 0
+	local freePoints = tonumber(expand.availablePoints) or 0
+
+	TotemUI.Refs.Status.Text = active and "보호 상태: 활성" or "보호 상태: 비활성"
+	TotemUI.Refs.Status.TextColor3 = active and Color3.fromRGB(120, 200, 80) or Color3.fromRGB(200, 95, 85)
+	TotemUI.Refs.Remaining.Text = "효과 유지 기간: " .. formatRemaining(remainingSeconds)
+	TotemUI.Refs.Radius.Text = string.format("보호 범위: %.0fm x %.0fm", west + east, north + south)
+	TotemUI.Refs.Gold.Text = string.format("보유 골드: %d", gold)
+	TotemUI.Refs.ExpandInfo.Text = string.format(
+		"확장 상태: 북 %.0f / 남 %.0f / 동 %.0f / 서 %.0f\n다음 확장: %s",
+		north,
+		south,
+		east,
+		west,
+		freePoints > 0 and ("재배치 포인트 사용 (" .. tostring(freePoints) .. " 남음)") or (tostring(nextCost) .. " Gold")
+	)
+	TotemUI.Refs.RaidWarning.Visible = not active
+
+	local opts = upkeep.options or {}
+	local function costFor(days, fallback)
+		for _, opt in ipairs(opts) do
+			if tonumber(opt.days) == days then
+				return tonumber(opt.cost) or fallback
+			end
+		end
+		return fallback
+	end
+
+	TotemUI.Refs.Cost1.Text = string.format("1일 유지 ~ %d Gold", costFor(1, 100))
+	TotemUI.Refs.Cost3.Text = string.format("3일 유지 ~ %d Gold", costFor(3, 280))
+	TotemUI.Refs.Cost7.Text = string.format("7일 유지 ~ %d Gold", costFor(7, 630))
+
+	local canManage = latestInfo.canManage == true
+	local canExpand = canManage and active
+	TotemUI.Refs.Cost1.Active = canManage
+	TotemUI.Refs.Cost1.AutoButtonColor = canManage
+	TotemUI.Refs.Cost3.Active = canManage
+	TotemUI.Refs.Cost3.AutoButtonColor = canManage
+	TotemUI.Refs.Cost7.Active = canManage
+	TotemUI.Refs.Cost7.AutoButtonColor = canManage
+	TotemUI.Refs.ExpandToggle.Active = canExpand
+	TotemUI.Refs.ExpandToggle.AutoButtonColor = canExpand
+	TotemUI.Refs.ExpandNorth.Active = canExpand
+	TotemUI.Refs.ExpandNorth.AutoButtonColor = canExpand
+	TotemUI.Refs.ExpandWest.Active = canExpand
+	TotemUI.Refs.ExpandWest.AutoButtonColor = canExpand
+	TotemUI.Refs.ExpandEast.Active = canExpand
+	TotemUI.Refs.ExpandEast.AutoButtonColor = canExpand
+	TotemUI.Refs.ExpandSouth.Active = canExpand
+	TotemUI.Refs.ExpandSouth.AutoButtonColor = canExpand
+
+	if canManage then
+		TotemUI.Refs.Cost1.TextTransparency = 0
+		TotemUI.Refs.Cost3.TextTransparency = 0
+		TotemUI.Refs.Cost7.TextTransparency = 0
+	else
+		TotemUI.Refs.Cost1.TextTransparency = 0.35
+		TotemUI.Refs.Cost3.TextTransparency = 0.35
+		TotemUI.Refs.Cost7.TextTransparency = 0.35
+	end
+
+	local expandTransparency = canExpand and 0 or 0.35
+	TotemUI.Refs.ExpandToggle.TextTransparency = expandTransparency
+	TotemUI.Refs.ExpandNorth.TextTransparency = expandTransparency
+	TotemUI.Refs.ExpandWest.TextTransparency = expandTransparency
+	TotemUI.Refs.ExpandEast.TextTransparency = expandTransparency
+	TotemUI.Refs.ExpandSouth.TextTransparency = expandTransparency
+	if not canExpand then
+		setExpandSelectionVisible(false)
+	end
+end
+
+local function ensureCountdownThread()
+	if countdownThreadStarted then
+		return
+	end
+	countdownThreadStarted = true
+	task.spawn(function()
+		while true do
+			refreshLiveCountdown()
+			task.wait(1)
+		end
+	end)
 end
 
 function TotemUI.Init(parent, UIManager, isMobile)
@@ -354,6 +465,8 @@ function TotemUI.Init(parent, UIManager, isMobile)
 		end,
 		parent = window,
 	})
+
+	ensureCountdownThread()
 end
 
 function TotemUI.SetVisible(visible)
@@ -369,86 +482,8 @@ function TotemUI.Refresh(info)
 	if type(info) ~= "table" then
 		return
 	end
-
-	local upkeep = info.upkeep or {}
-	local active = upkeep.active == true
-	local remaining = formatRemaining(upkeep.remainingSeconds)
-	local west = tonumber(info.westExtent) or tonumber(info.radius) or 0
-	local east = tonumber(info.eastExtent) or tonumber(info.radius) or 0
-	local north = tonumber(info.northExtent) or tonumber(info.radius) or 0
-	local south = tonumber(info.southExtent) or tonumber(info.radius) or 0
-	local gold = tonumber(info.gold) or 0
-	local expand = info.expansion or {}
-	local nextCost = tonumber(expand.nextCost) or 0
-	local freePoints = tonumber(expand.availablePoints) or 0
-
-	TotemUI.Refs.Status.Text = active and "보호 상태: 활성" or "보호 상태: 비활성"
-	TotemUI.Refs.Status.TextColor3 = active and Color3.fromRGB(120, 200, 80) or Color3.fromRGB(200, 95, 85)
-	TotemUI.Refs.Remaining.Text = "효과 유지 기간: " .. remaining
-	TotemUI.Refs.Radius.Text = string.format("보호 범위: %.0fm x %.0fm", west + east, north + south)
-	TotemUI.Refs.Gold.Text = string.format("보유 골드: %d", gold)
-	TotemUI.Refs.ExpandInfo.Text = string.format(
-		"확장 상태: 북 %.0f / 남 %.0f / 동 %.0f / 서 %.0f\n다음 확장: %s",
-		north,
-		south,
-		east,
-		west,
-		freePoints > 0 and ("재배치 포인트 사용 (" .. tostring(freePoints) .. " 남음)") or (tostring(nextCost) .. " Gold")
-	)
-	TotemUI.Refs.RaidWarning.Visible = not active
-
-	local opts = upkeep.options or {}
-	local function costFor(days, fallback)
-		for _, opt in ipairs(opts) do
-			if tonumber(opt.days) == days then
-				return tonumber(opt.cost) or fallback
-			end
-		end
-		return fallback
-	end
-
-	TotemUI.Refs.Cost1.Text = string.format("1일 유지 ~ %d Gold", costFor(1, 100))
-	TotemUI.Refs.Cost3.Text = string.format("3일 유지 ~ %d Gold", costFor(3, 280))
-	TotemUI.Refs.Cost7.Text = string.format("7일 유지 ~ %d Gold", costFor(7, 630))
-
-	local canManage = info.canManage == true
-	local canExpand = canManage and active
-	TotemUI.Refs.Cost1.Active = canManage
-	TotemUI.Refs.Cost1.AutoButtonColor = canManage
-	TotemUI.Refs.Cost3.Active = canManage
-	TotemUI.Refs.Cost3.AutoButtonColor = canManage
-	TotemUI.Refs.Cost7.Active = canManage
-	TotemUI.Refs.Cost7.AutoButtonColor = canManage
-	TotemUI.Refs.ExpandToggle.Active = canExpand
-	TotemUI.Refs.ExpandToggle.AutoButtonColor = canExpand
-	TotemUI.Refs.ExpandNorth.Active = canExpand
-	TotemUI.Refs.ExpandNorth.AutoButtonColor = canExpand
-	TotemUI.Refs.ExpandWest.Active = canExpand
-	TotemUI.Refs.ExpandWest.AutoButtonColor = canExpand
-	TotemUI.Refs.ExpandEast.Active = canExpand
-	TotemUI.Refs.ExpandEast.AutoButtonColor = canExpand
-	TotemUI.Refs.ExpandSouth.Active = canExpand
-	TotemUI.Refs.ExpandSouth.AutoButtonColor = canExpand
-
-	if canManage then
-		TotemUI.Refs.Cost1.TextTransparency = 0
-		TotemUI.Refs.Cost3.TextTransparency = 0
-		TotemUI.Refs.Cost7.TextTransparency = 0
-	else
-		TotemUI.Refs.Cost1.TextTransparency = 0.35
-		TotemUI.Refs.Cost3.TextTransparency = 0.35
-		TotemUI.Refs.Cost7.TextTransparency = 0.35
-	end
-
-	local expandTransparency = canExpand and 0 or 0.35
-	TotemUI.Refs.ExpandToggle.TextTransparency = expandTransparency
-	TotemUI.Refs.ExpandNorth.TextTransparency = expandTransparency
-	TotemUI.Refs.ExpandWest.TextTransparency = expandTransparency
-	TotemUI.Refs.ExpandEast.TextTransparency = expandTransparency
-	TotemUI.Refs.ExpandSouth.TextTransparency = expandTransparency
-	if not canExpand then
-		setExpandSelectionVisible(false)
-	end
+	latestInfo = info
+	refreshLiveCountdown()
 end
 
 return TotemUI

@@ -187,6 +187,7 @@ local selectedFacilityId = nil -- shared with Crafting or use separate variable
 local selectedBuildId = nil
 local currentFacilityStructureId = nil
 local currentFacilityType = nil
+local currentFacilityId = nil
 local selectedFacilityRecipe = nil
 local currentTotemStructureId = nil
 
@@ -1644,6 +1645,7 @@ end
 function UIManager._onOpenFacility(structureId, data)
 	currentFacilityStructureId = structureId
 	local fId = data and data.facilityId
+	currentFacilityId = fId
 	currentFacilityType = data and data.functionType or (fId and DataHelper.GetData("FacilityData", fId) and DataHelper.GetData("FacilityData", fId).functionType)
 	selectedFacilityRecipe = nil
 	
@@ -1652,7 +1654,11 @@ function UIManager._onOpenFacility(structureId, data)
 
 	if FacilityUI.Refs and FacilityUI.Refs.Title then
 		if currentFacilityType == "CRAFTING_T1" then
-			FacilityUI.Refs.Title.Text = UILocalizer.Localize("기초 작업대 제작 / 나무 블럭가공")
+			if currentFacilityId == "NOVICE_WORKBENCH" then
+				FacilityUI.Refs.Title.Text = UILocalizer.Localize("초급 작업대 제작 / 나무 블럭가공")
+			else
+				FacilityUI.Refs.Title.Text = UILocalizer.Localize("기초 작업대 제작 / 나무 블럭가공")
+			end
 		elseif currentFacilityType == "COOKING" then
 			FacilityUI.Refs.Title.Text = UILocalizer.Localize("요리")
 		elseif currentFacilityType and string.find(currentFacilityType, "SMELTING") then
@@ -1688,6 +1694,7 @@ function UIManager._onCloseFacility()
 	if blurEffect then blurEffect:Destroy(); blurEffect = nil end
 	currentFacilityStructureId = nil
 	currentFacilityType = nil
+	currentFacilityId = nil
 	selectedFacilityRecipe = nil
 	FacilityUI.SetVisible(false)
 	FacilityController.closeFacility()
@@ -1907,11 +1914,27 @@ function UIManager.refreshFacility()
 	if not currentFacilityType then return end
 	
 	task.spawn(function()
+		local function recipeMatchesFacilityId(recipe, facilityId)
+			local allowedFacilityIds = recipe and recipe.allowedFacilityIds
+			if type(allowedFacilityIds) ~= "table" or #allowedFacilityIds == 0 then
+				return true
+			end
+			if not facilityId then
+				return false
+			end
+			for _, allowedId in ipairs(allowedFacilityIds) do
+				if allowedId == facilityId then
+					return true
+				end
+			end
+			return false
+		end
+
 		-- 1. Get recipes
 		local allRecipes = require(ReplicatedStorage.Data.RecipeData)
 		local recipes = {}
 		for _, r in pairs(allRecipes) do
-			if r.requiredFacility == currentFacilityType then
+			if r.requiredFacility == currentFacilityType and recipeMatchesFacilityId(r, currentFacilityId) then
 				local buildSkillId = r.buildSkillId
 				if not buildSkillId or SkillController.isSkillUnlocked(buildSkillId) then
 				table.insert(recipes, r)
@@ -1920,17 +1943,35 @@ function UIManager.refreshFacility()
 		end
 
 		if currentFacilityType == "CRAFTING_T1" then
-			local pinnedOrder = {
-				CRAFT_SPLIT_LOG_TO_PLANK = 1,
-				CRAFT_FIRM_STONE_AXE = 2,
-				CRAFT_FIRM_STONE_PICKAXE = 3,
-				CRAFT_BONE_SWORD = 4,
-				CRAFT_LOG_BLOCK = 5,
-				CRAFT_PALM_BLOCK = 6,
-				CRAFT_REED_BLOCK = 7,
-				CRAFT_LEATHER_ARMOR = 8,
-				CRAFT_FEATHER_HELMET = 9,
-			}
+			local pinnedOrder
+			if currentFacilityId == "NOVICE_WORKBENCH" then
+				pinnedOrder = {
+					CRAFT_SPLIT_LOG_TO_PLANK = 1,
+					CRAFT_SPLIT_PALM_LOG_TO_PLANK = 2,
+					CRAFT_LOG_BLOCK = 3,
+					CRAFT_PALM_BLOCK = 4,
+					CRAFT_REED_BLOCK = 5,
+					CRAFT_OBSIDIAN_AXE = 6,
+					CRAFT_OBSIDIAN_PICKAXE = 7,
+					CRAFT_OBSIDIAN_SWORD = 8,
+					CRAFT_OBSIDIAN_BOW = 9,
+					CRAFT_STONE_ARROW = 10,
+				}
+			else
+				pinnedOrder = {
+					CRAFT_SPLIT_LOG_TO_PLANK = 1,
+					CRAFT_SPLIT_PALM_LOG_TO_PLANK = 2,
+					CRAFT_FIRM_STONE_AXE = 3,
+					CRAFT_FIRM_STONE_PICKAXE = 4,
+					CRAFT_BONE_SWORD = 5,
+					CRAFT_LOG_BLOCK = 6,
+					CRAFT_PALM_BLOCK = 7,
+					CRAFT_REED_BLOCK = 8,
+					CRAFT_LEATHER_ARMOR = 9,
+					CRAFT_FEATHER_HELMET = 10,
+					CRAFT_STONE_ARROW = 11,
+				}
+			end
 			table.sort(recipes, function(a, b)
 				local ap = pinnedOrder[a.id] or 999
 				local bp = pinnedOrder[b.id] or 999

@@ -149,6 +149,17 @@ local function getBlockData(blockTypeId: string): any?
 	return nil
 end
 
+local function normalizeBlockHealth(blockTypeId: string, rawHealth: any): number
+	local blockData = getBlockData(blockTypeId)
+	local maxHealth = math.max(1, tonumber(blockData and blockData.maxHealth) or 1)
+	local health = tonumber(rawHealth) or maxHealth
+	health = math.floor(health)
+	if health < 1 or health > maxHealth then
+		health = maxHealth
+	end
+	return health
+end
+
 local function getActiveItemData(userId: number): (any?, any?, number)
 	if not InventoryService then
 		return nil, nil, 1
@@ -334,7 +345,7 @@ local function loadBlockRecord(rawBlock: any)
 		id = rawBlock.id,
 		blockTypeId = rawBlock.blockTypeId,
 		ownerId = tonumber(rawBlock.ownerId) or 0,
-		health = tonumber(rawBlock.health) or blockData.maxHealth or 100,
+		health = normalizeBlockHealth(rawBlock.blockTypeId, rawBlock.health),
 		placedAt = tonumber(rawBlock.placedAt) or os.time(),
 		cell = { x = x, y = y, z = z },
 		position = parsePosition(rawBlock.position) or cellToWorld(x, y, z),
@@ -492,7 +503,7 @@ function BlockBuildService.place(player: Player, blockTypeId: string, cell: any,
 		id = makeBlockId(),
 		blockTypeId = blockTypeId,
 		ownerId = userId,
-		health = blockData.maxHealth or 100,
+		health = normalizeBlockHealth(blockTypeId, blockData.maxHealth),
 		placedAt = os.time(),
 		cell = { x = x, y = y, z = z },
 		position = position,
@@ -505,7 +516,10 @@ function BlockBuildService.place(player: Player, blockTypeId: string, cell: any,
 	saveBlock(block)
 
 	if PlayerStatService then
-		PlayerStatService.addXP(userId, Balance.XP_BUILD or 30, "BUILD")
+		PlayerStatService.grantActionXP(userId, Balance.XP_BUILD or 30, {
+			source = Enums.XPSource.BUILD,
+			actionKey = "BLOCK:" .. tostring(blockTypeId),
+		})
 	end
 	if questCallback then
 		questCallback(userId, blockTypeId)
@@ -553,6 +567,20 @@ function BlockBuildService.remove(player: Player, blockId: string): (boolean, st
 		return false, Enums.ErrorCode.NO_TOOL, nil
 	end
 
+	block.health = normalizeBlockHealth(block.blockTypeId, block.health)
+	block.health = math.max(0, (tonumber(block.health) or 1) - 1)
+	if block.instance and block.instance.Parent then
+		block.instance:SetAttribute("Health", block.health)
+	end
+	if block.health > 0 then
+		saveBlock(block)
+		return true, nil, {
+			blockId = blockId,
+			health = block.health,
+			destroyed = false,
+		}
+	end
+
 	if block.instance and block.instance.Parent then
 		block.instance:Destroy()
 	end
@@ -572,7 +600,7 @@ function BlockBuildService.remove(player: Player, blockId: string): (boolean, st
 		InventoryService.addItem(block.ownerId, block.blockTypeId, 1)
 	end
 
-	return true, nil, { blockId = blockId }
+	return true, nil, { blockId = blockId, health = 0, destroyed = true }
 end
 
 local function handlePlace(player: Player, payload: any)

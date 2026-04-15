@@ -39,6 +39,8 @@ local CHARGE_DURATION = 0.25     -- 돌진 소요 시간 (초)
 local FLURRY_DASH_DISTANCE = 12  -- 난무 전진 거리 (스터드)
 local FLURRY_DASH_DURATION = 0.3 -- 난무 전진 시간 (초)
 local FLURRY_HIT_DELAY = 0.35    -- 난무 VFX/사운드 지연 (애니메이션 첫 타격 시점)
+local AXE_A1_CAST_DELAY = 0.35   -- 내려찍기 Cast VFX 시작 지연 (애니메이션 중반)
+local AXE_A3_CAST_DELAY = 0.9    -- 도끼 폭풍 Cast VFX 시작 지연 (Spin 중반)
 
 --========================================
 -- Asset Folders (lazy init)
@@ -228,6 +230,103 @@ local function findVFXTemplates(folder: Folder, baseName: string): { Instance }
 		end
 	end
 	return results
+end
+
+local function spawnAxeCastVFX(skillId: string, hrp: BasePart, castTemplates: { Instance }, castLife: number, castFolder: Folder)
+	if not hrp or not hrp.Parent or #castTemplates <= 0 then
+		return
+	end
+
+	if skillId == "AXE_A1" then
+		local abovePos = hrp.Position + Vector3.new(0, 3, 0) + hrp.CFrame.LookVector * 1
+		local anchor = Instance.new("Part")
+		anchor.Size = Vector3.new(1, 1, 1)
+		anchor.Transparency = 1
+		anchor.Anchored = true
+		anchor.CanCollide = false
+		anchor.CanQuery = false
+		anchor.CanTouch = false
+		anchor.CFrame = CFrame.new(abovePos)
+		anchor.Parent = workspace
+		spawnVFX(castTemplates[1], anchor, castLife)
+		Debris:AddItem(anchor, castLife + 0.5)
+		return
+	end
+
+	if skillId == "AXE_A2" then
+		local anchor = Instance.new("Part")
+		anchor.Size = Vector3.new(1, 1, 1)
+		anchor.Transparency = 1
+		anchor.Anchored = true
+		anchor.CanCollide = false
+		anchor.CanQuery = false
+		anchor.CanTouch = false
+		anchor.CFrame = hrp.CFrame
+		anchor.Parent = workspace
+		spawnVFX(castTemplates[1], anchor, castLife)
+		Debris:AddItem(anchor, castLife + 0.5)
+		return
+	end
+
+	if skillId == "AXE_A3" then
+		local stormCount = 14
+		local stormDuration = 1.8
+		local spawnPos = hrp.Position + hrp.CFrame.LookVector * 5
+
+		local anchor = Instance.new("Part")
+		anchor.Size = Vector3.new(1, 1, 1)
+		anchor.Transparency = 1
+		anchor.Anchored = true
+		anchor.CanCollide = false
+		anchor.CanQuery = false
+		anchor.CanTouch = false
+		anchor.CFrame = CFrame.lookAt(spawnPos, spawnPos + hrp.CFrame.LookVector)
+		anchor.Parent = workspace
+
+		local slamTemplates = findVFXTemplates(castFolder, "SkillAxe_Slam_Cast")
+		if #slamTemplates > 0 then
+			local slamCount = math.random(3, 4)
+			for i = 1, slamCount do
+				task.delay((i - 1) * (stormDuration / slamCount), function()
+					if not anchor or not anchor.Parent then return end
+					local rx = (math.random() - 0.5) * 5
+					local ry = (math.random() - 0.5) * 3
+					local rz = (math.random() - 0.5) * 5
+					local slamAnchor = Instance.new("Part")
+					slamAnchor.Size = Vector3.one
+					slamAnchor.Transparency = 1
+					slamAnchor.Anchored = true
+					slamAnchor.CanCollide = false
+					slamAnchor.CanQuery = false
+					slamAnchor.CanTouch = false
+					slamAnchor.CFrame = CFrame.new(spawnPos + Vector3.new(rx, ry, rz))
+						* CFrame.Angles(0, math.rad(math.random(-30, 30)), 0)
+					slamAnchor.Parent = workspace
+					spawnVFX(slamTemplates[math.random(1, #slamTemplates)], slamAnchor, VFX_CAST_LIFETIME_FLURRY)
+					Debris:AddItem(slamAnchor, VFX_CAST_LIFETIME_FLURRY + 0.5)
+				end)
+			end
+		end
+
+		for i = 1, stormCount do
+			task.delay((i - 1) * (stormDuration / stormCount), function()
+				if not anchor or not anchor.Parent then return end
+				local tmpl = castTemplates[math.random(1, #castTemplates)]
+				local rx = (math.random() - 0.5) * 6
+				local ry = (math.random() - 0.5) * 4
+				local rz = (math.random() - 0.5) * 6
+				local offsetCF = CFrame.new(spawnPos + Vector3.new(rx, ry, rz))
+					* CFrame.Angles(
+						math.rad(math.random(-30, 30)),
+						math.rad(math.random(-180, 180)),
+						math.rad(math.random(-30, 30))
+					)
+				anchor.CFrame = offsetCF
+				spawnVFX(tmpl, anchor, VFX_CAST_LIFETIME_FLURRY)
+			end)
+		end
+		Debris:AddItem(anchor, stormDuration + VFX_CAST_LIFETIME_FLURRY + 0.5)
+	end
 end
 
 --- 스킬 이펙트 전체 실행
@@ -688,101 +787,17 @@ local function executeSkillEffects(userId: number, skillId: string, targetId: st
 		local castTemplates = findVFXTemplates(castVFXFolder, assetName .. "_Cast")
 
 		if skillId == "AXE_A1" then
-			-- ★ 내려찍기: Cast VFX → 캐릭터 머리 위에 Anchored (내려치기 전 기운 모으기)
-			if #castTemplates > 0 then
-				local abovePos = hrp.Position + Vector3.new(0, 3, 0) + hrp.CFrame.LookVector * 1
-				local anchor = Instance.new("Part")
-				anchor.Size = Vector3.new(1, 1, 1)
-				anchor.Transparency = 1
-				anchor.Anchored = true
-				anchor.CanCollide = false
-				anchor.CanQuery = false
-				anchor.CanTouch = false
-				anchor.CFrame = CFrame.new(abovePos)
-				anchor.Parent = workspace
-				spawnVFX(castTemplates[1], anchor, castLife)
-				Debris:AddItem(anchor, castLife + 0.5)
-			end
-
+			task.delay(AXE_A1_CAST_DELAY, function()
+				if not hrp or not hrp.Parent then return end
+				spawnAxeCastVFX(skillId, hrp, castTemplates, castLife, castVFXFolder)
+			end)
 		elseif skillId == "AXE_A2" then
-			-- ★ 회전베기: Cast VFX를 캐릭터 위치에 Anchored (회전 안 따라감)
-			if #castTemplates > 0 then
-				local anchor = Instance.new("Part")
-				anchor.Size = Vector3.new(1, 1, 1)
-				anchor.Transparency = 1
-				anchor.Anchored = true
-				anchor.CanCollide = false
-				anchor.CanQuery = false
-				anchor.CanTouch = false
-				anchor.CFrame = hrp.CFrame
-				anchor.Parent = workspace
-				spawnVFX(castTemplates[1], anchor, castLife)
-				Debris:AddItem(anchor, castLife + 0.5)
-			end
-
+			spawnAxeCastVFX(skillId, hrp, castTemplates, castLife, castVFXFolder)
 		elseif skillId == "AXE_A3" then
-			-- ★ 도끼 폭풍: Storm VFX 난도질 + Slam Cast VFX 3~4회 출력
-			if #castTemplates > 0 then
-				local stormCount = 14
-				local stormDuration = 1.8  -- Spin 재생 시간 동안 퍼부음
-				local spawnPos = hrp.Position + hrp.CFrame.LookVector * 5
-
-				local anchor = Instance.new("Part")
-				anchor.Size = Vector3.new(1, 1, 1)
-				anchor.Transparency = 1
-				anchor.Anchored = true
-				anchor.CanCollide = false
-				anchor.CanQuery = false
-				anchor.CanTouch = false
-				anchor.CFrame = CFrame.lookAt(spawnPos, spawnPos + hrp.CFrame.LookVector)
-				anchor.Parent = workspace
-
-				-- Slam Cast VFX (내려찍기 이펙트) 3~4회 섞어서 출력
-				local slamTemplates = findVFXTemplates(castVFXFolder, "SkillAxe_Slam_Cast")
-				if #slamTemplates > 0 then
-					local slamCount = math.random(3, 4)
-					for i = 1, slamCount do
-						task.delay((i - 1) * (stormDuration / slamCount), function()
-							if not anchor or not anchor.Parent then return end
-							local rx = (math.random() - 0.5) * 5
-							local ry = (math.random() - 0.5) * 3
-							local rz = (math.random() - 0.5) * 5
-							local slamAnchor = Instance.new("Part")
-							slamAnchor.Size = Vector3.one
-							slamAnchor.Transparency = 1
-							slamAnchor.Anchored = true
-							slamAnchor.CanCollide = false
-							slamAnchor.CanQuery = false
-							slamAnchor.CanTouch = false
-							slamAnchor.CFrame = CFrame.new(spawnPos + Vector3.new(rx, ry, rz))
-								* CFrame.Angles(0, math.rad(math.random(-30, 30)), 0)
-							slamAnchor.Parent = workspace
-							spawnVFX(slamTemplates[math.random(1, #slamTemplates)], slamAnchor, VFX_CAST_LIFETIME_FLURRY)
-							Debris:AddItem(slamAnchor, VFX_CAST_LIFETIME_FLURRY + 0.5)
-						end)
-					end
-				end
-
-				for i = 1, stormCount do
-					task.delay((i - 1) * (stormDuration / stormCount), function()
-						if not anchor or not anchor.Parent then return end
-						local tmpl = castTemplates[math.random(1, #castTemplates)]
-						-- 랜덤 위치 오프셋 (반경 3스터드) + 랜덤 회전
-						local rx = (math.random() - 0.5) * 6
-						local ry = (math.random() - 0.5) * 4
-						local rz = (math.random() - 0.5) * 6
-						local offsetCF = CFrame.new(spawnPos + Vector3.new(rx, ry, rz))
-							* CFrame.Angles(
-								math.rad(math.random(-30, 30)),
-								math.rad(math.random(-180, 180)),
-								math.rad(math.random(-30, 30))
-							)
-						anchor.CFrame = offsetCF
-						spawnVFX(tmpl, anchor, VFX_CAST_LIFETIME_FLURRY)
-					end)
-				end
-				Debris:AddItem(anchor, stormDuration + VFX_CAST_LIFETIME_FLURRY + 0.5)
-			end
+			task.delay(AXE_A3_CAST_DELAY, function()
+				if not hrp or not hrp.Parent then return end
+				spawnAxeCastVFX(skillId, hrp, castTemplates, castLife, castVFXFolder)
+			end)
 		end
 	elseif castVFXFolder and assetName then
 		local castTemplates = findVFXTemplates(castVFXFolder, assetName .. "_Cast")

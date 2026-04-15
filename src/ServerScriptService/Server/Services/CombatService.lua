@@ -45,8 +45,10 @@ local CONTACT_CHECK_DIST = 3         -- 접촉 판정 거리 (스터드) (5 → 
 local playerAttackCooldowns = {} -- [userId] = nextAttackTime
 
 -- Combat Engagement State
-local playerCombatTarget = {}     -- [userId] = instanceId (플레이어가 전투 중인 크리처)
-local playerCombatLastHit = {}    -- [userId] = tick() (마지막 교전 시각)
+local playerCombatTargets = {}    -- [userId] = { [instanceId] = true } (플레이어가 전투 중인 크리처들)
+local playerCombatLastHit = {}    -- [userId] = { [instanceId] = tick() } (대상별 마지막 교전 시각)
+local playerCombatPrimaryTarget = {} -- [userId] = instanceId (대표 타겟/팰 AI용)
+local playerDirectCombatTargets = {} -- [userId] = { [instanceId] = true } (플레이어 직접 공격/피격으로 성립한 전투 대상)
 local creatureCombatants = {}     -- [instanceId] = { [userId] = true } (크리처와 전투 중인 플레이어 목록)
 
 -- Quest callback (Phase 8)
@@ -134,37 +136,85 @@ local function applyContactKnockback(userId, creaturePos, creatureInstanceId)
 	end)
 end
 
---- 전투 상태 진입 (플레이어 → 크리처)
-local function engageCombat(userId, instanceId)
-	local now = tick()
-	local prevTarget = playerCombatTarget[userId]
+local function getAnyCombatTarget(userId)
+	local targets = playerCombatTargets[userId]
+	if type(targets) ~= "table" then
+		return nil
+	end
+	for instanceId in pairs(targets) do
+		return instanceId
+	end
+	return nil
+end
 
-	-- 이미 같은 대상과 전투 중이면 시각만 갱신
-	if prevTarget == instanceId then
-		playerCombatLastHit[userId] = now
+local function notifyPlayerCombatState(userId, inCombat)
+	if not NetController then
 		return
 	end
+	local plr = Players:GetPlayerByUserId(userId)
+	if not plr then
+		return
+	end
+	NetController.FireClient(plr, "Combat.PlayerState.Changed", {
+		inCombat = inCombat == true,
+	})
+end
 
-	-- 기존 전투 대상에서 제거
-	if prevTarget and creatureCombatants[prevTarget] then
-		creatureCombatants[prevTarget][userId] = nil
-		if not next(creatureCombatants[prevTarget]) then
-			creatureCombatants[prevTarget] = nil
-			-- 기존 크리처 충돌 그룹 복구 (더 이상 전투 중인 플레이어 없음)
-			setCreatureCollisionGroup(prevTarget, "Creatures")
-			-- 전투 해제 알림 (기존 크리처)
-			if NetController then
-				NetController.FireAllClients("Combat.Engagement.Changed", {
-					instanceId = prevTarget,
-					inCombat = false,
-				})
-			end
+local function hasAnyDirectCombatTarget(userId)
+	local targets = playerDirectCombatTargets[userId]
+	return type(targets) == "table" and next(targets) ~= nil
+end
+
+local function setDirectCombatTarget(userId, instanceId)
+	if not instanceId then
+		return
+	end
+	if type(playerDirectCombatTargets[userId]) ~= "table" then
+		playerDirectCombatTargets[userId] = {}
+	end
+	local hadAnyDirectTarget = hasAnyDirectCombatTarget(userId)
+	playerDirectCombatTargets[userId][instanceId] = true
+	if not hadAnyDirectTarget then
+		notifyPlayerCombatState(userId, true)
+	end
+end
+
+local function clearDirectCombatTarget(userId, instanceId)
+	local targets = playerDirectCombatTargets[userId]
+	if type(targets) ~= "table" then
+		return
+	end
+	local hadAnyDirectTarget = next(targets) ~= nil
+	if instanceId then
+		targets[instanceId] = nil
+	else
+		for targetInstanceId in pairs(targets) do
+			targets[targetInstanceId] = nil
 		end
 	end
+	if not next(targets) then
+		playerDirectCombatTargets[userId] = nil
+		if hadAnyDirectTarget then
+			notifyPlayerCombatState(userId, false)
+		end
+	end
+end
 
-	-- 새 전투 등록
-	playerCombatTarget[userId] = instanceId
-	playerCombatLastHit[userId] = now
+--- 전투 상태 진입 (플레이어 → 크리처)
+local function engageCombat(userId, instanceId, countsAsDirectPlayerCombat)
+	local now = tick()
+
+	if type(playerCombatTargets[userId]) ~= "table" then
+		playerCombatTargets[userId] = {}
+	end
+	if type(playerCombatLastHit[userId]) ~= "table" then
+		playerCombatLastHit[userId] = {}
+	end
+
+	local hadAnyTarget = next(playerCombatTargets[userId]) ~= nil
+	playerCombatTargets[userId][instanceId] = true
+	playerCombatLastHit[userId][instanceId] = now
+	playerCombatPrimaryTarget[userId] = instanceId
 
 	if not creatureCombatants[instanceId] then
 		creatureCombatants[instanceId] = {}
@@ -182,6 +232,10 @@ local function engageCombat(userId, instanceId)
 		setCreatureCollisionGroup(instanceId, "CombatCreatures")
 	end
 
+	if countsAsDirectPlayerCombat then
+		setDirectCombatTarget(userId, instanceId)
+	end
+
 	-- ★ 소환 팰에게 전투 대상 공유 (활 원거리 전투 대응)
 	local okPcall, PartyService = pcall(require, game:GetService("ServerScriptService").Server.Services.PartyService)
 	if okPcall and PartyService and PartyService.setOwnerCombatTarget then
@@ -190,32 +244,54 @@ local function engageCombat(userId, instanceId)
 end
 
 --- 전투 상태 해제 (플레이어)
-local function disengageCombat(userId)
-	local instanceId = playerCombatTarget[userId]
-	if not instanceId then return end
+local function disengageCombat(userId, instanceId)
+	local targets = playerCombatTargets[userId]
+	if type(targets) ~= "table" then return end
 
-	playerCombatTarget[userId] = nil
-	playerCombatLastHit[userId] = nil
-
-	-- ★ 팰 전투 대상 해제
-	local okPcall, PartyService = pcall(require, game:GetService("ServerScriptService").Server.Services.PartyService)
-	if okPcall and PartyService and PartyService.setOwnerCombatTarget then
-		PartyService.setOwnerCombatTarget(userId, nil)
+	local toRemove = {}
+	if instanceId then
+		if targets[instanceId] then
+			table.insert(toRemove, instanceId)
+		end
+	else
+		for targetInstanceId in pairs(targets) do
+			table.insert(toRemove, targetInstanceId)
+		end
 	end
 
-	if creatureCombatants[instanceId] then
-		creatureCombatants[instanceId][userId] = nil
-		if not next(creatureCombatants[instanceId]) then
-			creatureCombatants[instanceId] = nil
-			-- 전투 해제 → 충돌 그룹 복구
-			setCreatureCollisionGroup(instanceId, "Creatures")
-			if NetController then
-				NetController.FireAllClients("Combat.Engagement.Changed", {
-					instanceId = instanceId,
-					inCombat = false,
-				})
+	for _, targetInstanceId in ipairs(toRemove) do
+		targets[targetInstanceId] = nil
+		clearDirectCombatTarget(userId, targetInstanceId)
+		if type(playerCombatLastHit[userId]) == "table" then
+			playerCombatLastHit[userId][targetInstanceId] = nil
+		end
+
+		if creatureCombatants[targetInstanceId] then
+			creatureCombatants[targetInstanceId][userId] = nil
+			if not next(creatureCombatants[targetInstanceId]) then
+				creatureCombatants[targetInstanceId] = nil
+				setCreatureCollisionGroup(targetInstanceId, "Creatures")
+				if NetController then
+					NetController.FireAllClients("Combat.Engagement.Changed", {
+						instanceId = targetInstanceId,
+						inCombat = false,
+					})
+				end
 			end
 		end
+	end
+
+	if not next(targets) then
+		playerCombatTargets[userId] = nil
+		playerCombatLastHit[userId] = nil
+		playerCombatPrimaryTarget[userId] = nil
+	else
+		playerCombatPrimaryTarget[userId] = getAnyCombatTarget(userId)
+	end
+
+	local okPcall, PartyService = pcall(require, game:GetService("ServerScriptService").Server.Services.PartyService)
+	if okPcall and PartyService and PartyService.setOwnerCombatTarget then
+		PartyService.setOwnerCombatTarget(userId, playerCombatPrimaryTarget[userId])
 	end
 end
 
@@ -225,8 +301,25 @@ local function disengageCreature(instanceId)
 	if not combatants then return end
 
 	for uid, _ in pairs(combatants) do
-		playerCombatTarget[uid] = nil
-		playerCombatLastHit[uid] = nil
+		if type(playerCombatTargets[uid]) == "table" then
+			playerCombatTargets[uid][instanceId] = nil
+			clearDirectCombatTarget(uid, instanceId)
+			if not next(playerCombatTargets[uid]) then
+				playerCombatTargets[uid] = nil
+				playerCombatLastHit[uid] = nil
+				playerCombatPrimaryTarget[uid] = nil
+			else
+				if type(playerCombatLastHit[uid]) == "table" then
+					playerCombatLastHit[uid][instanceId] = nil
+				end
+				playerCombatPrimaryTarget[uid] = getAnyCombatTarget(uid)
+			end
+		end
+
+		local okPcall, PartyService = pcall(require, game:GetService("ServerScriptService").Server.Services.PartyService)
+		if okPcall and PartyService and PartyService.setOwnerCombatTarget then
+			PartyService.setOwnerCombatTarget(uid, playerCombatPrimaryTarget[uid])
+		end
 	end
 	creatureCombatants[instanceId] = nil
 
@@ -532,33 +625,37 @@ function CombatService.Init(_NetController, _DataService, _CreatureService, _Inv
 			
 			local now = tick()
 			local toDisengage = {}
-			for uid, instanceId in pairs(playerCombatTarget) do
-				local shouldDisengage = false
-				-- 시간 초과 체크
-				local lastHit = playerCombatLastHit[uid]
-				if lastHit and (now - lastHit) >= COMBAT_DISENGAGE_TIMEOUT then
-					shouldDisengage = true
-				end
-				-- 거리 이탈 체크
-				if not shouldDisengage then
-					local plr = Players:GetPlayerByUserId(uid)
-					local playerHrp = plr and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
-					if playerHrp and CreatureService and CreatureService.getCreaturePosition then
-						local creaturePos = CreatureService.getCreaturePosition(instanceId)
-						if creaturePos then
-							local dist = (playerHrp.Position - creaturePos).Magnitude
-							if dist >= COMBAT_DISENGAGE_DISTANCE then
-								shouldDisengage = true
+			for uid, targetMap in pairs(playerCombatTargets) do
+				if type(targetMap) == "table" then
+					for instanceId in pairs(targetMap) do
+						local shouldDisengage = false
+						local lastHit = type(playerCombatLastHit[uid]) == "table" and playerCombatLastHit[uid][instanceId] or nil
+						if lastHit and (now - lastHit) >= COMBAT_DISENGAGE_TIMEOUT then
+							shouldDisengage = true
+						end
+						if not shouldDisengage then
+							local plr = Players:GetPlayerByUserId(uid)
+							local playerHrp = plr and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+							if playerHrp and CreatureService and CreatureService.getCreaturePosition then
+								local creaturePos = CreatureService.getCreaturePosition(instanceId)
+								if creaturePos then
+									local dist = (playerHrp.Position - creaturePos).Magnitude
+									if dist >= COMBAT_DISENGAGE_DISTANCE then
+										shouldDisengage = true
+									end
+								else
+									shouldDisengage = true
+								end
 							end
+						end
+						if shouldDisengage then
+							table.insert(toDisengage, { userId = uid, instanceId = instanceId })
 						end
 					end
 				end
-				if shouldDisengage then
-					table.insert(toDisengage, uid)
-				end
 			end
-			for _, uid in ipairs(toDisengage) do
-				disengageCombat(uid)
+			for _, entry in ipairs(toDisengage) do
+				disengageCombat(entry.userId, entry.instanceId)
 			end
 		end
 	end)
@@ -567,15 +664,17 @@ function CombatService.Init(_NetController, _DataService, _CreatureService, _Inv
 	task.spawn(function()
 		while true do
 			task.wait(0.2)
-			for uid, instanceId in pairs(playerCombatTarget) do
+			for uid, targetMap in pairs(playerCombatTargets) do
 				local plr = Players:GetPlayerByUserId(uid)
 				local playerHrp = plr and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
-				if playerHrp and CreatureService and CreatureService.getCreaturePosition then
-					local creaturePos = CreatureService.getCreaturePosition(instanceId)
-					if creaturePos then
-						local dist = (playerHrp.Position - creaturePos).Magnitude
-						if dist <= CONTACT_CHECK_DIST then
-							applyContactKnockback(uid, creaturePos, instanceId)
+				if playerHrp and type(targetMap) == "table" and CreatureService and CreatureService.getCreaturePosition then
+					for instanceId in pairs(targetMap) do
+						local creaturePos = CreatureService.getCreaturePosition(instanceId)
+						if creaturePos then
+							local dist = (playerHrp.Position - creaturePos).Magnitude
+							if dist <= CONTACT_CHECK_DIST then
+								applyContactKnockback(uid, creaturePos, instanceId)
+							end
 						end
 					end
 				end
@@ -871,13 +970,8 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 	local dropPos = nil
 	
 	if targetType == "CREATURE" then
-		-- 이미 다른 크리처와 전투 중이면 공격 불가
-		local currentTarget = playerCombatTarget[userId]
-		if currentTarget and currentTarget ~= targetId then
-			return false, Enums.ErrorCode.ALREADY_IN_COMBAT
-		end
 		-- 전투 상태 진입 (플레이어 선공)
-		engageCombat(userId, targetId)
+		engageCombat(userId, targetId, true)
 		killed, dropPos = CreatureService.processAttack(targetId, hpDamage, torporDamage, player)
 		if killed then
 			disengageCreature(targetId)
@@ -1007,7 +1101,7 @@ function CombatService.damagePlayer(userId: number, rawDamage: number, sourcePos
 	
 	-- 1.5 크리처 선공 → 전투 교전 등록
 	if sourceCreatureId then
-		engageCombat(userId, sourceCreatureId)
+		engageCombat(userId, sourceCreatureId, true)
 	end
 	
 	-- 2. 방어력 계산
@@ -1103,12 +1197,17 @@ end
 
 --- 외부에서 전투 상태 진입 (스킬 공격 등)
 function CombatService.engageCombat(userId: number, instanceId: string)
-	engageCombat(userId, instanceId)
+	engageCombat(userId, instanceId, false)
+end
+
+--- 외부에서 플레이어 직접 전투 상태 진입 (플레이어 스킬/공격용)
+function CombatService.engagePlayerCombat(userId: number, instanceId: string)
+	engageCombat(userId, instanceId, true)
 end
 
 --- 플레이어의 현재 전투 대상 반환
 function CombatService.getPlayerCombatTarget(userId: number): string?
-	return playerCombatTarget[userId]
+	return playerCombatPrimaryTarget[userId]
 end
 
 return CombatService

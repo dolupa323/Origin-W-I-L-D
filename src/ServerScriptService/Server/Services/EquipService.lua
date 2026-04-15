@@ -197,7 +197,9 @@ function EquipService.equipItem(player: Player, itemId: string?)
 			-- 타입별 크기 최적화
 			local targetSize = 1.2 -- 기본 (RESOURCE 등)
 			
-			if itemType == "TOOL" then
+			if itemId == "OBSIDIAN_AXE" then
+				targetSize = 5.2
+			elseif itemType == "TOOL" then
 				targetSize = 2.8 -- 곡괭이/도끼 등
 			elseif itemType == "WEAPON" then
 				-- 창은 훨씬 더 거대하게 (11.0)
@@ -295,6 +297,12 @@ function EquipService.equipItem(player: Player, itemId: string?)
 		-- 개별 아이템 그립 오버라이드
 		local gripOverrides = {
 			CRUDE_STONE_AXE = CFrame.new(0, -0.8, 0) * CFrame.Angles(math.rad(180), 0, math.rad(180)),
+			OBSIDIAN_AXE = CFrame.new(0, -0.8, 0) * CFrame.Angles(0, math.rad(-180), 0),
+			OBSIDIAN_PICKAXE = CFrame.new(0, 0, 1.2) * CFrame.Angles(math.rad(-90), math.rad(-90), 0),
+			OBSIDIAN_SWORD = CFrame.new(0, -0.15, 0)
+				* CFrame.Angles(math.rad(90), math.rad(90), math.rad(90))
+				* CFrame.Angles(0, math.rad(90), 0),
+			OBSIDIAN_BOW = CFrame.new(0, 0, 0) * CFrame.Angles(0, math.rad(90), 0),
 			TORCH = CFrame.new(0, -0.5, 0) * CFrame.Angles(0, 0, 0),
 		}
 		

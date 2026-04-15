@@ -351,7 +351,7 @@ end
 
 -- CaptureService 초기화 (포획 시도 처리)
 local CaptureService = require(Services.CaptureService)
-CaptureService.Init(NetController, CreatureService, InventoryService, SkillService)
+CaptureService.Init(NetController, CreatureService, InventoryService, SkillService, PlayerStatService)
 
 -- CaptureService 핸들러 등록
 for command, handler in pairs(CaptureService.GetHandlers()) do

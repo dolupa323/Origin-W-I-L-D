@@ -28,6 +28,7 @@ local NODE_CAP = Balance.RESOURCE_NODE_CAP or 400
 local MIN_SPAWN_DIST = 20
 local MAX_SPAWN_DIST = 60
 local DESPAWN_DIST = Balance.NODE_DESPAWN_DIST or 300
+local NODE_DESPAWN_GRACE_AFTER_INTERACT = 120
 local SEA_LEVEL = Balance.SEA_LEVEL or 2
 local STARTER_NODE_TARGET_PER_TYPE = 2
 local STARTER_NODE_CHECK_RADIUS = 45
@@ -111,6 +112,7 @@ local templateCache = {} -- { [nodeId] = Model } 첫 성공 시 캐시
 local getNodeSceneRoot
 local applyNodeIdentity
 local ensureHiddenNodeFolder
+local cachedBaseClaimService = nil
 --========================================
 -- Internal Functions
 --========================================
@@ -131,6 +133,51 @@ local function calculateRemainingGatherCount(remainingHits: number, damagePerGat
 	end
 
 	return math.ceil(remainingHits / math.max(1, damagePerGather))
+end
+
+local function getInitialGatherTotal(nodeState: any, nodeData: any): number
+	if nodeState and nodeState.resolvedResources then
+		return math.max(1, tonumber(nodeState.resolvedTotalGathers) or tonumber(nodeState.resolvedMaxHealth) or 1)
+	end
+
+	local total = 0
+	for _, res in ipairs((nodeData and nodeData.resources) or {}) do
+		total = total + (res.max or res.count or 1)
+	end
+	return math.max(1, total)
+end
+
+local function getCurrentResolvedGatherTotal(nodeState: any): number
+	local total = 0
+	for _, res in ipairs((nodeState and nodeState.resolvedResources) or {}) do
+		total = total + math.max(0, tonumber(res.count) or 0)
+	end
+	return total
+end
+
+local function getBaseClaimService()
+	if cachedBaseClaimService ~= nil then
+		return cachedBaseClaimService
+	end
+
+	local ok, service = pcall(function()
+		return require(game:GetService("ServerScriptService").Server.Services.BaseClaimService)
+	end)
+	cachedBaseClaimService = ok and service or false
+	return cachedBaseClaimService
+end
+
+local function isInsideAnyTotemBase(position: Vector3?): boolean
+	if not position then
+		return false
+	end
+
+	local baseClaimService = getBaseClaimService()
+	if not baseClaimService or baseClaimService == false or not baseClaimService.getOwnerAt then
+		return false
+	end
+
+	return baseClaimService.getOwnerAt(position) ~= nil
 end
 
 --========================================
@@ -675,6 +722,9 @@ local function findSpawnPositionNearPlayer(playerRootPart: Part, minDist: number
 
 			if not isWater and not belowSeaLevel then
 				local candidatePos = result.Position + Vector3.new(0, 0.5, 0)
+				if isInsideAnyTotemBase(candidatePos) then
+					continue
+				end
 				local tooClose = false
 				local nodeFolder = workspace:FindFirstChild("ResourceNodes")
 				if nodeFolder then
@@ -814,6 +864,9 @@ function HarvestService._findSpawnPosition(playerRootPart: Part): (Vector3?, Enu
 			
 			-- 물이 아니고 해수면 위인 경우만 허용
 			if not isWater and not belowSeaLevel then
+				if isInsideAnyTotemBase(result.Position) then
+					continue
+				end
 				-- 기존 노드와 너무 가까운지 체크 (최소 8 studs 간격)
 				local tooClose = false
 				local nodeFolder = workspace:FindFirstChild("ResourceNodes")
@@ -844,6 +897,10 @@ end
 --- 자동 스폰된 노드 생성
 function HarvestService._spawnAutoNode(nodeId: string, position: Vector3): string?
 	if spawnedNodeCount >= NODE_CAP then
+		return nil
+	end
+
+	if STARTER_NODE_TYPES and table.find(STARTER_NODE_TYPES, nodeId) and isInsideAnyTotemBase(position) then
 		return nil
 	end
 	
@@ -912,10 +969,10 @@ function HarvestService._despawnCheck()
 	local players = Players:GetPlayers()
 	if #players == 0 then
 		-- 플레이어 없으면 모든 자동 노드 즉시 제거
-		for _, nodeModel in ipairs(nodes) do
-			if nodeModel:GetAttribute("AutoSpawned") then
-				local nodeUID = nodeModel:GetAttribute("NodeUID")
-				if nodeUID and activeNodes[nodeUID] then
+	for _, nodeModel in ipairs(nodes) do
+		if nodeModel:GetAttribute("AutoSpawned") then
+			local nodeUID = nodeModel:GetAttribute("NodeUID")
+			if nodeUID and activeNodes[nodeUID] then
 					local nodeId = activeNodes[nodeUID].nodeId
 					activeNodes[nodeUID] = nil
 					spawnedNodesByType[nodeId] = math.max(0, (spawnedNodesByType[nodeId] or 0) - 1)
@@ -925,6 +982,13 @@ function HarvestService._despawnCheck()
 			end
 		end
 		return
+	end
+
+	local protectedGatherNodes = {}
+	for _, gatherState in pairs(activeGathers) do
+		if gatherState and gatherState.nodeUID then
+			protectedGatherNodes[gatherState.nodeUID] = true
+		end
 	end
 
 	-- 1. 보존할 노드 식별 (플레이어 주변 DESPAWN_DIST 이내)
@@ -952,6 +1016,15 @@ function HarvestService._despawnCheck()
 	for _, nodeModel in ipairs(nodes) do
 		if nodeModel:GetAttribute("AutoSpawned") and not keepNodes[nodeModel] then
 			local nodeUID = nodeModel:GetAttribute("NodeUID")
+			local nodeState = nodeUID and activeNodes[nodeUID]
+			local nodeData = nodeState and DataService.getResourceNode(nodeState.nodeId)
+			local wasInteractedRecently = nodeState
+				and nodeState.lastInteractedAt
+				and ((tick() - nodeState.lastInteractedAt) < NODE_DESPAWN_GRACE_AFTER_INTERACT)
+			local isDamagedNode = nodeState and nodeData and nodeState.remainingHits < nodeData.maxHealth
+			if (nodeUID and protectedGatherNodes[nodeUID]) or wasInteractedRecently or isDamagedNode then
+				continue
+			end
 			if nodeUID and activeNodes[nodeUID] then
 				local nodeId = activeNodes[nodeUID].nodeId
 				activeNodes[nodeUID] = nil
@@ -984,8 +1057,10 @@ function HarvestService.registerNode(nodeId: string, position: Vector3, isAutoSp
 	activeNodes[nodeUID] = {
 		nodeId = nodeId,
 		remainingHits = nodeData.maxHealth, -- maxHits 대신 maxHealth 사용 (호환성을 위해 변수명은 유지 가능하나 내부 값은 Health)
+		initialTotalGathers = getInitialGatherTotal(nil, nodeData),
 		depletedAt = nil,
 		position = position,
+		lastInteractedAt = nil,
 		isAutoSpawned = isAutoSpawned,
 		nodeModel = nil, -- 노드 모델 참조 (숨김 복원용)
 		nodeRoot = nil, -- 래퍼 폴더/모델 포함 실제 장면 루트
@@ -1322,6 +1397,7 @@ function HarvestService.registerCorpseNode(creatureId: string, position: Vector3
 	activeNodes[nodeUID] = {
 		nodeId = nodeId,
 		remainingHits = totalGathers,    -- 총 채집 횟수 = HP
+		initialTotalGathers = totalGathers,
 		depletedAt = nil,
 		position = position,
 		isAutoSpawned = false,
@@ -1331,6 +1407,7 @@ function HarvestService.registerCorpseNode(creatureId: string, position: Vector3
 		isCorpse = true,
 		resolvedResources = resolvedResources,  -- 확률 적용 완료된 자원 목록
 		resolvedMaxHealth = totalGathers,        -- 확률 적용 후 HP
+		resolvedTotalGathers = totalGathers,
 	}
 
 	-- 클라이언트 알림
@@ -1543,6 +1620,7 @@ function HarvestService.damageNode(nodeUID: string, damage: number, efficiency: 
 	if not nodeData then return false, Enums.ErrorCode.NOT_FOUND, nil end
 	
 	local actualDamage = math.min(damage, nodeState.remainingHits)
+	nodeState.lastInteractedAt = tick()
 	
 	-- 데미지가 0인 경우 (무기로 도구 필수 노드 타격 등)
 	if actualDamage <= 0 and damage <= 0 then
@@ -1571,7 +1649,10 @@ function HarvestService.damageNode(nodeUID: string, damage: number, efficiency: 
 	-- XP 보상 (있을 때만)
 	if sourceUserId and PlayerStatService then
 		local xpPerHit = nodeData.xpPerHit or Balance.XP_HARVEST_XP_PER_HIT or 2
-		PlayerStatService.addXP(sourceUserId, xpPerHit * actualDamage, Enums.XPSource.HARVEST_RESOURCE)
+		PlayerStatService.grantActionXP(sourceUserId, xpPerHit * actualDamage, {
+			source = Enums.XPSource.HARVEST_RESOURCE,
+			actionKey = "HIT:" .. tostring(nodeData.id or nodeState.nodeId or "NODE"),
+		})
 	end
 	
 	local drops = {}
@@ -2446,10 +2527,7 @@ local function handleGatherRequest(player: Player, payload: any)
 	-- 남은 채집 가능 횟수 계산 (resolvedResources 우선)
 	local reqResList = nodeState.resolvedResources or nodeData.resources or {}
 	local reqEffectiveMaxHealth = nodeState.resolvedMaxHealth or nodeData.maxHealth or 50
-	local totalMaxGathers = 0
-	for _, res in ipairs(reqResList) do
-		totalMaxGathers = totalMaxGathers + (res.count or res.max or 1)
-	end
+	local totalMaxGathers = nodeState.initialTotalGathers or getInitialGatherTotal(nodeState, nodeData)
 	local damagePerGather = calculateDamagePerGather(reqEffectiveMaxHealth, totalMaxGathers)
 	local remainingGathers = calculateRemainingGatherCount(nodeState.remainingHits, damagePerGather)
 
@@ -2508,12 +2586,8 @@ local function handleGatherComplete(player: Player, payload: any)
 	-- count가 0이면 (확률 실패) 아이템은 없지만 HP는 감소시켜야 함 (노드 정상 고갈)
 	if count <= 0 then
 		-- HP 감소 (weight 실패해도 채집 시도는 소모)
-		local zeroResList = nodeState.resolvedResources or (nodeData and nodeData.resources) or {}
 		local zeroEffMaxHP = nodeState.resolvedMaxHealth or (nodeData and nodeData.maxHealth) or 50
-		local zeroTotalMax = 0
-		for _, res in ipairs(zeroResList) do
-			zeroTotalMax = zeroTotalMax + (res.count or res.max or 1)
-		end
+		local zeroTotalMax = nodeState.initialTotalGathers or getInitialGatherTotal(nodeState, nodeData)
 		local zeroDmgPerGather = calculateDamagePerGather(zeroEffMaxHP, zeroTotalMax)
 		nodeState.remainingHits = math.max(0, nodeState.remainingHits - zeroDmgPerGather)
 
@@ -2587,7 +2661,10 @@ local function handleGatherComplete(player: Player, payload: any)
 	-- XP 보상
 	if nodeData and PlayerStatService then
 		local xpPerHit = nodeData.xpPerHit or 2
-		PlayerStatService.addXP(userId, xpPerHit * count, Enums.XPSource.HARVEST_RESOURCE)
+		PlayerStatService.grantActionXP(userId, xpPerHit * count, {
+			source = Enums.XPSource.HARVEST_RESOURCE,
+			actionKey = "GATHER:" .. tostring(nodeData.id or nodeState.nodeId or "NODE"),
+		})
 	end
 
 	-- 배고픔 소모
@@ -2602,12 +2679,8 @@ local function handleGatherComplete(player: Player, payload: any)
 	end
 
 	-- 노드 내구도 감소 (resolvedResources 우선)
-	local complResList = nodeState.resolvedResources or (nodeData and nodeData.resources) or {}
 	local complEffMaxHP = nodeState.resolvedMaxHealth or (nodeData and nodeData.maxHealth) or 50
-	local totalMaxGathers = 0
-	for _, res in ipairs(complResList) do
-		totalMaxGathers = totalMaxGathers + (res.count or res.max or 1)
-	end
+	local totalMaxGathers = nodeState.initialTotalGathers or getInitialGatherTotal(nodeState, nodeData)
 	local damagePerGather = calculateDamagePerGather(complEffMaxHP, totalMaxGathers)
 	nodeState.remainingHits = math.max(0, nodeState.remainingHits - damagePerGather)
 
@@ -2676,43 +2749,46 @@ local function handleGatherInfo(player: Player, payload: any)
 		return { success = false, errorCode = Enums.ErrorCode.NOT_FOUND }
 	end
 
-	-- 아이템별 채집 가능 횟수 계산 (서버 HP 기반)
-	-- resolvedResources가 있으면 확률 적용된 자원 목록 사용
+	-- 아이템별 채집 가능 횟수 계산
+	-- resolvedResources가 있으면 실제 남은 수량을 그대로 보여준다.
 	local resList = nodeState.resolvedResources or nodeData.resources or {}
-	local useResolvedMaxHealth = nodeState.resolvedMaxHealth
-	local effectiveMaxHealth = useResolvedMaxHealth or nodeData.maxHealth or 50
-
-	local totalMaxGathers = 0
-	for _, res in ipairs(resList) do
-		-- resolvedResources의 경우 count가 실제 횟수, 일반 노드는 max
-		totalMaxGathers = totalMaxGathers + (res.count or res.max or 1)
-	end
-	local damagePerGather = calculateDamagePerGather(effectiveMaxHealth, totalMaxGathers)
-	local remainingTotal = calculateRemainingGatherCount(nodeState.remainingHits, damagePerGather)
-
-	-- 각 리소스별 비율로 분배 (floor 손실분 보정)
 	local resourceCounts = {}
-	local distributed = 0
-	for i, res in ipairs(resList) do
-		local resMax = res.count or res.max or 1
-		local ratio = resMax / math.max(1, totalMaxGathers)
-		local count = math.max(0, math.floor(remainingTotal * ratio))
-		resourceCounts[res.itemId] = count
-		distributed = distributed + count
-	end
-	-- floor 절삭으로 빠진 나머지를 max 비율 높은 순으로 +1 보정
-	local deficit = remainingTotal - distributed
-	if deficit > 0 then
-		local sortedIdx = {}
-		for i, res in ipairs(resList) do
-			table.insert(sortedIdx, { idx = i, maxVal = res.count or res.max or 1 })
+	local remainingTotal = 0
+
+	if nodeState.resolvedResources then
+		for _, res in ipairs(resList) do
+			local count = math.max(0, tonumber(res.count) or 0)
+			resourceCounts[res.itemId] = count
+			remainingTotal = remainingTotal + count
 		end
-		table.sort(sortedIdx, function(a, b) return a.maxVal > b.maxVal end)
-		for _, entry in ipairs(sortedIdx) do
-			if deficit <= 0 then break end
-			local res = resList[entry.idx]
-			resourceCounts[res.itemId] = resourceCounts[res.itemId] + 1
-			deficit = deficit - 1
+	else
+		local effectiveMaxHealth = nodeData.maxHealth or 50
+		local totalMaxGathers = nodeState.initialTotalGathers or getInitialGatherTotal(nodeState, nodeData)
+		local damagePerGather = calculateDamagePerGather(effectiveMaxHealth, totalMaxGathers)
+		remainingTotal = calculateRemainingGatherCount(nodeState.remainingHits, damagePerGather)
+
+		local distributed = 0
+		for i, res in ipairs(resList) do
+			local resMax = res.max or res.count or 1
+			local ratio = resMax / math.max(1, totalMaxGathers)
+			local count = math.max(0, math.floor(remainingTotal * ratio))
+			resourceCounts[res.itemId] = count
+			distributed = distributed + count
+		end
+
+		local deficit = remainingTotal - distributed
+		if deficit > 0 then
+			local sortedIdx = {}
+			for i, res in ipairs(resList) do
+				table.insert(sortedIdx, { idx = i, maxVal = res.max or res.count or 1 })
+			end
+			table.sort(sortedIdx, function(a, b) return a.maxVal > b.maxVal end)
+			for _, entry in ipairs(sortedIdx) do
+				if deficit <= 0 then break end
+				local res = resList[entry.idx]
+				resourceCounts[res.itemId] = (resourceCounts[res.itemId] or 0) + 1
+				deficit = deficit - 1
+			end
 		end
 	end
 

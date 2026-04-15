@@ -220,8 +220,11 @@ Enums.PalState = {
 Enums.XPSource = {
 	CREATURE_KILL = "CREATURE_KILL",     -- 크리처 처치
 	CRAFT_ITEM = "CRAFT_ITEM",           -- 아이템 제작
+	COOK_ITEM = "COOK_ITEM",             -- 요리
+	PROCESS_ITEM = "PROCESS_ITEM",       -- 가공/제련
 	CAPTURE_PAL = "CAPTURE_PAL",         -- 팰 포획
 	HARVEST_RESOURCE = "HARVEST_RESOURCE", -- 자원 채집
+	BUILD = "BUILD",                     -- 건축/배치
 }
 
 --========================================

@@ -38,6 +38,41 @@ local comboResetTime = 1.0  -- 1초 내 다음 공격 안하면 콤보 리셋
 -- 애니메이션 트랙
 local currentAttackTrack = nil
 local currentBowDrawTrack = nil
+
+local function flashBlockHit(blockId: string, newHealth: number?)
+	local blocksFolder = workspace:FindFirstChild("BlockStructures")
+	if not blocksFolder then
+		return
+	end
+
+	local blockPart = blocksFolder:FindFirstChild(blockId)
+	if not blockPart or not blockPart:IsA("BasePart") then
+		return
+	end
+
+	if newHealth ~= nil then
+		blockPart:SetAttribute("Health", newHealth)
+	end
+
+	local originalColor = blockPart.Color
+	local originalSize = blockPart.Size
+	local originalCFrame = blockPart.CFrame
+
+	blockPart.Color = originalColor:Lerp(Color3.new(1, 1, 1), 0.35)
+	blockPart.Size = originalSize * 0.92
+	blockPart.CFrame = originalCFrame
+
+	local tween = TweenService:Create(
+		blockPart,
+		TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{
+			Color = originalColor,
+			Size = originalSize,
+			CFrame = originalCFrame,
+		}
+	)
+	tween:Play()
+end
 local currentBowDrawConn = nil
 local bowDrawPassedHalf = false
 local bowDrawReadyToFire = false
@@ -1301,11 +1336,16 @@ function CombatController.Init()
 		local BlockBuildController = require(Client.Controllers.BlockBuildController)
 		local hoveredBlockId = BlockBuildController.getHoveredBlockId and BlockBuildController.getHoveredBlockId() or nil
 		if hoveredBlockId and canBreakBlocksWithItem(itm) then
-			local ok, err = NetClient.Request("BlockBuild.Remove.Request", {
+			local ok, response = NetClient.Request("BlockBuild.Remove.Request", {
 				blockId = hoveredBlockId,
 			})
 			if not ok then
-				UIManager.notify(BlockBuildController.getFriendlyError(err), Color3.fromRGB(255, 100, 100))
+				UIManager.notify(BlockBuildController.getFriendlyError(response), Color3.fromRGB(255, 100, 100))
+			else
+				local data = type(response) == "table" and (response.data or response) or nil
+				if type(data) == "table" and data.destroyed == false then
+					flashBlockHit(tostring(data.blockId or hoveredBlockId), tonumber(data.health))
+				end
 			end
 			return
 		end

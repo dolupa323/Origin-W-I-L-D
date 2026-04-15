@@ -1001,6 +1001,7 @@ local ItemData = {
 		damage = 110,
 		attackSpeed = 0.55,
 		slot = "HAND",
+		optimalTool = "SWORD",
 		description = "날카로운 흑요석 날의 검. (수리 불가)",
 		icon = "rbxassetid://0",
 		iconName = "OBSIDIAN_SWORD",

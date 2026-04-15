@@ -325,13 +325,21 @@ end
 
 local function hasWildernessStructureConflict(centerPosition: Vector3, extents: any, ownerId: number): boolean
 	local facilitiesFolder = Workspace:FindFirstChild("Facilities")
-	if not facilitiesFolder then
+	local npcFolder = Workspace:FindFirstChild("NPCs")
+	if not facilitiesFolder and not npcFolder then
 		return false
 	end
 
 	local overlapParams = OverlapParams.new()
 	overlapParams.FilterType = Enum.RaycastFilterType.Include
-	overlapParams.FilterDescendantsInstances = { facilitiesFolder }
+	local included = {}
+	if facilitiesFolder then
+		table.insert(included, facilitiesFolder)
+	end
+	if npcFolder then
+		table.insert(included, npcFolder)
+	end
+	overlapParams.FilterDescendantsInstances = included
 
 	local west = tonumber(extents.westExtent or extents.west) or DEFAULT_EXTENT
 	local east = tonumber(extents.eastExtent or extents.east) or DEFAULT_EXTENT
@@ -347,6 +355,10 @@ local function hasWildernessStructureConflict(centerPosition: Vector3, extents: 
 		local container = model or part
 		if container then
 			local structureId = container:GetAttribute("StructureId") or container.Name
+			local npcType = container:GetAttribute("NPCType")
+			if npcType == "shop" then
+				return true
+			end
 			if structureId and not checkedStructures[structureId] then
 				checkedStructures[structureId] = true
 				local structOwnerId = container:GetAttribute("OwnerId")

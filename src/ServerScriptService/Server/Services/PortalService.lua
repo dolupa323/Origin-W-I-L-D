@@ -223,16 +223,21 @@ local function _resolveArrivalPosition(zoneInfo, arrivalPortal, character)
 
 	local function projectToSafeGround(candidatePos)
 		local rayParams = RaycastParams.new()
-		rayParams.FilterDescendantsInstances = excludeList
-		rayParams.FilterType = Enum.RaycastFilterType.Exclude
+		local includeList = { workspace.Terrain }
+		local map = workspace:FindFirstChild("Map")
+		if map then
+			table.insert(includeList, map)
+		end
+		rayParams.FilterDescendantsInstances = includeList
+		rayParams.FilterType = Enum.RaycastFilterType.Include
 
 		local rayOrigin = candidatePos + Vector3.new(0, 80, 0)
-		local rayDir = Vector3.new(0, -320, 0)
+		local rayDir = Vector3.new(0, -500, 0)
 		local rayResult = workspace:Raycast(rayOrigin, rayDir, rayParams)
 		if rayResult and rayResult.Material ~= Enum.Material.Water then
 			local minSafeY = math.min(defaultArrival.Y, zoneCenter.Y + 5) - 40
 			if rayResult.Position.Y >= minSafeY then
-				return rayResult.Position + Vector3.new(0, 6, 0), true
+				return rayResult.Position + Vector3.new(0, 8, 0), true
 			end
 		end
 		return candidatePos, false
@@ -269,9 +274,9 @@ local function _resolveArrivalPosition(zoneInfo, arrivalPortal, character)
 		return originPos, false
 	end
 
-	local portalBasePart = _getArrivalPortalBasePart(arrivalPortal)
+		local portalBasePart = _getArrivalPortalBasePart(arrivalPortal)
 	if portalBasePart then
-		local candidatePos = portalBasePart.Position + Vector3.new(0, math.max(6, portalBasePart.Size.Y * 0.5 + 4), 0)
+		local candidatePos = portalBasePart.Position + portalBasePart.CFrame.LookVector * 14 + Vector3.new(0, math.max(8, portalBasePart.Size.Y * 0.5 + 6), 0)
 		local flatDistance = (Vector2.new(candidatePos.X, candidatePos.Z) - Vector2.new(zoneCenter.X, zoneCenter.Z)).Magnitude
 		local minSafeY = (Balance.SEA_LEVEL or 0) - 5
 		if (zoneRadius <= 0 or flatDistance <= zoneRadius + 120) and candidatePos.Y >= minSafeY then
@@ -536,49 +541,39 @@ local function _requestPortalTeleport(player, payload)
 			end)
 		end
 		player:SetAttribute("PortalSafeUntil", os.clock() + 12)
+		player:SetAttribute("SpawnPosX", arrivalPos.X)
+		player:SetAttribute("SpawnPosY", arrivalPos.Y)
+		player:SetAttribute("SpawnPosZ", arrivalPos.Z)
+		player:SetAttribute("DataLoaded", true)
 
-		-- ★ [원인파악 밎 근본 해결]
-		-- StreamingEnabled 환경에서는 서버가 PivotTo로 캐릭터를 순간 이동시키면,
-		-- 클라이언트는 아직 해당 지역의 지형/파트를 다운로드받지 못한 상태일 수 있습니다.
-		-- 이 때 클라이언트 측 물리 엔진이 빈 공간으로 인식하여 중력에 의해 캐릭터가 추락하며,
-		-- 지형이 생성되기 전에 FallenPartsDestroyHeight 선(-500)에 닿아 사망하게 됩니다 (지하 리스폰 버그의 원인).
-
-		local hrp = character:FindFirstChild("HumanoidRootPart")
-		if hrp then
-			-- 텔레포트 전후로 클라이언트 물리 추락 방지를 위해 앵커링
-			hrp.Anchored = true
-		end
-
-		-- 서버가 클라이언트에게 도착 위치의 맵 데이터를 최우선으로 스트리밍하도록 강제 요청 (최대 5초 대기)
+		-- 포탈 이동은 기존 캐릭터를 직접 순간이동하지 않고,
+		-- 접속/리스폰과 동일한 SpawnPos + LoadCharacter 파이프라인을 사용한다.
 		pcall(function()
 			player:RequestStreamAroundAsync(arrivalPos, 5)
 		end)
 
-		character:PivotTo(CFrame.new(arrivalPos))
+		player:LoadCharacter()
 
-		-- ★ 텔레포트 직후 무적 (ForceField) — 주변 크리처 인식 시간 확보
-		local ff = Instance.new("ForceField")
-		ff.Visible = false
-		ff.Parent = character
-		task.delay(12, function()
-			if ff and ff.Parent then ff:Destroy() end
-			if player.Parent then
-				local safeUntil = tonumber(player:GetAttribute("PortalSafeUntil"))
-				if safeUntil and safeUntil <= os.clock() then
-					player:SetAttribute("PortalSafeUntil", nil)
-				end
+		local charStart = tick()
+		while player.Parent and (tick() - charStart) < 10 do
+			local newCharacter = player.Character
+			local newRoot = newCharacter and newCharacter:FindFirstChild("HumanoidRootPart")
+			if newCharacter and newRoot then
+				local ff = Instance.new("ForceField")
+				ff.Visible = false
+				ff.Parent = newCharacter
+				task.delay(12, function()
+					if ff and ff.Parent then ff:Destroy() end
+					if player.Parent then
+						local safeUntil = tonumber(player:GetAttribute("PortalSafeUntil"))
+						if safeUntil and safeUntil <= os.clock() then
+							player:SetAttribute("PortalSafeUntil", nil)
+						end
+					end
+				end)
+				break
 			end
-		end)
-
-		if hrp then
-			-- 데이터 스트리밍(RequestStreamAroundAsync)이 완료되었더라도,
-			-- 클라이언트 렌더링 프레임 및 물리 계산이 정상화되는 찰나의 순간 추락할 위험이 있으므로
-			-- 서버에서 충분한 시간(2초) 동안 Anchored를 유지해 허공 추락을 근본적으로 방지합니다.
-			task.delay(2.0, function()
-				if hrp and character.Parent then
-					hrp.Anchored = false
-				end
-			end)
+			task.wait(0.05)
 		end
 
 		NetController.FireClient(player, "Portal.Arrived", { zone = targetZoneName, portalId = portalId })

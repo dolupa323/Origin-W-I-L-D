@@ -159,8 +159,10 @@ local function applySkillDamage(player: Player, targetInstanceId: string, damage
 	
 	local killed, dropPos = CreatureService.processAttack(targetInstanceId, hpDamage, torporDamage, player)
 	
-	-- ★ 전투 상태 진입 (스킬 공격으로도 전투 UI 표시)
-	if CombatService and CombatService.engageCombat then
+	-- ★ 플레이어 직접 스킬 공격은 전투 BGM/상태에 반영
+	if CombatService and CombatService.engagePlayerCombat then
+		CombatService.engagePlayerCombat(userId, targetInstanceId)
+	elseif CombatService and CombatService.engageCombat then
 		CombatService.engageCombat(userId, targetInstanceId)
 	end
 	if killed and CombatService and CombatService.disengageCreature then

@@ -20,6 +20,7 @@ local NetController
 local CreatureService
 local InventoryService
 local SkillService
+local PlayerStatService
 
 --========================================
 -- 포획 확률 계산
@@ -164,6 +165,13 @@ local function handleCaptureAttempt(player: Player, payload: any)
 		text = creatureName .. " 포획 성공! 포획 상자가 인벤토리에 추가되었습니다.",
 	})
 
+	if PlayerStatService then
+		PlayerStatService.grantActionXP(userId, Balance.XP_CAPTURE_PAL or 0, {
+			source = Enums.XPSource.CAPTURE_PAL,
+			actionKey = "CAPTURE:" .. tostring(creatureId),
+		})
+	end
+
 	print(string.format("[CaptureService] Player %d captured %s (rate: %.0f%%)", userId, creatureId, captureRate * 100))
 
 	return { success = true, captureRate = captureRate }
@@ -179,11 +187,12 @@ function CaptureService.GetHandlers()
 	}
 end
 
-function CaptureService.Init(_NetController, _CreatureService, _InventoryService, _SkillService)
+function CaptureService.Init(_NetController, _CreatureService, _InventoryService, _SkillService, _PlayerStatService)
 	NetController = _NetController
 	CreatureService = _CreatureService
 	InventoryService = _InventoryService
 	SkillService = _SkillService
+	PlayerStatService = _PlayerStatService
 
 	print("[CaptureService] Initialized")
 end

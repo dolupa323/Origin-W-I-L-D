@@ -235,6 +235,10 @@ if success then
 	-- SkillEffectController 초기화 (스킬 VFX/사운드/애니메이션 연출)
 	local SkillEffectController = require(Controllers.SkillEffectController)
 	SkillEffectController.Init()
+
+	-- BGMController 초기화 (전투 BGM)
+	local BGMController = require(Controllers.BGMController)
+	BGMController.Init()
 	
 	-- [추가] PromptUI 초기화 (커스텀 ProximityPrompt)
 	local PromptUI = require(Client:WaitForChild("UI"):WaitForChild("PromptUI"))
