@@ -269,9 +269,10 @@ local function spawnAxeCastVFX(skillId: string, hrp: BasePart, castTemplates: { 
 	end
 
 	if skillId == "AXE_A3" then
-		local stormCount = 14
-		local stormDuration = 1.8
+		local stormCount = 65 -- [수정] 대폭 증가 (기존 35)
+		local stormDuration = 1.8 -- [수정] 다시 조금 늘려 풍성함 유지
 		local spawnPos = hrp.Position + hrp.CFrame.LookVector * 5
+		local sizeScale = 1.8 -- [수정] 크기 배율 추가
 
 		local anchor = Instance.new("Part")
 		anchor.Size = Vector3.new(1, 1, 1)
@@ -283,15 +284,15 @@ local function spawnAxeCastVFX(skillId: string, hrp: BasePart, castTemplates: { 
 		anchor.CFrame = CFrame.lookAt(spawnPos, spawnPos + hrp.CFrame.LookVector)
 		anchor.Parent = workspace
 
-		local slamTemplates = findVFXTemplates(castFolder, "SkillAxe_Slam_Cast")
+		local slamTemplates = findVFXTemplates(castVFXFolder, "SkillAxe_Slam_Cast")
 		if #slamTemplates > 0 then
-			local slamCount = math.random(3, 4)
+			local slamCount = math.random(6, 8) -- [수정] 슬램 횟수 대폭 증가
 			for i = 1, slamCount do
 				task.delay((i - 1) * (stormDuration / slamCount), function()
 					if not anchor or not anchor.Parent then return end
-					local rx = (math.random() - 0.5) * 5
-					local ry = (math.random() - 0.5) * 3
-					local rz = (math.random() - 0.5) * 5
+					local rx = (math.random() - 0.5) * 12 -- [수정] 범위 확장
+					local ry = (math.random() - 0.5) * 5
+					local rz = (math.random() - 0.5) * 12
 					local slamAnchor = Instance.new("Part")
 					slamAnchor.Size = Vector3.one
 					slamAnchor.Transparency = 1
@@ -300,29 +301,56 @@ local function spawnAxeCastVFX(skillId: string, hrp: BasePart, castTemplates: { 
 					slamAnchor.CanQuery = false
 					slamAnchor.CanTouch = false
 					slamAnchor.CFrame = CFrame.new(spawnPos + Vector3.new(rx, ry, rz))
-						* CFrame.Angles(0, math.rad(math.random(-30, 30)), 0)
+						* CFrame.Angles(0, math.rad(math.random(-180, 180)), 0)
 					slamAnchor.Parent = workspace
-					spawnVFX(slamTemplates[math.random(1, #slamTemplates)], slamAnchor, VFX_CAST_LIFETIME_FLURRY)
+					
+					-- 크기 스케일 적용하여 스폰
+					local vfx = slamTemplates[math.random(1, #slamTemplates)]:Clone()
+					if vfx:IsA("BasePart") then vfx.Size *= sizeScale end
+					for _, d in ipairs(vfx:GetDescendants()) do
+						if d:IsA("BasePart") then d.Size *= sizeScale
+						elseif d:IsA("ParticleEmitter") then
+							d.Size = NumberSequence.new({
+								NumberSequenceKeypoint.new(0, d.Size.Keypoints[1].Value * sizeScale),
+								NumberSequenceKeypoint.new(1, d.Size.Keypoints[#d.Size.Keypoints].Value * sizeScale)
+							})
+						end
+					end
+					spawnVFX(vfx, slamAnchor, VFX_CAST_LIFETIME_FLURRY)
 					Debris:AddItem(slamAnchor, VFX_CAST_LIFETIME_FLURRY + 0.5)
 				end)
 			end
 		end
 
 		for i = 1, stormCount do
-			task.delay((i - 1) * (stormDuration / stormCount), function()
+			local delayTime = (i - 1) * (stormDuration / stormCount) + (math.random() * 0.05)
+			task.delay(delayTime, function()
 				if not anchor or not anchor.Parent then return end
 				local tmpl = castTemplates[math.random(1, #castTemplates)]
-				local rx = (math.random() - 0.5) * 6
-				local ry = (math.random() - 0.5) * 4
-				local rz = (math.random() - 0.5) * 6
+				local rx = (math.random() - 0.5) * 12
+				local ry = (math.random() - 0.5) * 8
+				local rz = (math.random() - 0.5) * 12
 				local offsetCF = CFrame.new(spawnPos + Vector3.new(rx, ry, rz))
 					* CFrame.Angles(
-						math.rad(math.random(-30, 30)),
-						math.rad(math.random(-180, 180)),
-						math.rad(math.random(-30, 30))
+						math.rad(math.random(0, 360)),
+						math.rad(math.random(0, 360)),
+						math.rad(math.random(0, 360))
 					)
 				anchor.CFrame = offsetCF
-				spawnVFX(tmpl, anchor, VFX_CAST_LIFETIME_FLURRY)
+				
+				-- 크기 스케일 적용하여 스폰
+				local vfx = tmpl:Clone()
+				if vfx:IsA("BasePart") then vfx.Size *= sizeScale end
+				for _, d in ipairs(vfx:GetDescendants()) do
+					if d:IsA("BasePart") then d.Size *= sizeScale
+					elseif d:IsA("ParticleEmitter") then
+						d.Size = NumberSequence.new({
+							NumberSequenceKeypoint.new(0, d.Size.Keypoints[1].Value * sizeScale),
+							NumberSequenceKeypoint.new(1, d.Size.Keypoints[#d.Size.Keypoints].Value * sizeScale)
+						})
+					end
+				end
+				spawnVFX(vfx, anchor, VFX_CAST_LIFETIME_FLURRY)
 			end)
 		end
 		Debris:AddItem(anchor, stormDuration + VFX_CAST_LIFETIME_FLURRY + 0.5)

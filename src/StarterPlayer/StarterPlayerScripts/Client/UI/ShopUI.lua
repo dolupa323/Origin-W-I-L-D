@@ -72,7 +72,7 @@ local function makeSectionHeader(parent: Instance, title: string, subtitle: stri
 		name = "SectionHeader",
 		size = UDim2.new(1, 0, 0, ShopUI.IsMobile and 52 or 58),
 		bg = C.BG_DARK,
-		bgT = 0.14,
+		bgT = 0.65, -- [Refinement]
 		r = 8,
 		stroke = 1,
 		strokeC = C.BORDER_DIM,
@@ -111,7 +111,7 @@ local function makeEmptyState(parent: Instance, text: string)
 		name = "EmptyState",
 		size = UDim2.new(1, 0, 0, ShopUI.IsMobile and 64 or 72),
 		bg = C.BG_DARK,
-		bgT = 0.26,
+		bgT = 0.72, -- [Refinement]
 		r = 8,
 		stroke = 1,
 		strokeC = C.BORDER_DIM,
@@ -141,7 +141,7 @@ local function makeItemRow(parent: Instance, itemId: string, nameText: string, d
 		name = "ItemRow_" .. tostring(itemId),
 		size = UDim2.new(1, 0, 0, rowHeight),
 		bg = C.BG_PANEL_L,
-		bgT = 0.12,
+		bgT = 0.62, -- [Refinement] Increased transparency for glass look
 		r = 10,
 		stroke = 1,
 		strokeC = C.BORDER_DIM,
@@ -154,7 +154,7 @@ local function makeItemRow(parent: Instance, itemId: string, nameText: string, d
 		pos = UDim2.new(0, 12, 0.5, 0),
 		anchor = Vector2.new(0, 0.5),
 		bg = C.BG_SLOT,
-		bgT = 0.08,
+		bgT = 0.15, -- Icons need slightly more contrast
 		r = 8,
 		stroke = 1,
 		strokeC = C.BORDER_DIM,
@@ -240,7 +240,7 @@ local function makeColumnPanel(parent: Instance, name: string, size: UDim2, layo
 		name = name,
 		size = size,
 		bg = C.BG_DARK,
-		bgT = 0.1,
+		bgT = 0.60, -- [Refinement] Columns also transparent
 		r = 10,
 		stroke = 1,
 		strokeC = C.BORDER,

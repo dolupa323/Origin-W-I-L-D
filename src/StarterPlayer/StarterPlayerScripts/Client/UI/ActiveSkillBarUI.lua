@@ -23,6 +23,7 @@ local Utils = require(UI.UIUtils)
 
 local Controllers = Client:WaitForChild("Controllers")
 local SkillController = require(Controllers.SkillController)
+local MovementController = require(Controllers.MovementController)
 
 local C = Theme.Colors
 local F = Theme.Fonts
@@ -34,8 +35,8 @@ local ActiveSkillBarUI = {}
 --========================================
 local HEX_SIZE = isMobile and 96 or 88
 local HEX_GAP = isMobile and 44 or 40
-local SLOT_COUNT = 3
-local KEY_LABELS = { "Q", "F", "V" }
+local SLOT_COUNT = 4
+local KEY_LABELS = { "Q", "F", "V", "Ctrl" }
 local COOLDOWN_COLOR = Color3.fromRGB(0, 0, 0)
 local BORDER_READY = Color3.fromRGB(80, 80, 70)
 
@@ -154,10 +155,11 @@ local function createBar(parent)
 	-- 컴포넌트들의 바운딩 박스 (Q,F 상단 / Cap, V 하단)
 	-- 가로: capX (cx-2*dx) ~ F (cx+dx) => 폭 3*dx + HEX_SIZE
 	-- 세로: Q (cy-dy/2) ~ V (cy+dy/2) => 높이 dy + HEX_SIZE
-	local areaW = 3 * dx + HEX_SIZE + 20
-	local areaH = dy + HEX_SIZE + 20
-	local cx = 2 * dx + HEX_SIZE / 2 + 10
-	local cy = areaH / 2
+	-- 육각형 배치를 위한 확장된 계산 (Q, F 상단 / Cap, V 중단 / Roll 하단)
+	local areaW = 4 * dx + HEX_SIZE + 20
+	local areaH = 2 * dy + HEX_SIZE + 20
+	local cx = 3 * dx + HEX_SIZE / 2 + 10
+	local cy = 0.5 * dy + HEX_SIZE / 2 + 10
 
 	barFrame = Utils.mkFrame({
 		name = "ActiveSkillBar",
@@ -172,7 +174,8 @@ local function createBar(parent)
 	local positions = {
 		{x = cx - dx, y = cy - dy / 2}, -- Q (좌상)
 		{x = cx + dx, y = cy - dy / 2}, -- F (우상)
-		{x = cx,      y = cy + dy / 2}, -- V (우하)
+		{x = cx,      y = cy + dy / 2}, -- V (중단 우)
+		{x = cx - 3 * dx, y = cy + 1.5 * dy}, -- Roll (하단 좌)
 	}
 
 	for i = 1, SLOT_COUNT do
@@ -261,7 +264,11 @@ local function createBar(parent)
 
 		-- 터치/클릭 이벤트
 		slotFrame.MouseButton1Click:Connect(function()
-			SkillController.useSkillBySlot(i, _orientAndGetTarget())
+			if i == 4 then
+				MovementController.performDodge()
+			else
+				SkillController.useSkillBySlot(i, _orientAndGetTarget())
+			end
 		end)
 
 		slotRefs[i] = {
@@ -501,6 +508,29 @@ local function refreshSlots()
 		local ref = slotRefs[i]
 		if not ref then continue end
 
+		-- 4번째 슬롯은 구르기 고정
+		if i == 4 then
+			local img = _getIconImage("ICON_ROLL") or _getIconImage("ACTIVE_ROLL")
+			ref.icon.Image = img or ""
+			ref.icon.ImageTransparency = img and 0 or 0.8
+			
+			local remaining = MovementController.getDodgeCooldownRemaining()
+			if remaining > 0 then
+				_setHexBarsTransparency(ref.cooldownBars, 0.45)
+				ref.cooldownText.Text = tostring(math.ceil(remaining))
+				ref.icon.ImageTransparency = 0.5
+				ref.wasOnCooldown = true
+				_setHexBarsColor(ref.strokeBars, C.BORDER_DIM)
+			else
+				_setHexBarsTransparency(ref.cooldownBars, 1)
+				ref.cooldownText.Text = ""
+				ref.icon.ImageTransparency = 0
+				_setHexBarsColor(ref.strokeBars, C.BORDER_DIM)
+			end
+			ref.frame.Visible = true
+			continue
+		end
+
 		local skillId = slots[i]
 
 		if skillId then
@@ -587,27 +617,30 @@ function ActiveSkillBarUI.Init(parent)
 		local slots = SkillController.getActiveSkillSlots()
 		for i = 1, SLOT_COUNT do
 			local ref = slotRefs[i]
-			local skillId = slots[i]
-			if ref and skillId then
-				local remaining = SkillController.getSlotCooldownRemaining(i)
-				if remaining > 0 then
-					local skill = SkillTreeData.GetSkill(skillId)
-					if skill then
-						_setHexBarsTransparency(ref.cooldownBars, 0.45)
-						ref.cooldownText.Text = tostring(math.ceil(remaining))
-						ref.icon.ImageTransparency = 0.5
-					end
-				elseif ref.wasOnCooldown then
-					_setHexBarsTransparency(ref.cooldownBars, 1)
-					ref.cooldownText.Text = ""
-					ref.icon.ImageTransparency = 0
-					ref.wasOnCooldown = false
-					_setHexBarsColor(ref.strokeBars, BORDER_READY)
-					for _, bar in ipairs(ref.strokeBars) do
-						TweenService:Create(bar, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-							BackgroundColor3 = C.BORDER_DIM,
-						}):Play()
-					end
+			if not ref then continue end
+
+			local remaining = 0
+			if i == 4 then
+				remaining = MovementController.getDodgeCooldownRemaining()
+			else
+				remaining = SkillController.getSlotCooldownRemaining(i)
+			end
+
+			if remaining > 0 then
+				_setHexBarsTransparency(ref.cooldownBars, 0.45)
+				ref.cooldownText.Text = tostring(math.ceil(remaining))
+				ref.icon.ImageTransparency = 0.5
+				ref.wasOnCooldown = true
+			elseif ref.wasOnCooldown then
+				_setHexBarsTransparency(ref.cooldownBars, 1)
+				ref.cooldownText.Text = ""
+				ref.icon.ImageTransparency = 0
+				ref.wasOnCooldown = false
+				_setHexBarsColor(ref.strokeBars, BORDER_READY)
+				for _, bar in ipairs(ref.strokeBars) do
+					TweenService:Create(bar, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+						BackgroundColor3 = C.BORDER_DIM,
+					}):Play()
 				end
 			end
 		end

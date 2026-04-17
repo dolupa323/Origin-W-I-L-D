@@ -12,6 +12,7 @@ local Controllers = Client:WaitForChild("Controllers")
 local NetClient = require(Client.NetClient)
 local InputManager = require(Client.InputManager)
 local UIManager = require(Client.UIManager)
+local Balance = require(ReplicatedStorage.Shared.Config.Balance)
 
 local function createStudioAdminGoldPanel()
 	if not RunService:IsStudio() then
@@ -19,6 +20,9 @@ local function createStudioAdminGoldPanel()
 	end
 
 	local player = Players.LocalPlayer
+	player.CameraMaxZoomDistance = Balance.CAM_MAX_ZOOM
+	player.CameraMinZoomDistance = Balance.CAM_MIN_ZOOM
+	
 	local playerGui = player:FindFirstChild("PlayerGui")
 	if not playerGui or playerGui:FindFirstChild("StudioAdminGoldUI") then
 		return
@@ -577,6 +581,16 @@ if success then
 		UIManager.closeShop()
 		if UIManager.closeTotem then
 			UIManager.closeTotem()
+		end
+		
+		-- Radial UIs
+		local FacilityRadialUI = require(Client.UI.FacilityRadialUI)
+		if FacilityRadialUI.IsOpen() then
+			FacilityRadialUI.Close()
+		end
+		local PalRadialUI = require(Client.UI.PalRadialUI)
+		if PalRadialUI.IsOpen() then
+			PalRadialUI.Close()
 		end
 	end)
 end

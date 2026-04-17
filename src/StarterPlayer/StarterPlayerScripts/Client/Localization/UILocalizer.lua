@@ -60,7 +60,7 @@ local KO_TO_EN = {
 	["초원"] = "Grassland",
 	["열대"] = "Tropical",
 	["사막"] = "Desert",
-	["툰드라"] = "Tundra",
+	["설원"] = "Snowy",
 	["동물을 선택하세요."] = "Select a creature.",
 	["동물 정보 및 연구 보너스\n[연구 완료 시 상시 효과가 적용됩니다]"] = "Creature info and research bonus\n[Permanent effect applies when research is complete]",
 	["장착 시 플레이어 효과"] = "Effect While Equipped",
@@ -516,3 +516,4 @@ function UILocalizer.StartAuto(root: Instance)
 end
 
 return UILocalizer
+

@@ -20,7 +20,7 @@ local unlockedSkills = {}    -- { [skillId] = true }
 local combatTreeId = nil     -- "SWORD" | "BOW" | "AXE" | nil
 local spAvailable = 0
 local spSpent = 0
-local activeSkillSlots = { nil, nil, nil }
+local activeSkillSlots = { nil, nil, nil, nil }
 local playerLevel = 1
 
 -- 액티브 스킬 쿨다운 (클라이언트 예측)
@@ -129,7 +129,7 @@ function SkillController.requestData(callback: ((boolean) -> ())?)
 			combatTreeId = data.combatTreeId
 			spAvailable = data.spAvailable or 0
 			spSpent = data.spSpent or 0
-			activeSkillSlots = data.activeSkillSlots or { nil, nil, nil }
+			activeSkillSlots = data.activeSkillSlots or { nil, nil, nil, nil }
 			playerLevel = data.level or 1
 			_fireListeners()
 		end
@@ -180,7 +180,7 @@ end
 
 --- 슬롯 인덱스(1~3)로 스킬 사용
 function SkillController.useSkillBySlot(slotIndex: number, targetId: string?)
-	if slotIndex < 1 or slotIndex > 3 then return end
+	if slotIndex < 1 or slotIndex > 4 then return end
 	local skillId = activeSkillSlots[slotIndex]
 	if not skillId then return end
 	SkillController.useSkill(skillId, targetId)
@@ -304,7 +304,7 @@ function SkillController.requestReset(callback: ((boolean) -> ())?)
 			combatTreeId = data.combatTreeId
 			spAvailable = data.spAvailable or 0
 			spSpent = data.spSpent or 0
-			activeSkillSlots = data.activeSkillSlots or { nil, nil, nil }
+			activeSkillSlots = data.activeSkillSlots or { nil, nil, nil, nil }
 			playerLevel = data.level or 1
 			_fireListeners()
 		end
@@ -329,7 +329,7 @@ function SkillController.Init()
 				combatTreeId = data.combatTreeId
 				spAvailable = data.spAvailable or 0
 				spSpent = data.spSpent or 0
-				activeSkillSlots = data.activeSkillSlots or { nil, nil, nil }
+				activeSkillSlots = data.activeSkillSlots or { nil, nil, nil, nil }
 				playerLevel = data.level or 1
 				_fireListeners()
 				break

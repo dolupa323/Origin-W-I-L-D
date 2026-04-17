@@ -14,6 +14,7 @@ local initialized = false
 
 -- Dependencies (injected via Init)
 local NetController
+local NPCShopService
 local SaveService
 local InventoryService
 local HarvestService
@@ -33,24 +34,26 @@ local PORTAL_DEFINITIONS = {
 		portalName = "Portal_Tropical",             -- 초원섬의 출발 포탈 (workspace 오브젝트명)
 		returnPortalName = "Portal_Return_Tropical",-- 열대섬의 귀환 포탈 (workspace 오브젝트명)
 		targetZone = "TROPICAL",                    -- 이동 대상 Zone
-		repairCost = {
-			{ itemId = "LOG", amount = 10, name = "통나무" },
-			{ itemId = "STONE", amount = 10, name = "돌" },
-		},
+		repairGold = 30,                            -- [수정] 열대섬 30골드로 변경
 	},
-	-- ★ 향후 섬 추가 예시:
-	-- {
-	--     id = "DESERT",
-	--     displayName = "사막섬 고대 포탈",
-	--     destinationName = "사막섬",
-	--     portalName = "Portal_Desert",
-	--     returnPortalName = "Portal_Return_Desert",
-	--     targetZone = "DESERT",
-	--     repairCost = {
-	--         { itemId = "LOG", amount = 20, name = "통나무" },
-	--         { itemId = "IRON_INGOT", amount = 5, name = "철 주괴" },
-	--     },
-	-- },
+	{
+		id = "DESERT",
+		displayName = "사막섬 고대 포탈",
+		destinationName = "사막섬",
+		portalName = "Portal_Desert",
+		returnPortalName = "Portal_Return_Desert",
+		targetZone = "DESERT",
+		repairGold = 2500,
+	},
+	{
+		id = "SNOWY",
+		displayName = "설원섬 고대 포탈",
+		destinationName = "설원섬",
+		portalName = "Portal_Snowy",
+		returnPortalName = "Portal_Return_Snowy",
+		targetZone = "SNOWY",
+		repairGold = 10000,
+	},
 }
 
 local PROMPT_DISTANCE = 14
@@ -76,7 +79,7 @@ local function _migrateOldPortalState(state)
 		state.portals = {
 			TROPICAL = {
 				repaired = state.portalRepaired == true,
-				progress = type(state.portalProgress) == "table" and state.portalProgress or {},
+				currentGold = type(state.portalProgress) == "table" and state.portalProgress.GOLD or 0,
 			},
 		}
 		state.portalRepaired = nil
@@ -90,28 +93,16 @@ end
 
 local function _getPortalState(userId, portalId)
 	local state = SaveService and SaveService.getPlayerState(userId)
-	if not state then return { repaired = false, progress = {} } end
+	if not state then return { repaired = false, currentGold = 0 } end
 	local portals = _migrateOldPortalState(state)
 	if not portals[portalId] then
-		portals[portalId] = { repaired = false, progress = {} }
+		portals[portalId] = { repaired = false, currentGold = 0 }
 	end
 	return portals[portalId]
 end
 
 local function _isPortalRepaired(userId, portalId)
 	return _getPortalState(userId, portalId).repaired == true
-end
-
-local function _ensurePortalProgress(portalState, repairCost)
-	if type(portalState.progress) ~= "table" then
-		portalState.progress = {}
-	end
-	for _, req in ipairs(repairCost) do
-		if type(portalState.progress[req.itemId]) ~= "number" then
-			portalState.progress[req.itemId] = 0
-		end
-	end
-	return portalState.progress
 end
 
 local function _markPortalRepaired(userId, portalId)
@@ -122,39 +113,21 @@ local function _markPortalRepaired(userId, portalId)
 		local portals = _migrateOldPortalState(state)
 		if not portals[portalId] then portals[portalId] = {} end
 		portals[portalId].repaired = true
-		local progress = _ensurePortalProgress(portals[portalId], def.repairCost)
-		for _, req in ipairs(def.repairCost) do
-			progress[req.itemId] = req.amount
-		end
+		portals[portalId].currentGold = def.repairGold
 		return state
 	end)
 end
 
 local function _getPortalStatus(userId, portalId)
 	local def = portalLookup[portalId]
-	if not def then return { repaired = false, cost = {} } end
+	if not def then return { repaired = false, currentGold = 0, requiredGold = 0 } end
 
 	local portalState = _getPortalState(userId, portalId)
-	local repaired = portalState.repaired == true
-	local progress = _ensurePortalProgress(portalState, def.repairCost)
-	local cost = {}
-	local allMet = true
+	local repaired = portalState.repaired == true -- [중요] repaired 상태 체크
+	local currentGold = tonumber(portalState.currentGold) or 0
+	local requiredGold = def.repairGold
 
-	for _, req in ipairs(def.repairCost) do
-		local current = math.clamp(tonumber(progress[req.itemId]) or 0, 0, req.amount)
-		local met = current >= req.amount
-		if not met then allMet = false end
-		table.insert(cost, {
-			itemId = req.itemId,
-			name = req.name,
-			required = req.amount,
-			current = current,
-			remaining = math.max(0, req.amount - current),
-			met = met,
-		})
-	end
-
-	if allMet and not repaired then
+	if currentGold >= requiredGold and not repaired then
 		_markPortalRepaired(userId, portalId)
 		repaired = true
 	end
@@ -163,8 +136,11 @@ local function _getPortalStatus(userId, portalId)
 		portalId = portalId,
 		displayName = def.displayName,
 		destinationName = def.destinationName,
+		portalName = def.portalName,
+		returnPortalName = def.returnPortalName,
 		repaired = repaired,
-		cost = cost,
+		currentGold = currentGold,
+		requiredGold = requiredGold,
 		isReturn = false,
 	}
 end
@@ -371,61 +347,67 @@ local function _depositPortalMaterial(player, payload)
 		return { success = true, data = _getPortalStatus(userId, portalId) }
 	end
 
-	local itemId = payload and payload.itemId
-	if type(itemId) ~= "string" or itemId == "" then
+	return { success = false, errorCode = "RETIRED_METHOD" } -- 구식 재료 투입 방식은 비활성화
+end
+
+	--========================================
+-- Deposit Gold (per-portal)
+--========================================
+
+local function _depositPortalGold(player, payload)
+	local userId = player.UserId
+	local interaction = activeInteractions[userId]
+	local portalId = (payload and payload.portalId) or (interaction and interaction.portalId)
+	if not portalId then
 		return { success = false, errorCode = "BAD_REQUEST" }
 	end
 
-	local reqData = nil
-	for _, req in ipairs(def.repairCost) do
-		if req.itemId == itemId then
-			reqData = req
-			break
-		end
-	end
-	if not reqData then
+	local def = portalLookup[portalId]
+	if not def then
 		return { success = false, errorCode = "BAD_REQUEST" }
 	end
 
-	local state = SaveService and SaveService.getPlayerState(userId)
-	if not state then
-		return { success = false, errorCode = "INVALID_STATE" }
+	if not _isPlayerNearPortal(player, def.portalName) then
+		return { success = false, errorCode = "OUT_OF_RANGE" }
 	end
 
-	local portals = _migrateOldPortalState(state)
-	if not portals[portalId] then portals[portalId] = { repaired = false, progress = {} } end
-	local progress = _ensurePortalProgress(portals[portalId], def.repairCost)
-	local current = math.clamp(tonumber(progress[itemId]) or 0, 0, reqData.amount)
-	local need = reqData.amount - current
+	if _isPortalRepaired(userId, portalId) then
+		return { success = true, data = _getPortalStatus(userId, portalId) }
+	end
+
+	local amount = tonumber(payload and payload.amount) or 0
+	if amount <= 0 then
+		return { success = false, errorCode = "BAD_REQUEST" }
+	end
+
+	local portalState = _getPortalState(userId, portalId)
+	local currentGold = tonumber(portalState.currentGold) or 0
+	local need = def.repairGold - currentGold
+
 	if need <= 0 then
 		return { success = true, data = _getPortalStatus(userId, portalId) }
 	end
 
-	local requestedAmount = math.max(1, math.floor(tonumber(payload and payload.amount) or need))
-	local depositAmount = math.min(need, requestedAmount)
+	local depositAmount = math.min(need, amount)
 
-	if not InventoryService.hasItem(userId, itemId, 1) then
-		return { success = false, errorCode = "NO_ITEM", data = _getPortalStatus(userId, portalId) }
-	end
-
-	local removed = InventoryService.removeItem(userId, itemId, depositAmount)
-	if removed <= 0 then
-		return { success = false, errorCode = "NO_ITEM" }
+	-- NPCShopService를 통한 골드 차감
+	local ok, err = NPCShopService.removeGold(userId, depositAmount)
+	if not ok then
+		return { success = false, errorCode = "INSUFFICIENT_GOLD", data = _getPortalStatus(userId, portalId) }
 	end
 
 	SaveService.updatePlayerState(userId, function(s)
 		local p = _migrateOldPortalState(s)
-		if not p[portalId] then p[portalId] = { repaired = false, progress = {} } end
-		local prog = _ensurePortalProgress(p[portalId], def.repairCost)
-		prog[itemId] = math.min(reqData.amount, (tonumber(prog[itemId]) or 0) + removed)
+		if not p[portalId] then p[portalId] = { repaired = false, currentGold = 0 } end
+		p[portalId].currentGold = (tonumber(p[portalId].currentGold) or 0) + depositAmount
+		if p[portalId].currentGold >= def.repairGold then
+			p[portalId].repaired = true
+		end
 		return s
 	end)
 
 	if SaveService and SaveService.savePlayer then
-		local saveOk, saveErr = SaveService.savePlayer(userId)
-		if not saveOk then
-			warn(string.format("[PortalService] Save failed after deposit (user=%d): %s", userId, tostring(saveErr)))
-		end
+		SaveService.savePlayer(userId)
 	end
 
 	local status = _getPortalStatus(userId, portalId)
@@ -609,13 +591,14 @@ local function _onPortalTriggered(player, portalId, isReturn)
 	activeInteractions[userId] = { portalId = portalId, isReturn = isReturn }
 
 	if isReturn then
-		-- 귀환 포탈: 수리 불필요, 바로 이용 가능
+		-- 귀환 포탈: 즉시 이동 UI (재료 불필요)
 		NetController.FireClient(player, "Portal.UI.Open", {
 			portalId = portalId,
-			displayName = "초원섬 귀환 포탈",
-			destinationName = "초원섬",
 			repaired = true,
-			cost = {},
+			displayName = "초원섬 귀환",
+			destinationName = "초원섬",
+			portalName = def.portalName,
+			returnPortalName = def.returnPortalName,
 			isReturn = true,
 		})
 	else
@@ -703,7 +686,7 @@ end
 -- Public API
 --========================================
 
-function PortalService.Init(_NetController, _SaveService, _InventoryService, _HarvestService, _CreatureService)
+function PortalService.Init(_NetController, _SaveService, _InventoryService, _HarvestService, _CreatureService, _NPCShopService)
 	if initialized then return end
 
 	NetController = _NetController
@@ -711,6 +694,7 @@ function PortalService.Init(_NetController, _SaveService, _InventoryService, _Ha
 	InventoryService = _InventoryService
 	HarvestService = _HarvestService
 	CreatureService = _CreatureService
+	NPCShopService = _NPCShopService
 
 	-- 모든 포탈 정의에 대해 프롬프트 설정
 	for _, def in ipairs(PORTAL_DEFINITIONS) do
@@ -738,7 +722,7 @@ function PortalService.GetHandlers()
 			return { success = true, data = _getPortalStatus(player.UserId, portalId) }
 		end,
 		["Portal.Deposit.Request"] = function(player, payload)
-			return _depositPortalMaterial(player, payload or {})
+			return _depositPortalGold(player, payload or {})
 		end,
 		["Portal.Teleport.Request"] = function(player, payload)
 			return _requestPortalTeleport(player, payload or {})

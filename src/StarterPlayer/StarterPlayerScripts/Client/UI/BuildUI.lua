@@ -90,11 +90,12 @@ function BuildUI.Init(parent, UIManager, isMobile)
 		local btn = Utils.mkBtn({
 			text = UILocalizer.Localize(cat.name),
 			size = UDim2.new(1, 0, 0, 45),
-			bg = C.BTN,
-			bgT = 0.3,
+			bg = C.BTN_GRAY,
+			bgT = 0.6,
 			ts = 16,
 			font = F.TITLE,
 			color = C.GRAY,
+			noHover = true,
 			parent = sidebar
 		})
 		btn.MouseButton1Click:Connect(function() UIManager._onBuildCategoryClick(cat.id) end)
@@ -189,17 +190,15 @@ function BuildUI.Refresh(facilityList, unlockedTech, catId, getIcon, UIManager, 
 		if not unlocked then
 			-- 미해금: 회색 비활성화
 			btn.TextColor3 = Color3.fromRGB(80, 75, 65)
-			btn.BackgroundColor3 = Color3.fromRGB(30, 28, 25)
-			btn.BackgroundTransparency = 0.5
+			Utils.setBtnState(btn, Color3.fromRGB(30, 28, 25), 0.7)
 		elseif isSel then
-			btn.TextColor3 = C.GOLD
-			btn.BackgroundColor3 = C.BTN_H
-			btn.BackgroundTransparency = 0.3
+			btn.TextColor3 = C.WHITE
+			Utils.setBtnState(btn, C.GOLD_SEL, 0.2)
 		else
 			btn.TextColor3 = C.GRAY
-			btn.BackgroundColor3 = C.BTN
-			btn.BackgroundTransparency = 0.3
+			Utils.setBtnState(btn, C.BTN_GRAY, 0.6)
 		end
+		
 		-- 과한 효과 제거 (UIStroke 등)
 		local stroke = btn:FindFirstChildOfClass("UIStroke")
 		if stroke then stroke.Enabled = false end

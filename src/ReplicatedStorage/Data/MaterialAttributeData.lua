@@ -54,7 +54,6 @@ MaterialAttributeData.Attributes = {
 --========================================
 MaterialAttributeData.ItemCategory = {
 	-- Blade 카테고리 (돌, 광석, 주괴, 부싯돌)
-	SMALL_STONE    = "BLADE",
 	STONE          = "BLADE",
 	FLINT          = "BLADE",
 	COPPER_ORE     = "BLADE",

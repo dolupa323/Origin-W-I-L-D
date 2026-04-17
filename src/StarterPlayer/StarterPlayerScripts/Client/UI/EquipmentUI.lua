@@ -59,7 +59,7 @@ function EquipmentUI.Init(parent, UIManager, Enums, isMobile)
 	
 	local header = Utils.mkFrame({name="Header", size=UDim2.new(1,0,0,50), bgT=1, parent=main})
 	Utils.mkLabel({text="EQUIPMENT [E]", pos=UDim2.new(0, 15, 0, 0), ts=26, font=F.TITLE, color=C.WHITE, ax=Enum.TextXAlignment.Left, parent=header})
-	Utils.mkBtn({text="X", size=UDim2.new(0, 42, 0, 42), pos=UDim2.new(1, -10, 0.5, 0), anchor=Vector2.new(1,0.5), bg=C.BTN, bgT=0.5, ts=24, color=C.WHITE, r=4, fn=function() UIManager.closeEquipment() end, parent=header})
+	Utils.mkBtn({text="X", size=UDim2.new(0, 42, 0, 42), pos=UDim2.new(1, -10, 0.5, 0), anchor=Vector2.new(1,0.5), bg=C.BTN, bgT=0.7, ts=24, color=C.WHITE, r=4, fn=function() UIManager.closeEquipment() end, parent=header})
 	
 	local content = Utils.mkFrame({name="Content", size=UDim2.new(1, -20, 1, -55), pos=UDim2.new(0, 10, 0, 45), bgT=1, parent=main})
 	content.ClipsDescendants = true -- 캐릭터가 프레임 바깥으로 나가는 것 방지
@@ -96,8 +96,8 @@ function EquipmentUI.Init(parent, UIManager, Enums, isMobile)
 			size = UDim2.new(0, 78, 0, 78),
 			pos = UDim2.new(0.5, 0, 0, 0),
 			anchor = Vector2.new(0.5, 0.5),
-			bgT = 0.3, 
-			stroke = 1, 
+			bgT = T.SLOT, 
+			stroke = false, 
 			parent = wrapper
 		})
 		
@@ -133,7 +133,7 @@ function EquipmentUI.Init(parent, UIManager, Enums, isMobile)
 	end
 	
 	-- [Right: Stats Distribution] (55%)
-	local statArea = Utils.mkFrame({name="StatArea", size=UDim2.new(0.55, 0, 1, 0), pos=UDim2.new(1, 0, 0, 0), anchor=Vector2.new(1,0), bg=C.BG_PANEL_L, parent=content})
+	local statArea = Utils.mkFrame({name="StatArea", size=UDim2.new(0.55, 0, 1, 0), pos=UDim2.new(1, 0, 0, 0), anchor=Vector2.new(1,0), bgT=1, parent=content})
 	EquipmentUI.Refs.StatPoints = Utils.mkLabel({text=UILocalizer.Localize("보유 포인트: 0"), size=UDim2.new(1, -110, 0, 40), pos=UDim2.new(0,10,0,0), ts=24, font=F.TITLE, color=C.GOLD, ax=Enum.TextXAlignment.Left, parent=statArea})
 	
 	-- 전부 초기화 버튼 (StatPoints 라벨 오른쪽)
@@ -142,7 +142,8 @@ function EquipmentUI.Init(parent, UIManager, Enums, isMobile)
 		size=UDim2.new(0, 110, 0, 36),
 		pos=UDim2.new(1, -10, 0, 5),
 		anchor=Vector2.new(1, 0),
-		bg=C.RED or Color3.fromRGB(200, 60, 60),
+		bg=C.BTN_GRAY,
+		isNegative=true,
 		ts=17,
 		font=F.TITLE,
 		parent=statArea
@@ -164,8 +165,8 @@ function EquipmentUI.Init(parent, UIManager, Enums, isMobile)
 		{id=Enums.StatId.DEFENSE, name="방어력", up=false}
 	}
 	for _, s in ipairs(stats) do
-		-- 스텟 라인 크기 비율화 (0.18 Scale)
-		local line = Utils.mkFrame({size=UDim2.new(1, 0, 0, 60), bg=C.BG_SLOT, bgT=0.3, parent=statsScroll})
+		-- 스텟 라인 크기 비율화 (배경 제거)
+		local line = Utils.mkFrame({size=UDim2.new(1, 0, 0, 60), bgT=1, parent=statsScroll})
 		Utils.mkLabel({text=UILocalizer.Localize(s.name), size=UDim2.new(0.4,0,1,0), pos=UDim2.new(0,10,0,0), ts=20, ax=Enum.TextXAlignment.Left, parent=line})
 		local val = Utils.mkLabel({text="0", size=UDim2.new(0.4,0,1,0), pos=UDim2.new(0.8,-40,0,0), anchor=Vector2.new(1,0), ts=21, font=F.NUM, ax=Enum.TextXAlignment.Right, parent=line})
 		

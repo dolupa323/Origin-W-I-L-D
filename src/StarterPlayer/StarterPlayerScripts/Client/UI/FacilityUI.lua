@@ -105,7 +105,7 @@ function FacilityUI.Init(parent, UIManager, isMobile)
 	
 	-- 3. Left Side: Recipe List
 	local leftPanel = Utils.mkFrame({
-		name="Left", size=UDim2.new(0.5, -5, 1, 0), bg=C.BG_SLOT, bgT=0.35, r=4, stroke=1, strokeC=C.BORDER_DIM, parent=content
+		name="Left", size=UDim2.new(0.5, -5, 1, 0), bgT=1, r=4, parent=content
 	})
 	
 	local subTitle = Utils.mkLabel({
@@ -151,7 +151,7 @@ function FacilityUI.Init(parent, UIManager, isMobile)
 	-- 4. Right Side: Detail Panel
 	local rightPanel = Utils.mkFrame({
 		name="Right", size=UDim2.new(0.5, -5, 1, 0), pos=UDim2.new(0.5, 5, 0, 0), 
-		bg=C.BG_PANEL_L, bgT=0.15, r=4, stroke=1, strokeC=C.BORDER, parent=content
+		bgT=1, r=4, parent=content
 	})
 	FacilityUI.Refs.DetailFrame = rightPanel
 

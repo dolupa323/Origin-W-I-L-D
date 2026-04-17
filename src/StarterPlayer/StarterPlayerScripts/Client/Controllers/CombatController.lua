@@ -959,6 +959,12 @@ local function findTarget()
 				if structureId then
 					return current, structureId, "structure"
 				end
+
+				-- 플레이어 체크 (추가)
+				local targetPlr = Players:GetPlayerFromCharacter(current)
+				if targetPlr and targetPlr ~= player then
+					return current, current:GetAttribute("InstanceId") or targetPlr.Name, "player"
+				end
 			end
 
 			local structureIdFromPart = current:GetAttribute("StructureId")
@@ -996,7 +1002,14 @@ local function findTarget()
 	local filterInstances = {}
 	if creaturesFolder then table.insert(filterInstances, creaturesFolder) end
 	if nodesFolder then table.insert(filterInstances, nodesFolder) end
+	-- 플레이어 추가
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= player and p.Character then
+			table.insert(filterInstances, p.Character)
+		end
+	end
 	overlap.FilterDescendantsInstances = filterInstances
+
 	
 	-- 판정 반경은 리치보다 넉넉하게 (각도/정밀 사거리 판정 전 단계)
 	local scanRadius = reach + 15
@@ -1048,11 +1061,11 @@ local function findTarget()
 			
 			-- 마우스로 직접 찍은 경우 정면 판정 완화 (히트박스 우선)
 			if mDist <= reach + 8 then
-				if mType ~= "creature" then
+				if mType ~= "creature" and mType ~= "player" then
 					local nearestCreature = nil
 					local nearestDist = math.huge
 					for _, data in pairs(reachableTargets) do
-						if data.type == "creature" and data.dist < nearestDist then
+						if (data.type == "creature" or data.type == "player") and data.dist < nearestDist then
 							nearestDist = data.dist
 							nearestCreature = data
 						end
@@ -1074,7 +1087,7 @@ local function findTarget()
 	
 	for id, data in pairs(reachableTargets) do
 		local score = data.dist * (1 + data.angle / 45)
-		if data.type == "creature" then
+		if data.type == "creature" or data.type == "player" then
 			if score < bestCreatureScore then
 				bestCreatureScore = score
 				bestCreature = data

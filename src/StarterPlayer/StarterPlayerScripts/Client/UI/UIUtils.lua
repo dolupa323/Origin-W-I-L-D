@@ -12,7 +12,22 @@ local UIUtils = {}
 
 --- 비율 고정된 최상위 윈도우 랩퍼
 function UIUtils.mkWindow(p)
-	local win = UIUtils.mkFrame(p)
+	local win = UIUtils.mkFrame({
+		name = p.name,
+		size = p.size,
+		pos = p.pos,
+		anchor = p.anchor,
+		bg = p.bg,
+		bgT = p.bgT,
+		r = p.r,
+		stroke = p.stroke or 2.5, -- Main windows must have a stroke
+		strokeC = p.strokeC or C.BORDER,
+		strokeT = p.strokeT,
+		useCanvas = p.useCanvas,
+		z = p.z,
+		vis = p.vis,
+		parent = p.parent
+	})
 	if p.ratio then
 		local ratio = Instance.new("UIAspectRatioConstraint")
 		ratio.AspectRatio = p.ratio
@@ -47,12 +62,12 @@ function UIUtils.mkFrame(p)
 		c.Parent = f
 	end
 	
-	-- Gold Metallic Border Strokes
-	if p.stroke == true or p.strokeC then
+	-- Glassmorphism Edge Highlight (Disabled by default per user request: only outermost border)
+	if p.stroke == true or type(p.stroke) == "number" then
 		local s = Instance.new("UIStroke")
-		s.Thickness = (type(p.stroke) == "number") and p.stroke or 1.5
+		s.Thickness = (type(p.stroke) == "number") and p.stroke or 1.2
 		s.Color = p.strokeC or C.BORDER
-		s.Transparency = p.strokeT or 0.3
+		s.Transparency = p.strokeT or 0.5
 		s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		s.Parent = f
 	end
@@ -101,13 +116,14 @@ function UIUtils.mkBtn(p)
 	b.Size = p.size or UDim2.new(0, 120, 0, 40)
 	b.Position = p.pos or UDim2.new(0, 0, 0, 0)
 	b.AnchorPoint = p.anchor or Vector2.zero
-	b.BackgroundColor3 = p.bg or C.BTN
-	b.BackgroundTransparency = p.bgT or 0.25
+	local isNeg = p.isNegative == true
+	b.BackgroundColor3 = p.bg or (isNeg and C.BTN_GRAY or C.BTN)
+	b.BackgroundTransparency = p.bgT or 0.35
 	b.BorderSizePixel = 0
 	b.Text = UILocalizer.Localize(p.text or "")
-	b.TextColor3 = p.color or C.WHITE
+	b.TextColor3 = p.color or (isNeg and C.INK or C.BG_PANEL) -- Action buttons use dark text for contrast
 	b.TextSize = p.ts or 15
-	b.Font = p.font or F.NORMAL
+	b.Font = p.font or F.TITLE -- Button text usually better as Title font
 	b.AutoButtonColor = false
 	b.ZIndex = p.z or 1
 	b.Parent = p.parent
@@ -127,17 +143,32 @@ function UIUtils.mkBtn(p)
 		s.Parent = b
 	end
 	
-	local nc, hc = b.BackgroundColor3, p.hbg or C.BTN_H
-	local nt = p.bgT or 0.35
-	b.MouseEnter:Connect(function() 
-		TweenService:Create(b, TweenInfo.new(0.1), {BackgroundColor3 = hc, BackgroundTransparency = 0.1}):Play() 
-	end)
-	b.MouseLeave:Connect(function() 
-		TweenService:Create(b, TweenInfo.new(0.1), {BackgroundColor3 = nc, BackgroundTransparency = nt}):Play() 
-	end)
+	-- Normal state storage for hover effects (Fixes hover reverting to wrong state color)
+	b:SetAttribute("NormalColor", b.BackgroundColor3)
+	b:SetAttribute("NormalTransp", b.BackgroundTransparency)
+
+	local hc = p.hbg or (isNeg and C.BTN_GRAY_H or C.BTN_H)
+	
+	if p.noHover ~= true then
+		b.MouseEnter:Connect(function() 
+			TweenService:Create(b, TweenInfo.new(0.12), {BackgroundColor3 = hc, BackgroundTransparency = 0.15}):Play() 
+		end)
+		b.MouseLeave:Connect(function() 
+			local nc = b:GetAttribute("NormalColor") or b.BackgroundColor3
+			local nt = b:GetAttribute("NormalTransp") or b.BackgroundTransparency
+			TweenService:Create(b, TweenInfo.new(0.12), {BackgroundColor3 = nc, BackgroundTransparency = nt}):Play() 
+		end)
+	end
 	
 	if p.fn then b.MouseButton1Click:Connect(p.fn) end
 	return b
+end
+
+--- 버튼의 기본 상태 색상/투명도를 업데이트 (사이드바 탭 선택 등에 사용)
+function UIUtils.setBtnState(b, color, transp)
+	if not b then return end
+	if color then b:SetAttribute("NormalColor", color); b.BackgroundColor3 = color end
+	if transp ~= nil then b:SetAttribute("NormalTransp", transp); b.BackgroundTransparency = transp end
 end
 
 function UIUtils.mkHexBtn(p)
@@ -182,7 +213,7 @@ function UIUtils.mkSlot(p)
 		bg = p.bg or C.BG_SLOT,
 		bgT = p.bgT or T.SLOT,
 		r = p.r or 6,
-		stroke = p.stroke or 2,
+		stroke = p.stroke or false, -- Slots are border-less by default now
 		strokeC = p.strokeC or C.BORDER_DIM,
 		z = p.z or 1,
 		parent = p.parent

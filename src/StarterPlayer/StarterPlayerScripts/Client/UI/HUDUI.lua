@@ -621,11 +621,11 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 	mList.HorizontalAlignment = Enum.HorizontalAlignment.Right
 	mList.Padding = UDim.new(0, 6)
 	mList.Parent = menuRow
-	HUDUI.Refs.bagBtn = Utils.mkBtn({text = "인벤토리 Tab", size = UDim2.new(0, isSmall and 95 or 90, 0, isSmall and 26 or 24), bg = C.BG_PANEL_L, bgT = 0.35, r = 5, ts = isSmall and 11 or 10, font = F.TITLE, color = C.WHITE, fn = function() UIManager.toggleInventory() end, parent = menuRow})
-	HUDUI.Refs.buildBtn = Utils.mkBtn({text = "건설 C", size = UDim2.new(0, isSmall and 60 or 55, 0, isSmall and 26 or 24), bg = C.BG_PANEL_L, bgT = 0.35, r = 5, ts = isSmall and 11 or 10, font = F.TITLE, color = C.WHITE, fn = function() UIManager.toggleBuild() end, parent = menuRow})
-	HUDUI.Refs.equipBtn = Utils.mkBtn({text = "장비 E", size = UDim2.new(0, isSmall and 60 or 55, 0, isSmall and 26 or 24), bg = C.BG_PANEL_L, bgT = 0.35, r = 5, ts = isSmall and 11 or 10, font = F.TITLE, color = C.WHITE, fn = function() UIManager.toggleEquipment() end, parent = menuRow})
-	HUDUI.Refs.collectionBtn = Utils.mkBtn({text = "도감 P", size = UDim2.new(0, isSmall and 60 or 55, 0, isSmall and 26 or 24), bg = C.BG_PANEL_L, bgT = 0.35, r = 5, ts = isSmall and 11 or 10, font = F.TITLE, color = C.WHITE, fn = function() UIManager.toggleCollection() end, parent = menuRow})
-	HUDUI.Refs.skillBtn = Utils.mkBtn({text = "스킬 K", size = UDim2.new(0, isSmall and 60 or 55, 0, isSmall and 26 or 24), bg = C.BG_PANEL_L, bgT = 0.35, r = 5, ts = isSmall and 11 or 10, font = F.TITLE, color = C.WHITE, fn = function() UIManager.toggleSkillTree() end, parent = menuRow})
+	HUDUI.Refs.bagBtn = Utils.mkBtn({text = "인벤토리 Tab", size = UDim2.new(0, isSmall and 95 or 90, 0, isSmall and 26 or 24), bgT = 0.35, r = 5, ts = isSmall and 11 or 10, font = F.TITLE, color = C.WHITE, isNegative=true, fn = function() UIManager.toggleInventory() end, parent = menuRow})
+	HUDUI.Refs.buildBtn = Utils.mkBtn({text = "건설 C", size = UDim2.new(0, isSmall and 60 or 55, 0, isSmall and 26 or 24), bgT = 0.35, r = 5, ts = isSmall and 11 or 10, font = F.TITLE, color = C.WHITE, isNegative=true, fn = function() UIManager.toggleBuild() end, parent = menuRow})
+	HUDUI.Refs.equipBtn = Utils.mkBtn({text = "장비 E", size = UDim2.new(0, isSmall and 60 or 55, 0, isSmall and 26 or 24), bgT = 0.35, r = 5, ts = isSmall and 11 or 10, font = F.TITLE, color = C.WHITE, isNegative=true, fn = function() UIManager.toggleEquipment() end, parent = menuRow})
+	HUDUI.Refs.collectionBtn = Utils.mkBtn({text = "도감 P", size = UDim2.new(0, isSmall and 60 or 55, 0, isSmall and 26 or 24), bgT = 0.35, r = 5, ts = isSmall and 11 or 10, font = F.TITLE, color = C.WHITE, isNegative=true, fn = function() UIManager.toggleCollection() end, parent = menuRow})
+	HUDUI.Refs.skillBtn = Utils.mkBtn({text = "스킬 K", size = UDim2.new(0, isSmall and 60 or 55, 0, isSmall and 26 or 24), bgT = 0.35, r = 5, ts = isSmall and 11 or 10, font = F.TITLE, color = C.WHITE, isNegative=true, fn = function() UIManager.toggleSkillTree() end, parent = menuRow})
 	HUDUI.Refs.menuRow = menuRow
 
 	-- [Hotbar] (Center Bottom, 8 slots)

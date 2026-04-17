@@ -44,7 +44,6 @@ local trackedNodes = {} -- [Instance] = true
 local DEBUG_FORCE_NODE_IDS = {
 	GROUND_BRANCH = true,
 	GROUND_FIBER = true,
-	GROUND_STONE = true,
 	TREE_THIN = true,
 }
 

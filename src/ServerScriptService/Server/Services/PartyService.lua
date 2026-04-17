@@ -158,6 +158,7 @@ local function endMountState(summon, notifyClient: boolean?)
 	summon.model:SetAttribute("MountedAnimState", nil)
 	summon.humanoid.WalkSpeed = summon.baseSpeed
 	summon.humanoid.JumpPower = summon.baseJumpPower or 5
+	summon.humanoid.AutoRotate = true
 	setPalState(summon, "IDLE")
 
 	local riderPlayer = riderUserId and Players:GetPlayerByUserId(riderUserId)
@@ -218,6 +219,7 @@ local function beginMountState(summon, riderPlayer: Player)
 	summon.mountSpeed = resolveMountSpeed(summon.palData, summon.creatureData, summon.baseSpeed)
 	summon.humanoid.WalkSpeed = summon.mountSpeed
 	summon.humanoid.JumpPower = (summon.creatureData and summon.creatureData.mountJumpPower) or 48
+	summon.humanoid.AutoRotate = false
 	setPalState(summon, "MOUNTED")
 	riderPlayer:SetAttribute("MountedPalUID", summon.palUID)
 	if summon.rootPart then
@@ -299,66 +301,25 @@ local function updateMountedSummons(dt)
 
 		local throttle = summon.mountThrottle or 0
 		local steer = summon.mountSteer or 0
+		local camLook = summon.mountLookDir or Vector3.new(0, 0, -1)
+		
 		local hasThrottle = math.abs(throttle) > 0.01
 		local hasSteer = math.abs(steer) > 0.01
-		local turnDirection = steer < 0 and "LEFT" or "RIGHT"
-		local shouldTriggerTurnLead = hasSteer and ((summon.lastTurnDirection ~= turnDirection) or not summon.turnLeadUntil or now >= summon.turnLeadUntil)
 
-		if shouldTriggerTurnLead then
-			summon.lastTurnDirection = turnDirection
-			summon.turnLeadUntil = now + MOUNT_TURN_LEAD_TIME
-		end
-
-		if hasSteer and summon.turnLeadUntil and now < summon.turnLeadUntil then
-			summon.model:SetAttribute("MountedTurnDirection", turnDirection)
-			summon.model:SetAttribute("MountedAnimState", turnDirection == "LEFT" and "TURN_LEFT" or "TURN_RIGHT")
-			local turnStep = -steer * summon.mountTurnRate * dt * 0.9
-			summon.rootPart.CFrame = summon.rootPart.CFrame * CFrame.Angles(0, turnStep, 0)
-			local currentVel = summon.rootPart.AssemblyLinearVelocity
-			summon.rootPart.AssemblyLinearVelocity = Vector3.new(0, currentVel.Y, 0)
-			summon.humanoid:Move(Vector3.zero, false)
-			continue
-		end
-
-		if hasSteer then
-			local turnStep = -steer * summon.mountTurnRate * dt
-			summon.rootPart.CFrame = summon.rootPart.CFrame * CFrame.Angles(0, turnStep, 0)
-		end
-
-		if hasThrottle then
-			local moveDir = Vector3.new(summon.rootPart.CFrame.LookVector.X, 0, summon.rootPart.CFrame.LookVector.Z)
-			if moveDir.Magnitude < 0.01 then
-				moveDir = Vector3.new(0, 0, -1)
-			else
-				moveDir = moveDir.Unit
-			end
-			if throttle < 0 then
-				moveDir = -moveDir
-			end
-			summon.model:SetAttribute("MountedTurnDirection", nil)
+		-- [UX 개선] 클라이언트가 네트워크 소유권을 가진 상태에서 서버가 직접 CFrame을 조작하면 화면 흔들림(抖動)이 발생함.
+		-- 서버에서는 조작 상태(Attributes)만 갱신하고, 실제 물리 이동과 회전은 클라이언트(InteractController)에서 처리하도록 이관함.
+		
+		if hasThrottle or hasSteer then
+			-- 애니메이션 상태 업데이트 (클라이언트 UI와 연동)
 			summon.model:SetAttribute("MountedAnimState", "RUN")
-			summon.mountSpeed = resolveCurrentMountMoveSpeed(summon, throttle)
-			summon.humanoid.WalkSpeed = summon.mountSpeed
-			local currentVel = summon.rootPart.AssemblyLinearVelocity
-			summon.rootPart.AssemblyLinearVelocity = Vector3.new(
-				moveDir.X * summon.mountSpeed,
-				currentVel.Y,
-				moveDir.Z * summon.mountSpeed
-			)
-			summon.humanoid:Move(moveDir, false)
-		elseif hasSteer then
-			summon.model:SetAttribute("MountedTurnDirection", turnDirection)
-			summon.model:SetAttribute("MountedAnimState", turnDirection == "LEFT" and "TURN_LEFT" or "TURN_RIGHT")
-			local currentVel = summon.rootPart.AssemblyLinearVelocity
-			summon.rootPart.AssemblyLinearVelocity = Vector3.new(0, currentVel.Y, 0)
-			summon.humanoid:Move(Vector3.zero, false)
 		else
-			summon.model:SetAttribute("MountedTurnDirection", nil)
 			summon.model:SetAttribute("MountedAnimState", "IDLE")
-			local currentVel = summon.rootPart.AssemblyLinearVelocity
-			summon.rootPart.AssemblyLinearVelocity = Vector3.new(0, currentVel.Y, 0)
-			summon.humanoid:Move(Vector3.zero, false)
 		end
+
+		-- 서버 물리 엔진 영향 최소화 (클라이언트 조작 방해 금지)
+		-- 단, WalkSpeed는 서버에서 설정하여 스테미나/스탯 보정을 유지함
+		summon.mountSpeed = resolveCurrentMountMoveSpeed(summon, throttle)
+		summon.humanoid.WalkSpeed = summon.mountSpeed
 	end
 end
 
@@ -1584,6 +1545,7 @@ local function handleMountControlRequest(player, payload)
 
 	summon.mountThrottle = math.clamp(tonumber(payload and payload.throttle) or 0, -1, 1)
 	summon.mountSteer = math.clamp(tonumber(payload and payload.steer) or 0, -1, 1)
+	summon.mountLookDir = payload and payload.lookDir or Vector3.new(0, 0, -1)
 	return { success = true }
 end
 

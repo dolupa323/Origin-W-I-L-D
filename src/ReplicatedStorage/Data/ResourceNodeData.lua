@@ -22,14 +22,14 @@ local ResourceNodeData = {
 		requiresTool = false, -- 맨손 가능
 	},
 	{
-		id = "GROUND_STONE",
-		name = "잔돌",
+		id = "GROUND_STONE", -- 잔돌 (스폰 중단됨, 레거시 호환용)
+		name = "잔돌(비활성)",
 		level = 1,
 		modelName = "SmallStone",
 		nodeType = "ROCK",
 		optimalTool = nil,
 		resources = {
-			{ itemId = "SMALL_STONE", min = 1, max = 1, weight = 1.0 },
+			{ itemId = "STONE", min = 1, max = 1, weight = 1.0 },
 		},
 		maxHealth = 10,
 		respawnTime = 60,
@@ -64,7 +64,8 @@ local ResourceNodeData = {
 		optimalTool = nil,
 		resources = {
 			{ itemId = "BERRY", min = 2, max = 3, weight = 1.0 },
-			{ itemId = "FIBER", min = 1, max = 2, weight = 0.5 },
+			{ itemId = "BRANCH", min = 1, max = 2, weight = 0.5 }, -- 나뭇가지 추가
+			{ itemId = "FIBER", min = 1, max = 2, weight = 0.4 },
 		},
 		maxHealth = 30,
 		respawnTime = 180,
@@ -97,14 +98,14 @@ local ResourceNodeData = {
 		level = 3,
 		modelName = "SoftRock",
 		nodeType = "ROCK",
-		optimalTool = "PICKAXE",
+		optimalTool = nil, -- 곡괭이 없이도 동일 효율
 		resources = {
 			{ itemId = "STONE", min = 1, max = 2, weight = 1.0 },
 		},
 		maxHealth = 50,
 		respawnTime = 300,
 		xpPerHit = 3,
-		requiresTool = true, -- 곡괭이 필수
+		requiresTool = false, -- 곡괭이 불필요 (패치)
 	},
 
 	--========================================

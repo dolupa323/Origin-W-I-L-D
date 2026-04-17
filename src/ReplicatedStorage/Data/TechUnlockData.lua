@@ -27,7 +27,7 @@ local TechUnlockData = {
 	{
 		id = "TECH_SETTLEMENT",
 		name = "부락의 발전",
-		cost = { { itemId = "LOG", amount = 10 }, { itemId = "SMALL_STONE", amount = 10 } },
+		cost = { { itemId = "LOG", amount = 10 }, { itemId = "STONE", amount = 10 } },
 		prerequisites = { "TECH_BASICS" },
 		unlocks = { recipes = {}, facilities = { "CAMP_TOTEM" } },
 		category = "SETTLEMENT",

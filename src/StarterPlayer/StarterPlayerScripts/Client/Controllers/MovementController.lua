@@ -378,6 +378,13 @@ function MovementController.performDodge()
 	performDodge()
 end
 
+--- 구르기 잔여 쿨다운 조회 (초)
+function MovementController.getDodgeCooldownRemaining(): number
+	local now = tick()
+	local remaining = (lastDodgeTime + Balance.DODGE_COOLDOWN) - now
+	return remaining > 0 and remaining or 0
+end
+
 --- [Legacy API] 수동 달리기 입력은 비활성화. 자동 가속 시스템만 사용.
 function MovementController.updateSprintState(_held)
 	resetAutoSprintTracking()

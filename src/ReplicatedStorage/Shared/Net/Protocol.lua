@@ -76,6 +76,8 @@ Protocol.Commands = {
 	["Facility.AssignPal.Request"] = true,     -- 팰 작업 배치 (Phase 5-5)
 	["Facility.UnassignPal.Request"] = true,   -- 팰 작업 해제 (Phase 5-5)
 	["Facility.Sleep.Request"] = true,         -- 간이천막 수면 (회복/리스폰 지점 설정)
+	["Facility.Rest.Start"] = true,          -- 시설 휴식 시작
+	["Facility.Rest.Stop"] = true,           -- 시설 휴식 종료
 	["Facility.List.Request"] = true,         -- 건설 가능한 시설 목록 조회
 	
 	-- Recipe 명령어

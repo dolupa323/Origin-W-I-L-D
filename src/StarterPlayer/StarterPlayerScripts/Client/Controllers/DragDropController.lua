@@ -11,6 +11,8 @@ local InventoryController
 local Balance
 local player = Players.LocalPlayer
 local mainGui
+local Theme = require(script.Parent.Parent.UI.UITheme)
+local T = Theme.Transp
 
 -- State
 local isDragging = false
@@ -94,7 +96,7 @@ local function restoreSourceSlot()
 	if not dimmedSlotFrame then return end
 	local icon = dimmedSlotFrame:FindFirstChild("Icon") or dimmedSlotFrame:FindFirstChildWhichIsA("ImageLabel")
 	if icon then icon.ImageTransparency = 0 end
-	dimmedSlotFrame.BackgroundTransparency = 0.3 -- 기본 투명도
+	dimmedSlotFrame.BackgroundTransparency = T.SLOT -- 기본 투명도
 	dimmedSlotFrame = nil
 end
 

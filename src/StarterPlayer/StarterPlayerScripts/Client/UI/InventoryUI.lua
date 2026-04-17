@@ -114,14 +114,14 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	local leftHeader = Utils.mkFrame({size=UDim2.new(0.65, -10, 1, 0), pos=UDim2.new(0, 10, 0, 0), bgT=1, parent=header})
 	local titleList = Instance.new("UIListLayout"); titleList.FillDirection=Enum.FillDirection.Horizontal; titleList.VerticalAlignment=Enum.VerticalAlignment.Center; titleList.Padding=UDim.new(0, isSmall and 10 or 20); titleList.Parent=leftHeader
 	
-	InventoryUI.Refs.TabBag = Utils.mkBtn({text="INVENTORY [Tab]", size=UDim2.new(0, isSmall and 120 or 150, 0, isSmall and 32 or 35), bgT=1, font=F.TITLE, ts=TS_TAB, color=C.GOLD_SEL, parent=leftHeader})
-	InventoryUI.Refs.TabCraft = Utils.mkBtn({text="간이제작", size=UDim2.new(0, isSmall and 80 or 140, 0, isSmall and 32 or 35), bgT=1, font=F.TITLE, ts=TS_TAB, color=C.GRAY, parent=leftHeader})
-	InventoryUI.Refs.TabAnimal = Utils.mkBtn({text="동물 관리", size=UDim2.new(0, isSmall and 80 or 140, 0, isSmall and 32 or 35), bgT=1, font=F.TITLE, ts=TS_TAB, color=C.GRAY, parent=leftHeader})
+	InventoryUI.Refs.TabBag = Utils.mkBtn({text="INVENTORY [Tab]", size=UDim2.new(0, isSmall and 120 or 150, 0, isSmall and 32 or 35), bg=C.GOLD_SEL, bgT=0.2, font=F.TITLE, ts=TS_TAB, color=C.WHITE, noHover=true, parent=leftHeader})
+	InventoryUI.Refs.TabCraft = Utils.mkBtn({text="간이제작", size=UDim2.new(0, isSmall and 80 or 140, 0, isSmall and 32 or 35), bg=C.BTN_GRAY, bgT=0.6, font=F.TITLE, ts=TS_TAB, color=C.GRAY, noHover=true, parent=leftHeader})
+	InventoryUI.Refs.TabAnimal = Utils.mkBtn({text="동물 관리", size=UDim2.new(0, isSmall and 80 or 140, 0, isSmall and 32 or 35), bg=C.BTN_GRAY, bgT=0.6, font=F.TITLE, ts=TS_TAB, color=C.GRAY, noHover=true, parent=leftHeader})
 	
 	InventoryUI.Refs.WeightText = Utils.mkLabel({text="0 / 60", size=UDim2.new(0, isSmall and 60 or 80, 1, 0), ts=TS_SMALL, color=C.GRAY, parent=leftHeader})
 
 	-- 자동정렬 버튼
-	InventoryUI.Refs.SortBtn = Utils.mkBtn({text="정렬", size=UDim2.new(0, isSmall and 46 or 56, 0, isSmall and 28 or 30), bg=C.BG_SLOT, bgT=0.3, font=F.TITLE, ts=isSmall and 11 or 12, color=C.WHITE, r=4, fn=function() UIManager.sortInventory() end, parent=leftHeader})
+	InventoryUI.Refs.SortBtn = Utils.mkBtn({text="정렬", size=UDim2.new(0, isSmall and 46 or 56, 0, isSmall and 28 or 30), bgT=0.5, font=F.TITLE, ts=isSmall and 11 or 12, isNegative=true, r=4, fn=function() UIManager.sortInventory() end, parent=leftHeader})
 
 	local rightHeader = Utils.mkFrame({size=UDim2.new(0.3, 0, 1, 0), pos=UDim2.new(1, -140, 0, 0), anchor=Vector2.new(1, 0), bgT=1, parent=header})
 	local hList = Instance.new("UIListLayout"); hList.FillDirection=Enum.FillDirection.Horizontal; hList.HorizontalAlignment=Enum.HorizontalAlignment.Right; hList.VerticalAlignment=Enum.VerticalAlignment.Center; hList.Padding=UDim.new(0, 15); hList.Parent=rightHeader
@@ -147,7 +147,7 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	
 	-- Close Button
 	local closeBtnSize = isSmall and 34 or 36
-	Utils.mkBtn({text="X", size=UDim2.new(0, closeBtnSize, 0, closeBtnSize), pos=UDim2.new(1, -10, 0.5, 0), anchor=Vector2.new(1, 0.5), bg=C.BTN, bgT=0.5, ts=TS_BODY, color=C.WHITE, r=4, fn=function() UIManager.closeInventory() end, parent=header})
+	Utils.mkBtn({text="X", size=UDim2.new(0, closeBtnSize, 0, closeBtnSize), pos=UDim2.new(1, -10, 0.5, 0), anchor=Vector2.new(1, 0.5), bgT=0.5, ts=TS_BODY, isNegative=true, r=4, fn=function() UIManager.closeInventory() end, parent=header})
 
 	-- Tab Events
 	InventoryUI.Refs.TabBag.MouseButton1Click:Connect(function() InventoryUI.SetTab("BAG") end)
@@ -188,7 +188,7 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	pad.Parent = scroll
 
 	for i = 1, Balance.MAX_INV_SLOTS do
-		local slot = Utils.mkSlot({name="Slot"..i, bgT=0.3, parent=scroll})
+		local slot = Utils.mkSlot({name="Slot"..i, parent=scroll})
 		slot.frame.LayoutOrder = i
 		
 		-- 핫바 배지 추가 (HOTBAR 전용 디자인)
@@ -314,7 +314,7 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	local dtHeadH = isSmall and 40 or 45
 	local dtHead = Utils.mkLabel({
 		text="아이템 상세", size=UDim2.new(1,0,0,dtHeadH),
-		bg=C.BG_DARK, bgT=0.3, color=C.GOLD, ts=TS_TITLE, font=F.TITLE,
+		bg=C.BG_DARK, bgT=0.5, color=C.GOLD, ts=TS_TITLE, font=F.TITLE,
 		parent=detail
 	})
 	
@@ -419,7 +419,7 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	InventoryUI.Refs.Detail.BtnUse = InventoryUI.Refs.Detail.BtnMain -- Alias
 	
 	InventoryUI.Refs.Detail.BtnDrop = Utils.mkBtn({
-		text="[ DROP ]", size=UDim2.new(1,0,0, isSmall and 36 or 42), bg=C.BTN, r=4, font=F.TITLE, ts=TS_BTN_SUB, color=C.WHITE, parent=dFoot
+		text="[ DROP ]", size=UDim2.new(1,0,0, isSmall and 36 or 42), isNegative=true, r=4, font=F.TITLE, ts=TS_BTN_SUB, parent=dFoot
 	})
 	
 	-- Events
@@ -554,7 +554,7 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	end)
 
 	-- 풀어주기 버튼 (소환 버튼 위)
-	InventoryUI.Refs.Animal.BtnRelease = Utils.mkBtn({text="풀어주기", size=UDim2.new(1, 0, 0, isSmall and 32 or 38), pos=UDim2.new(0, 0, 1, -(summonBtnH + (isSmall and 38 or 44))), bg=C.BTN, bgT=0.3, r=4, font=F.TITLE, ts=isSmall and 14 or 16, color=C.GRAY, parent=animalRight})
+	InventoryUI.Refs.Animal.BtnRelease = Utils.mkBtn({text="풀어주기", size=UDim2.new(1, 0, 0, isSmall and 32 or 38), pos=UDim2.new(0, 0, 1, -(summonBtnH + (isSmall and 38 or 44))), isNegative=true, r=4, font=F.TITLE, ts=isSmall and 14 or 16, parent=animalRight})
 	InventoryUI.Refs.Animal.BtnRelease.MouseButton1Click:Connect(function()
 		if UIManager.onReleasePal then UIManager.onReleasePal() end
 	end)
@@ -630,8 +630,8 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	local mBtnArea = Utils.mkFrame({size=UDim2.new(0.9,0,0,45), pos=UDim2.new(0.5,0,1,-10), anchor=Vector2.new(0.5,1), bgT=1, parent=dropModalFrame})
 	local mBtnList = Instance.new("UIListLayout"); mBtnList.FillDirection=Enum.FillDirection.Horizontal; mBtnList.HorizontalAlignment=Enum.HorizontalAlignment.Center; mBtnList.Padding=UDim.new(0, 10); mBtnList.Parent=mBtnArea
 	
-	local confirmBtn = Utils.mkBtn({text="확인", size=UDim2.new(0.45,0,1,0), bg=C.GOLD_SEL, font=F.TITLE, ts=TS_BTN, color=C.BG_PANEL, parent=mBtnArea})
-	local cancelBtn = Utils.mkBtn({text="취소", size=UDim2.new(0.45,0,1,0), bg=C.BTN, font=F.TITLE, ts=TS_BTN_SUB, parent=mBtnArea})
+	local confirmBtn = Utils.mkBtn({text="확인", size=UDim2.new(0.45,0,1,0), font=F.TITLE, ts=TS_BTN, parent=mBtnArea})
+	local cancelBtn = Utils.mkBtn({text="취소", size=UDim2.new(0.45,0,1,0), isNegative=true, font=F.TITLE, ts=TS_BTN_SUB, parent=mBtnArea})
 	
 	confirmBtn.MouseButton1Click:Connect(function()
 		local amount = tonumber(box.Text)
@@ -665,13 +665,16 @@ function InventoryUI.SetTab(tabId)
 	if InventoryUI.Refs.AnimalFrame then InventoryUI.Refs.AnimalFrame.Visible = isAnimal end
 	
 	if InventoryUI.Refs.TabBag then
-		InventoryUI.Refs.TabBag.TextColor3 = isBag and C.GOLD_SEL or C.GRAY
+		Utils.setBtnState(InventoryUI.Refs.TabBag, isBag and C.GOLD_SEL or C.BTN_GRAY, isBag and 0.2 or 0.6)
+		InventoryUI.Refs.TabBag.TextColor3 = isBag and C.WHITE or C.GRAY
 	end
 	if InventoryUI.Refs.TabCraft then
-		InventoryUI.Refs.TabCraft.TextColor3 = isCraft and C.GOLD_SEL or C.GRAY
+		Utils.setBtnState(InventoryUI.Refs.TabCraft, isCraft and C.GOLD_SEL or C.BTN_GRAY, isCraft and 0.2 or 0.6)
+		InventoryUI.Refs.TabCraft.TextColor3 = isCraft and C.WHITE or C.GRAY
 	end
 	if InventoryUI.Refs.TabAnimal then
-		InventoryUI.Refs.TabAnimal.TextColor3 = isAnimal and C.GOLD_SEL or C.GRAY
+		Utils.setBtnState(InventoryUI.Refs.TabAnimal, isAnimal and C.GOLD_SEL or C.BTN_GRAY, isAnimal and 0.2 or 0.6)
+		InventoryUI.Refs.TabAnimal.TextColor3 = isAnimal and C.WHITE or C.GRAY
 	end
 	
 	local d = InventoryUI.Refs.Detail
@@ -721,7 +724,7 @@ function InventoryUI.RefreshSlots(items, getItemIcon, __C, DataHelper, maxSlots)
 		
 		local item = items[i]
 		local st = s.frame:FindFirstChildOfClass("UIStroke")
-		
+
 		if item and item.itemId then
 			s.icon.Image = getItemIcon(item.itemId)
 			s.icon.Visible = true
@@ -748,6 +751,7 @@ function InventoryUI.RefreshSlots(items, getItemIcon, __C, DataHelper, maxSlots)
 			else
 				if s.durBg then s.durBg.Visible = false end
 			end
+			s.frame.BackgroundTransparency = T.SLOT -- 재설정
 		else
 			s.icon.Image = ""
 			s.icon.Visible = false
@@ -757,6 +761,7 @@ function InventoryUI.RefreshSlots(items, getItemIcon, __C, DataHelper, maxSlots)
 				st.Color = C.BORDER_DIM
 				st.Thickness = 1
 			end
+			s.frame.BackgroundTransparency = T.SLOT -- 재설정
 		end
 	end
 end
@@ -1176,7 +1181,7 @@ local function createPalListItem(palData, index, isSelected)
 	frame.LayoutOrder = index
 
 	-- 크리처 아이콘 (좌측)
-	local iconBg = Utils.mkFrame({name="IconBg", size=UDim2.new(0, 40, 0, 40), pos=UDim2.new(0, 6, 0.5, 0), anchor=Vector2.new(0, 0.5), bg=C.BG_SLOT, bgT=0.3, r=6, parent=frame})
+	local iconBg = Utils.mkFrame({name="IconBg", size=UDim2.new(0, 40, 0, 40), pos=UDim2.new(0, 6, 0.5, 0), anchor=Vector2.new(0, 0.5), bg=C.BG_SLOT, bgT=T.SLOT, r=6, parent=frame})
 	local iconImg = Instance.new("ImageLabel")
 	iconImg.Name = "IconImg"; iconImg.Size = UDim2.new(0.8, 0, 0.8, 0); iconImg.Position = UDim2.new(0.1, 0, 0.1, 0)
 	iconImg.BackgroundTransparency = 1; iconImg.Parent = iconBg

@@ -3,6 +3,7 @@
 -- 좌측 탭 선택 + 우측 다이아몬드 그리드 노드 + 하단 디테일 패널
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
 local Theme = require(script.Parent.UITheme)
 local Utils = require(script.Parent.UIUtils)
 local UILocalizer = require(script.Parent.Parent.Localization.UILocalizer)
@@ -97,6 +98,24 @@ _tryUnlockSkill = function(skillId)
 		end
 	end
 	skillController.requestUnlock(skillId)
+end
+
+----------------------------------------------------------------
+-- 스킬 슬롯 할당 시도 (단축키/버튼 공용)
+----------------------------------------------------------------
+local function _tryAssignSlot(slotIndex)
+	if not skillController or not selectedSkillId then return end
+	local skill = SkillTreeData.GetSkill(selectedSkillId)
+	if not skill or skill.type ~= "ACTIVE" then return end
+	if not skillController.isSkillUnlocked(selectedSkillId) then return end
+
+	-- 이미 같은 슬롯이면 해제, 아니면 할당
+	local currentSlots = skillController.getActiveSkillSlots()
+	if currentSlots[slotIndex] == selectedSkillId then
+		skillController.requestSetSlot(slotIndex, nil)
+	else
+		skillController.requestSetSlot(slotIndex, selectedSkillId)
+	end
 end
 
 local function _createDiamondNode(parent, skill, cx, cy, nodeSize, isUnlocked, canUnlockResult, isTreeLocked, playerLevel)
@@ -451,15 +470,16 @@ _updateDetailPanel = function()
 	end
 
 	-- 슬롯 할당 버튼 (해금된 ACTIVE 스킬만 표시)
-	local SLOT_KEYS = { "Q", "F", "V" }
+	local SLOT_KEYS = { "Q", "F", "V", "Roll" }
 	local SLOT_ASSIGNED_COLORS = {
 		Color3.fromRGB(80, 140, 220),
 		Color3.fromRGB(220, 160, 60),
 		Color3.fromRGB(180, 80, 200),
+		Color3.fromRGB(200, 160, 40), -- Roll 전용 색상
 	}
 	local showSlotBtns = isUnlocked and skill.type == "ACTIVE"
 	local activeSlots = skillController and skillController.getActiveSkillSlots() or {}
-	for si = 1, 3 do
+	for si = 1, 4 do
 		local slotBtn = panel:FindFirstChild("SlotBtn" .. si)
 		if slotBtn then
 			slotBtn.Visible = showSlotBtns
@@ -484,6 +504,7 @@ _updateDetailPanel = function()
 	if statusLabel then
 		if isUnlocked and skill.type == "ACTIVE" then
 			local assignedSlot = nil
+			local SLOT_KEYS = { "Q", "F", "V" }
 			for si = 1, 3 do
 				if activeSlots[si] == selectedSkillId then assignedSlot = SLOT_KEYS[si] break end
 			end
@@ -550,13 +571,12 @@ _layoutDetailPanel = function()
 		icon.AnchorPoint = Vector2.new(0, 0.5)
 	end
 
-	-- 세로 배치: 이름 → 타입정보 → 설명 → 효과 (ph 비율로 분배)
+	-- 세로 배치: 이름 → 설명 → 효과 (info 제외)
 	local nameH = math.floor(ph * 0.2)
-	local infoH = math.floor(ph * 0.14)
-	local descH = math.floor(ph * 0.34)
-	local effectsH = math.floor(ph * 0.14)
+	local descH = math.floor(ph * 0.44) -- info 공간만큼 확장
+	local effectsH = math.floor(ph * 0.16)
 	local gap = math.floor(ph * 0.02)
-	local topPad = math.floor(ph * 0.06)
+	local topPad = math.floor(ph * 0.03) -- 상단 여백 축소
 
 	local name = panel:FindFirstChild("DetailName")
 	if name then
@@ -568,17 +588,14 @@ _layoutDetailPanel = function()
 
 	local info = panel:FindFirstChild("DetailInfo")
 	if info then
-		info.Size = UDim2.new(0, textAreaW, 0, infoH)
-		info.Position = UDim2.new(0, nameX, 0, topPad + nameH + gap)
-		info.TextSize = math.floor(math.clamp(ph * 0.09, 10, 18)) -- 축소
-		info.TextTruncate = Enum.TextTruncate.AtEnd
+		info.Visible = false -- 노란색 설명 삭제 요청
 	end
 
-	-- Q/F/V 슬롯 버튼 레이아웃 (왼쪽 설명 영역 상단에 배치)
+	-- Q/F/V 슬롯 버튼 레이아웃 (제목 바로 아래 배치)
 	local slotBtnW = math.floor(math.clamp(ph * 0.22, 30, 48))
 	local slotBtnH = math.floor(math.clamp(ph * 0.18, 24, 40))
 	local slotGap = math.floor(4 * s)
-	local slotY = topPad + nameH + infoH + gap * 2
+	local slotY = topPad + nameH + gap -- infoH 제거로 앞당김
 	
 	for si = 1, 3 do
 		local slotBtn = panel:FindFirstChild("SlotBtn" .. si)
@@ -586,9 +603,13 @@ _layoutDetailPanel = function()
 			slotBtn.Size = UDim2.new(0, slotBtnW, 0, slotBtnH)
 			slotBtn.Position = UDim2.new(0, nameX + (si - 1) * (slotBtnW + slotGap), 0, slotY)
 			slotBtn.AnchorPoint = Vector2.new(0, 0)
-			slotBtn.TextSize = math.floor(math.clamp(ph * 0.08, 10, 18)) -- 축소
+			slotBtn.TextSize = math.floor(math.clamp(ph * 0.08, 10, 18))
 		end
 	end
+	
+	-- Roll 슬롯이 있다면 숨김
+	local rollBtn = panel:FindFirstChild("SlotBtn4")
+	if rollBtn then rollBtn.Visible = false end
 
 	local desc = panel:FindFirstChild("DetailDesc")
 	if desc then
@@ -851,18 +872,12 @@ local function selectTab(index)
 
 	for i, btn in ipairs(SkillTreeUI.Refs.TabButtons) do
 		local isActive = (i == index)
-		btn.BackgroundColor3 = isActive and C.BG_SLOT_SEL or C.BG_PANEL_L
-		btn.BackgroundTransparency = isActive and 0.2 or 0.5
-
-		local stroke = btn:FindFirstChildOfClass("UIStroke")
-		if stroke then
-			stroke.Color = isActive and C.GOLD_SEL or C.BORDER_DIM
-			stroke.Thickness = isActive and 1.5 or 1
-		end
+		btn.BackgroundColor3 = isActive and C.BTN or C.BG_PANEL_L
+		btn.BackgroundTransparency = isActive and 0.1 or 0.6
 
 		local label = btn:FindFirstChild("Label")
 		if label then
-			label.TextColor3 = isActive and C.GOLD or C.GRAY
+			label.TextColor3 = isActive and C.BG_DARK or C.GRAY
 		end
 
 		local indicator = btn:FindFirstChild("Indicator")
@@ -1039,10 +1054,8 @@ function SkillTreeUI.Init(parent, UIManager, isMobile)
 		name = "TabPanel",
 		size = UDim2.new(0, tabWidth, 1, 0),
 		bg = C.BG_DARK,
-		bgT = 0.4,
+		bgT = 0.6,
 		r = 6,
-		stroke = true,
-		strokeC = C.BORDER_DIM,
 		parent = body,
 	})
 
@@ -1069,8 +1082,6 @@ function SkillTreeUI.Init(parent, UIManager, isMobile)
 			bg = C.BG_PANEL_L,
 			bgT = 0.5,
 			r = 4,
-			stroke = true,
-			strokeC = C.BORDER_DIM,
 			parent = tabPanel,
 		})
 
@@ -1120,10 +1131,8 @@ function SkillTreeUI.Init(parent, UIManager, isMobile)
 		size = UDim2.new(1, -(tabWidth + 12), 1, 0),
 		pos = UDim2.new(0, tabWidth + 8, 0, 0),
 		bg = C.BG_DARK,
-		bgT = 0.5,
+		bgT = 0.6,
 		r = 6,
-		stroke = true,
-		strokeC = C.BORDER_DIM,
 		parent = body,
 	})
 	SkillTreeUI.Refs.ContentArea = contentArea
@@ -1204,10 +1213,8 @@ function SkillTreeUI.Init(parent, UIManager, isMobile)
 		size = UDim2.new(1, -16, 0, detailHeight + 10),  -- 약간 여유
 		pos = UDim2.new(0, 8, 1, -(detailHeight + 18)),
 		bg = C.BG_PANEL_L,
-		bgT = 0.4,
+		bgT = 0.5,
 		r = 6,
-		stroke = true,
-		strokeC = C.BORDER_DIM,
 		vis = false,
 		parent = contentArea,
 	})
@@ -1303,8 +1310,6 @@ function SkillTreeUI.Init(parent, UIManager, isMobile)
 		font = F.TITLE,
 		color = C.WHITE,
 		r = 6,
-		stroke = true,
-		strokeC = C.BORDER_DIM,
 		vis = false,
 		parent = detailPanel,
 	})
@@ -1315,11 +1320,6 @@ function SkillTreeUI.Init(parent, UIManager, isMobile)
 
 	-- 디테일: 슬롯 할당 버튼 (Q / F / V) — 해금된 액티브 스킬 전용
 	local SLOT_KEYS = { "Q", "F", "V" }
-	local SLOT_COLORS = {
-		Color3.fromRGB(80, 140, 220),
-		Color3.fromRGB(220, 160, 60),
-		Color3.fromRGB(180, 80, 200),
-	}
 	for si = 1, 3 do
 		local slotBtn = Utils.mkBtn({
 			name = "SlotBtn" .. si,
@@ -1332,25 +1332,12 @@ function SkillTreeUI.Init(parent, UIManager, isMobile)
 			font = F.TITLE,
 			color = C.WHITE,
 			r = 6,
-			stroke = true,
-			strokeC = C.BORDER_DIM,
 			vis = false,
 			parent = detailPanel,
 		})
 		local slotIndex = si
 		slotBtn.MouseButton1Click:Connect(function()
-			if not skillController or not selectedSkillId then return end
-			local skill = SkillTreeData.GetSkill(selectedSkillId)
-			if not skill or skill.type ~= "ACTIVE" then return end
-			if not skillController.isSkillUnlocked(selectedSkillId) then return end
-
-			-- 이미 같은 슬롯이면 해제, 아니면 할당
-			local currentSlots = skillController.getActiveSkillSlots()
-			if currentSlots[slotIndex] == selectedSkillId then
-				skillController.requestSetSlot(slotIndex, nil)
-			else
-				skillController.requestSetSlot(slotIndex, selectedSkillId)
-			end
+			_tryAssignSlot(slotIndex)
 		end)
 	end
 
@@ -1411,14 +1398,11 @@ function SkillTreeUI.Init(parent, UIManager, isMobile)
 		text = "선택 확정",
 		size = UDim2.new(0, isSmall and 100 or 120, 0, isSmall and 32 or 36),
 		pos = UDim2.new(0.5, -(isSmall and 110 or 130), 1, -(isSmall and 40 or 46)),
-		bg = C.BG_SLOT_SEL,
-		bgT = 0.2,
 		ts = isSmall and 13 or 15,
 		font = F.TITLE,
-		color = C.GOLD,
 		r = 6,
-		stroke = true,
-		strokeC = C.GOLD,
+		stroke = 1.5,
+		strokeC = C.WHITE,
 		z = 12,
 		fn = _onConfirmYes,
 		parent = confirmPanel,
@@ -1430,11 +1414,9 @@ function SkillTreeUI.Init(parent, UIManager, isMobile)
 		text = "취소",
 		size = UDim2.new(0, isSmall and 80 or 100, 0, isSmall and 32 or 36),
 		pos = UDim2.new(0.5, 10, 1, -(isSmall and 40 or 46)),
-		bg = C.BTN,
-		bgT = 0.3,
+		isNegative = true,
 		ts = isSmall and 13 or 15,
 		font = F.NORMAL,
-		color = C.GRAY,
 		r = 6,
 		z = 12,
 		fn = _hideConfirmDialog,
@@ -1459,6 +1441,25 @@ function SkillTreeUI.Init(parent, UIManager, isMobile)
 	-- 초기 탭 선택 (렌더링 대기)
 	task.defer(function()
 		selectTab(1)
+	end)
+
+	-- 키보드 단축키 처리 (Q, F, V 슬롯 배치)
+	UserInputService.InputBegan:Connect(function(input, gpe)
+		if gpe then return end
+		if not SkillTreeUI.IsVisible() then return end
+		if not selectedSkillId then return end
+
+		local keyCode = input.KeyCode
+		local slotIndex = nil
+		if keyCode == Enum.KeyCode.Q then slotIndex = 1
+		elseif keyCode == Enum.KeyCode.F then slotIndex = 2
+		elseif keyCode == Enum.KeyCode.V then slotIndex = 3
+		elseif keyCode == Enum.KeyCode.LeftControl then slotIndex = 4
+		end
+
+		if slotIndex then
+			_tryAssignSlot(slotIndex)
+		end
 	end)
 end
 

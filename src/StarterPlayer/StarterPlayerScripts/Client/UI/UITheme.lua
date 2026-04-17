@@ -37,10 +37,12 @@ local UITheme = {
 		RED           = Color3.fromRGB(220, 60, 50),
 		ORANGE        = Color3.fromRGB(235, 155, 45),
 
-		-- Buttons (Dark Glass)
-		BTN           = Color3.fromRGB(35, 35, 42),
-		BTN_H         = Color3.fromRGB(55, 52, 45),
-		BTN_DIS       = Color3.fromRGB(22, 22, 28),
+		-- Buttons (Glassmorphism + Yellow Action)
+		BTN           = Color3.fromRGB(255, 200, 40),  -- Primary Action (Yellow)
+		BTN_H         = Color3.fromRGB(255, 225, 90),  -- Primary Action Hover
+		BTN_GRAY      = Color3.fromRGB(45, 45, 52),    -- Neutral/Negative Action (Gray)
+		BTN_GRAY_H    = Color3.fromRGB(65, 65, 75),
+		BTN_DIS       = Color3.fromRGB(25, 25, 30),
 
 		-- Rarities
 		COMMON        = Color3.fromRGB(175, 172, 160),
@@ -63,9 +65,9 @@ local UITheme = {
 	},
 
 	Transp = {
-		PANEL = 0.30,
-		SLOT  = 0.40,
-		BG    = 0.25,
+		PANEL = 0.72,  -- More transparent for even cleaner Glassmorphism
+		SLOT  = 0.70,  -- Lighten slots
+		BG    = 0.50,
 	}
 }
 

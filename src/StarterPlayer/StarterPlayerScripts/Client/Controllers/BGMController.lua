@@ -21,8 +21,8 @@ local zonePollAccumulator = 0
 local COMBAT_SOUND_NAME = "COMBAT_BGM"
 local COMBAT_CHANNEL_NAME = "CombatBGMChannel"
 local ZONE_CHANNEL_NAME = "ZoneBGMChannel"
-local COMBAT_VOLUME = 0.14
-local ZONE_VOLUME = 0.1
+local COMBAT_VOLUME = 0.08
+local ZONE_VOLUME = 0.05
 local FADE_TIME = 0.6
 local ZONE_POLL_INTERVAL = 1.0
 

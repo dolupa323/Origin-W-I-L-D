@@ -19,7 +19,7 @@ local RADIO_SOUND_NAME = "RadioRingingLoop"
 local RADIO_SOUND_FALLBACK = "rbxasset://sounds/electronicpingshort.wav"
 local RADIO_STATIC_SOUND_NAME = "RadioDialogueStatic"
 local RADIO_STATIC_SOUND_FALLBACK = ""
-local RADIO_STATIC_VOLUME = 0.03
+local RADIO_STATIC_VOLUME = 0.015
 
 local initialized = false
 local tutorialCompleted = false
@@ -386,7 +386,7 @@ local function ensureRingingSound(): Sound?
 	if not sound then
 		sound = Instance.new("Sound")
 		sound.Name = RADIO_SOUND_NAME
-		sound.Volume = 0.15
+		sound.Volume = 0.08
 		sound.RollOffMaxDistance = 40
 		sound.RollOffMinDistance = 8
 		sound.Looped = true

@@ -10,6 +10,7 @@ local Balance = require(Shared.Config.Balance)
 
 local Data = ReplicatedStorage:WaitForChild("Data")
 local MaterialAttributeData = require(Data.MaterialAttributeData)
+local SpawnConfig = require(Shared.Config.SpawnConfig)
 
 local CombatService = {}
 
@@ -31,7 +32,12 @@ local SkillService -- 스킬 패시브 보너스
 local DEFAULT_ATTACK_RANGE = Balance.REACH_BAREHAND or 12 -- 맨손 사거리 (Balance 반영)
 local DEFAULT_BAREHAND_DAMAGE = 5
 local MIN_ATTACK_COOLDOWN = 0.35 -- 서버 측 최소 공격 쿨다운 보안 검증 (클라이언트 0.4~0.5초 대비 타이트하게)
-local PVP_ENABLED = false       -- PvP 비활성화
+local PVP_ENABLED = true  -- 지역별 PvP 시스템 활성화 (개별 지역별 판정은 내부 로직으로 수행)
+local PVP_ZONES = {
+	TROPICAL = true,
+	DESERT = true,
+	SNOWY = true,
+}
 
 -- Combat Engagement Constants
 local COMBAT_DISENGAGE_TIMEOUT = 8   -- 교전 없이 8초 경과 → 전투 해제
@@ -98,9 +104,6 @@ local function applyContactKnockback(userId, creaturePos, creatureInstanceId)
 	end
 
 	-- ★ [수정] 먼저 넉백 면역 설정 (FireClient 호출 전)
-	-- 문제: 0.2초 루프에서 FireClient를 여러 번 호출하면
-	--      클라이언트에서 중복 넉백 → 플레이어 비행
-	-- 해결: 면역 설정을 먼저 하면 다음 루프에서 함수 초반에 return
 	if not knockbackImmunity[userId] then
 		knockbackImmunity[userId] = {}
 	end
@@ -454,10 +457,6 @@ local function findAttackTargetByRay(player: Player, direction: Vector3, range: 
 end
 
 --========================================
--- StaminaService Integration (Phase 10)
---========================================
-
---========================================
 -- Telegraph Attack Pattern Hit Detection
 --========================================
 
@@ -514,7 +513,6 @@ function CombatService.isPlayerInAttackArea(attackData: any, creaturePos: Vector
 		local impactPos = targetLockPos or playerPos
 		return CombatService.isInProjectile(impactPos, playerPos, attackData.impactRadius or 5)
 	end
-	-- 패턴 없음 → 히트 불가 (레거시 폴백 제거)
 	return false
 end
 
@@ -555,15 +553,13 @@ function CombatService.Init(_NetController, _DataService, _CreatureService, _Inv
 		local uid = player.UserId
 		playerAttackCooldowns[uid] = nil
 		disengageCombat(uid)
-		
-		-- ★ [추가] 새로운 테이블도 정리 (메모리 누수 방지)
 		staggeredPlayers[uid] = nil
 		if knockbackImmunity[uid] then
 			knockbackImmunity[uid] = nil
 		end
 	end)
 	
-	-- ★ [추가] 플레이어 사망 시 전투 상태 정리 (respawn 전)
+	-- 플레이어 사망 시 전투 상태 정리
 	local function setupCharacterCleanup(player)
 		if not player.Character then return end
 		local hum = player.Character:FindFirstChild("Humanoid")
@@ -571,31 +567,23 @@ function CombatService.Init(_NetController, _DataService, _CreatureService, _Inv
 		
 		hum.Died:Connect(function()
 			local uid = player.UserId
-			print(string.format("[CombatService] 플레이어 %d 사망 - 전투 상태 정리 시작", uid))
-			
-			-- 사망 시 전투 상태 해제 + 메모리 정리
 			disengageCombat(uid)
 			staggeredPlayers[uid] = nil
 			if knockbackImmunity[uid] then
 				knockbackImmunity[uid] = nil
 			end
-			
-			print(string.format("[CombatService] 플레이어 %d 정리 완료", uid))
 		end)
 	end
 	
-	-- 기존 플레이어들과 신규 플레이어에게 모두 적용
 	Players.PlayerAdded:Connect(function(player)
 		player.CharacterAdded:Connect(function()
 			setupCharacterCleanup(player)
 		end)
-		-- 이미 있는 character도 처리
 		if player.Character then
 			setupCharacterCleanup(player)
 		end
 	end)
 	
-	-- 현재 접속 중인 플레이어들에게도 적용
 	for _, player in ipairs(Players:GetPlayers()) do
 		player.CharacterAdded:Connect(function()
 			setupCharacterCleanup(player)
@@ -609,20 +597,6 @@ function CombatService.Init(_NetController, _DataService, _CreatureService, _Inv
 	task.spawn(function()
 		while true do
 			task.wait(1)
-			
-			-- ★ [디버그] 메모리 상태 로깅 (테스트 중에만 활성화)
-			local staggeredCount = 0
-			for _, _ in pairs(staggeredPlayers) do
-				staggeredCount = staggeredCount + 1
-			end
-			local immunityCount = 0
-			for _, _ in pairs(knockbackImmunity) do
-				immunityCount = immunityCount + 1
-			end
-			if staggeredCount > 0 or immunityCount > 0 then
-				print(string.format("[CombatService] 활성 상태: staggered=%d, immunity_users=%d", staggeredCount, immunityCount))
-			end
-			
 			local now = tick()
 			local toDisengage = {}
 			for uid, targetMap in pairs(playerCombatTargets) do
@@ -660,7 +634,7 @@ function CombatService.Init(_NetController, _DataService, _CreatureService, _Inv
 		end
 	end)
 	
-	-- 전투 중 접촉 밀어내기 체크 루프 (0.2초 간격)
+	-- 전투 중 접촉 밀어내기 체크 루프
 	task.spawn(function()
 		while true do
 			task.wait(0.2)
@@ -692,19 +666,18 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 	end
 	attackMeta = attackMeta or {}
 
-	-- 0. 서버 메모리의 실제 활성 슬롯 데이터 로드 (보안: 클라이언트 요청 슬롯 무시)
 	local userId = player.UserId
 	local toolSlot = 1
 	if InventoryService then
 		toolSlot = InventoryService.getActiveSlot(userId) or 1
 	end
 	
-	local baseDamage = DEFAULT_BAREHAND_DAMAGE -- 맨손 기본 데미지
+	local baseDamage = DEFAULT_BAREHAND_DAMAGE
 	local range = DEFAULT_ATTACK_RANGE
-	local dynamicCooldown = MIN_ATTACK_COOLDOWN -- 기본 0.35초
+	local dynamicCooldown = MIN_ATTACK_COOLDOWN
 	local itemData = nil
 	local toolItem = nil
-	local isBlunt = true -- 맨손은 기본적으로 타격(Blunt) 판정 (기절 수치 부여)
+	local isBlunt = true
 	local isBowShot = false
 	local ammoItemId = nil
 	local bowChargeRatio = 0
@@ -730,17 +703,14 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 				isBlunt = itemData.isBlunt == true
 				toolItem = slotData
 				
-				-- [보안/기획] 기술 해금 체크 (Relinquish 어뷰징 방지)
 				if TechService and not TechService.isRecipeUnlocked(userId, slotData.itemId) then
 					return false, Enums.ErrorCode.RECIPE_LOCKED
 				end
 
-				-- 내구도 체크: 파손된 도구는 공격 불가능
 				if slotData.durability and slotData.durability <= 0 then
 					return false, Enums.ErrorCode.INVALID_STATE
 				end
 
-				-- 아이템의 attackSpeed를 쿨다운으로 사용
 				if itemData.attackSpeed then
 					dynamicCooldown = math.max(0.15, itemData.attackSpeed - 0.05)
 				end
@@ -754,12 +724,8 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 					local maxRange = tonumber(itemData.maxRange or itemData.range) or 120
 					local minRange = math.max(8, tonumber(itemData.minRange) or math.floor(maxRange * 0.25))
 					bowEffectiveRange = minRange + ((maxRange - minRange) * bowChargeRatio)
-
-					if type(rawAimOrigin) == "table" then
-						-- [보안] 클라이언트 aimOrigin 무시 - 서버 권위 위치 사용
-						local head = char and char:FindFirstChild("Head")
-						bowOrigin = head and head.Position or (hrp.Position + Vector3.new(0, 1.6, 0))
-					end
+					local head = char:FindFirstChild("Head")
+					bowOrigin = head and head.Position or (hrp.Position + Vector3.new(0, 1.6, 0))
 				end
 			end
 		end
@@ -769,7 +735,6 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 		return false, Enums.ErrorCode.INVALID_STATE
 	end
 
-	-- 1. 서버 측 공격 쿨다운 검증 (Exploit 방지 - 무기 스왑 어뷰징 차단)
 	local now = tick()
 	if playerAttackCooldowns[userId] and now < playerAttackCooldowns[userId] then
 		return false, Enums.ErrorCode.COOLDOWN
@@ -789,7 +754,6 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 	end
 
 	if isBowShot then
-		-- 스킬 패시브: NO_ARROW_CONSUME 체크
 		local skipArrow = false
 		if SkillService then
 			local bonuses = SkillService.getPassiveBonuses(userId, "BOW")
@@ -800,10 +764,8 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 		if not skipArrow then
 			local consumed = false
 			if ammoItemId then
-				-- 석궩: 특정 탄약 (IRON_BOLT)
 				consumed = InventoryService.removeItem(userId, ammoItemId, 1) >= 1
 			else
-				-- 활: 아무 화살이나 소비 (상위 등급 우선)
 				for _, arrowId in ipairs(BOW_AMMO_TYPES) do
 					if InventoryService.removeItem(userId, arrowId, 1) >= 1 then
 						consumed = true
@@ -817,21 +779,34 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 		end
 	end
 
-	-- 2. 대상(크리처 또는 건축물) 확인 및 거리 검증
 	local targetObject = nil
 	local targetType = "NONE"
 	
-	-- 3.1 크리처 먼저 체크
 	local creature = CreatureService.getCreatureRuntime(targetId)
 	if creature and creature.rootPart then
 		targetObject = creature.rootPart
 		targetType = "CREATURE"
 	end
+
+	if targetType == "NONE" and PVP_ENABLED and targetId ~= nil then
+		local targetPlayer = Players:GetPlayerFromCharacter(workspace:FindFirstChild(tostring(targetId), true))
+		if not targetPlayer then
+			for _, p in ipairs(Players:GetPlayers()) do
+				if p.Character and p.Character:GetAttribute("InstanceId") == targetId then
+					targetPlayer = p
+					break
+				end
+			end
+		end
+		if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+			targetObject = targetPlayer.Character.HumanoidRootPart
+			targetType = "PLAYER"
+		end
+	end
 	
-	-- 3.2 건축물 체크 — 일반 공격으로는 건축물에 피해를 줄 수 없음
 	if targetType == "NONE" then
-		local BuildServiceCheck = require(game:GetService("ServerScriptService").Server.Services.BuildService)
-		local structure = BuildServiceCheck.get(targetId)
+		local BuildService = require(game:GetService("ServerScriptService").Server.Services.BuildService)
+		local structure = BuildService.get(targetId)
 		if structure then
 			return false, Enums.ErrorCode.INVALID_TARGET
 		end
@@ -840,63 +815,42 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 	if not targetObject then
 		if isBowShot then
 			if NetController then
-				NetController.FireClient(player, "Combat.Hit.Result", {
-					damage = 0,
-					torporDamage = 0,
-					killed = false,
-					targetId = "",
-					miss = true,
-				})
+				NetController.FireClient(player, "Combat.Hit.Result", { damage = 0, torporDamage = 0, killed = false, targetId = "", miss = true })
 			end
 			return true, nil, { damage = 0, torporDamage = 0, killed = false, miss = true }
 		end
 		return false, Enums.ErrorCode.NOT_FOUND
 	end
 	
-	local targetPos = (targetType == "STRUCTURE" and targetObject.Position) or targetObject.Position
+	local targetPos = targetObject.Position
 	local dist
 	if isBowShot and bowOrigin then
 		dist = (targetPos - bowOrigin).Magnitude
 	else
-		local p1 = Vector2.new(hrp.Position.X, hrp.Position.Z)
-		local p2 = Vector2.new(targetPos.X, targetPos.Z)
-		dist = (p1 - p2).Magnitude
+		dist = (Vector2.new(hrp.Position.X, hrp.Position.Z) - Vector2.new(targetPos.X, targetPos.Z)).Magnitude
 	end
 	
-	-- ★ 대형 크리처 바운딩 박스 반경 보정
-	-- 클라이언트는 모든 파트 중 가장 가까운 파트 기준으로 거리 판정하지만
-	-- 서버는 rootPart 중심 거리를 사용하므로, 모델 XZ 반경을 관용도에 추가
 	local creatureHalfExtent = 0
 	if targetType == "CREATURE" and creature and creature.model then
 		local ok, extents = pcall(function() return creature.model:GetExtentsSize() end)
-		if ok and extents then
-			creatureHalfExtent = math.max(extents.X, extents.Z) * 0.5
-		end
+		if ok and extents then creatureHalfExtent = math.max(extents.X, extents.Z) * 0.5 end
 	end
 	
-	-- ★ 서버 거리 검증: 근접 무기도 합리적인 관용도 적용
-	-- 근접: range + 8 + 크리처 반경 (네트워크 지연 + 대형 크리처 히트박스 보정)
-	-- 활: 조준 시간 기반 유효 사거리 + 2 (비행 시간 보정)
 	local allowedRange = isBowShot and (bowEffectiveRange or range) or (range + 8 + creatureHalfExtent)
 	if dist > allowedRange + (isBowShot and 2 or 0) then 
 		return false, Enums.ErrorCode.OUT_OF_RANGE
 	end
 	
-	-- 3. 플레이어 공격력 스탯 보너스 적용
-	local calculated = PlayerStatService.GetCalculatedStats(player.UserId)
+	local calculated = PlayerStatService.GetCalculatedStats(userId)
 	local attackMult = calculated.attackMult or 1.0
 
-	-- 도끼/곡괭이는 동물/공룡 상대로 맨손 데미지로 고정.
-	-- 단, AXE 스킬트리 선택자는 도끼로 전투 가능 (평타도 원본 데미지 유지)
 	if targetType == "CREATURE" and itemData and itemData.type == "TOOL" then
 		local toolRole = tostring(itemData.optimalTool or ""):upper()
 		if toolRole == "AXE" or toolRole == "PICKAXE" then
 			local skipNerf = false
 			if toolRole == "AXE" and SkillService then
-				local treeId = SkillService.getCombatTreeId and SkillService.getCombatTreeId(userId)
-				if treeId == "AXE" then
-					skipNerf = true
-				end
+				local treeId = SkillService.getCombatTreeId(userId)
+				if treeId == "AXE" then skipNerf = true end
 			end
 			if not skipNerf then
 				baseDamage = DEFAULT_BAREHAND_DAMAGE
@@ -905,160 +859,120 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 		end
 	end
 
-	local totalDamage = baseDamage * attackMult
-	if isBowShot then
-		local chargeMult = 0.55 + (bowChargeRatio * 0.85) -- 55% ~ 140%
-		totalDamage = totalDamage * chargeMult
+	if targetType == "PLAYER" then
+		local attackerZone = SpawnConfig.GetZoneAtPosition(hrp.Position)
+		local targetZone = SpawnConfig.GetZoneAtPosition(targetPos)
+		if not (PVP_ZONES[attackerZone] and PVP_ZONES[targetZone]) then
+			return false, Enums.ErrorCode.PVP_DISABLED
+		end
 	end
 
-	-- ★ 스킬 패시브 보너스 적용 (DAMAGE_MULT, CRIT_CHANCE, CRIT_DAMAGE_MULT)
+	local totalDamage = baseDamage * attackMult
+	if isBowShot then
+		totalDamage = totalDamage * (0.55 + (bowChargeRatio * 0.85))
+	end
+
 	local skillBonuses = nil
 	local weaponTreeId = getWeaponTreeId(itemData)
 	if SkillService and weaponTreeId then
 		skillBonuses = SkillService.getPassiveBonuses(userId, weaponTreeId)
-		local skillDmgMult = skillBonuses.DAMAGE_MULT or 0
-		if skillDmgMult > 0 then
-			totalDamage = totalDamage * (1 + skillDmgMult)
+		if skillBonuses.DAMAGE_MULT then
+			totalDamage = totalDamage * (1 + skillBonuses.DAMAGE_MULT)
 		end
 	end
 
-	-- ★ 무기 속성 효과 적용 (다중 속성 합산)
 	local attrCritChance = 0
 	local attrCritDamageMult = 0
 	if toolItem and toolItem.attributes then
 		for attrId, level in pairs(toolItem.attributes) do
 			local fx = MaterialAttributeData.getEffectValues(attrId, level)
 			if fx then
-				if fx.damageMult ~= 0 then
-					totalDamage = totalDamage * (1 + fx.damageMult)
-				end
+				if fx.damageMult then totalDamage = totalDamage * (1 + fx.damageMult) end
 				attrCritChance = attrCritChance + (fx.critChance or 0)
 				attrCritDamageMult = attrCritDamageMult + (fx.critDamageMult or 0)
 			end
 		end
 	end
 
-	-- ★ 스킬 패시브 크릿 보너스 합산
 	if skillBonuses then
 		attrCritChance = attrCritChance + (skillBonuses.CRIT_CHANCE or 0)
 		attrCritDamageMult = attrCritDamageMult + (skillBonuses.CRIT_DAMAGE_MULT or 0)
 	end
 
-	-- ★ 데미지 등락폭 적용 (±VARIANCE)
 	local variance = Balance.DAMAGE_VARIANCE or 0.15
-	local varianceMult = 1 + (math.random() * 2 - 1) * variance
-	totalDamage = math.max(1, totalDamage * varianceMult)
+	totalDamage = totalDamage * (1 + (math.random() * 2 - 1) * variance)
 
-	-- ★ 치명타 판정 (속성 기반 확률)
 	local isCritical = false
 	if attrCritChance > 0 and math.random() < attrCritChance then
 		isCritical = true
-		local critMultiplier = 1.5 + attrCritDamageMult  -- 기본 치명타 150% + 속성 보너스
-		totalDamage = totalDamage * critMultiplier
+		totalDamage = totalDamage * (1.5 + attrCritDamageMult)
 	end
 
-	-- 4. 데미지 및 기절 수치 적용
 	local hpDamage = totalDamage
 	local torporDamage = 0
-	
 	if isBlunt then
-		hpDamage = totalDamage * 0.5  -- 둔기는 체력 데미지 50%
-		torporDamage = totalDamage * 0.5 -- 기절 데미지 50%
+		hpDamage = totalDamage * 0.5
+		torporDamage = totalDamage * 0.5
 	end
 	
 	local killed = false
 	local dropPos = nil
 	
 	if targetType == "CREATURE" then
-		-- 전투 상태 진입 (플레이어 선공)
 		engageCombat(userId, targetId, true)
 		killed, dropPos = CreatureService.processAttack(targetId, hpDamage, torporDamage, player)
-		if killed then
-			disengageCreature(targetId)
-		end
+		if killed then disengageCreature(targetId) end
 		
-		-- ★ 크리처 넉백 + 피격 연출 (모든 클라이언트에 전달)
 		if creature and creature.rootPart then
 			local creaturePos = creature.rootPart.Position
-			local attackerPos = char and char.PrimaryPart and char.PrimaryPart.Position or creaturePos
-			
-			-- 넉백 (생존 시만)
 			if not killed then
-				local knockDir = (creaturePos - attackerPos)
-				knockDir = Vector3.new(knockDir.X, 0, knockDir.Z)
-				if knockDir.Magnitude > 0.01 then
-					knockDir = knockDir.Unit
-				else
-					knockDir = Vector3.new(0, 0, 1)
-				end
-				local knockForce = Balance.CREATURE_KNOCKBACK_FORCE or 12
-				
-				-- ★ 넉백 적용: X,Z 방향만, Y는 현재 속도 유지
-				creature.rootPart.AssemblyLinearVelocity = knockDir * knockForce + Vector3.new(0, creature.rootPart.AssemblyLinearVelocity.Y * 0.8, 0)
-				
-				-- ★ [FIX] Anchored 토글 제거: Anchored=true→false 전환 시
-				-- Humanoid 내부 캡슐이 재초기화되면서 근접 플레이어를 물리 발사시킴
-				-- 대신 짧은 딜레이 후 수평 속도를 0으로 제거 (관성 제거)
+				local knockDir = (creaturePos - hrp.Position)
+				knockDir = Vector3.new(knockDir.X, 0, knockDir.Z).Unit
+				creature.rootPart.AssemblyLinearVelocity = knockDir * (Balance.CREATURE_KNOCKBACK_FORCE or 12) + Vector3.new(0, creature.rootPart.AssemblyLinearVelocity.Y * 0.8, 0)
 				task.delay(0.08, function()
-					if creature and creature.rootPart and creature.rootPart.Parent and not creature.rootPart.Anchored then
+					if creature and creature.rootPart then
 						creature.rootPart.AssemblyLinearVelocity = Vector3.new(0, creature.rootPart.AssemblyLinearVelocity.Y, 0)
 					end
 				end)
 			end
-			
-			-- 모든 클라이언트에 피격 연출 이벤트 (파티클 + 히트스톱)
 			if NetController then
-				NetController.FireAllClients("Combat.Creature.Hit", {
-					instanceId = targetId,
-					hitPosition = { x = creaturePos.X, y = creaturePos.Y, z = creaturePos.Z },
-					damage = hpDamage,
-					killed = killed,
-				})
+				NetController.FireAllClients("Combat.Creature.Hit", { instanceId = targetId, hitPosition = { x = creaturePos.X, y = creaturePos.Y, z = creaturePos.Z }, damage = hpDamage, killed = killed })
 			end
+		end
+	elseif targetType == "PLAYER" then
+		local targetPlayer = Players:GetPlayerFromCharacter(targetObject.Parent)
+		if targetPlayer then
+			CombatService.damagePlayer(targetPlayer.UserId, hpDamage, hrp.Position)
+			killed = (targetPlayer.Character and targetPlayer.Character:FindFirstChild("Humanoid") and targetPlayer.Character.Humanoid.Health <= 0) or false
 		end
 	end
 	
-	-- 4. 도구 내구도 감소
 	if (not isBowShot) and toolItem and toolSlot and toolItem.durability then
 		DurabilityService.reduceDurability(player, toolSlot, 1)
 	end
 	
-	-- 4.5 전투 시 배고픔 소모 연동 (Phase 11)
 	if HungerService then
-		HungerService.consumeHunger(player.UserId, Balance.HUNGER_COMBAT_COST)
+		HungerService.consumeHunger(userId, Balance.HUNGER_COMBAT_COST)
 	end
 
-	-- 4.6 스킬 패시브: 적중 시 HP 회복 (도끼 대가 HEAL_ON_HIT)
 	if skillBonuses and targetType == "CREATURE" and hpDamage > 0 then
 		local healChance = skillBonuses.HEAL_ON_HIT_CHANCE or 0
-		local healPct = skillBonuses.HEAL_ON_HIT_PCT or 0
-		if healChance > 0 and healPct > 0 and math.random() < healChance then
-			local humanoid = char and char:FindFirstChildOfClass("Humanoid")
-			if humanoid and humanoid.Health > 0 then
-				local healAmount = humanoid.MaxHealth * healPct
-				humanoid.Health = math.min(humanoid.MaxHealth, humanoid.Health + healAmount)
+		if healChance > 0 and math.random() < healChance then
+			local humanoid = char:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				humanoid.Health = math.min(humanoid.MaxHealth, humanoid.Health + (humanoid.MaxHealth * (skillBonuses.HEAL_ON_HIT_PCT or 0)))
 			end
 		end
 	end
 	
-	-- 5. 피냄새 디버프 (크리처를 킬했을 때) — 드롭은 시체 채집으로 전환됨
-	if killed and dropPos and targetType == "CREATURE" and creature then
-		-- 피냄새 적용
-		if DebuffService then
-			DebuffService.applyDebuff(player.UserId, "BLOOD_SMELL")
-		end
-		
-		-- [시체 시스템] 드롭 아이템은 더 이상 직접 생성하지 않음
-		-- CreatureService.playNaturalDeathSequence에서 HarvestService.registerCorpseNode 호출하여
-		-- 시체를 ResourceNode로 등록 → 플레이어가 R키로 채집
+	if killed and targetType == "CREATURE" and DebuffService then
+		DebuffService.applyDebuff(userId, "BLOOD_SMELL")
 	end
 	
-	-- 5.5 퀘스트 콜백 (Phase 8)
 	if killed and targetType == "CREATURE" and questCallback and creature and creature.data then
-		questCallback(player.UserId, creature.data.id or creature.data.creatureId)
+		questCallback(userId, creature.data.id or creature.data.creatureId)
 	end
 	
-	-- 6. 타격 피드백 (Client Event)
 	if NetController then
 		NetController.FireClient(player, "Combat.Hit.Result", {
 			damage = hpDamage,
@@ -1073,19 +987,9 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 		})
 	end
 	
-	local targetLabel = targetId
-	if targetType == "CREATURE" and creature and creature.data then
-		targetLabel = creature.data.name or creature.data.id or targetId
-	end
-
-	print(string.format("[CombatService] %s hit %s for %.1f (Torpor: %.1f) dmg%s", 
-		player.Name, targetLabel, hpDamage, torporDamage, killed and " (KILLED)" or ""))
-	
 	return true, nil, { damage = hpDamage, torporDamage = torporDamage, killed = killed }
 end
 
---- 플레이어에게 데미지 적용 (방어력 반영 + 넉백 적용)
---- sourceCreatureId: 공격한 크리처 instanceId (선택) — 전투 교전 등록에 사용
 function CombatService.damagePlayer(userId: number, rawDamage: number, sourcePos: Vector3?, sourceCreatureId: string?)
 	local player = game:GetService("Players"):GetPlayerByUserId(userId)
 	if not player or not player.Character then return end
@@ -1094,57 +998,33 @@ function CombatService.damagePlayer(userId: number, rawDamage: number, sourcePos
 	local hrp = player.Character:FindFirstChild("HumanoidRootPart")
 	if not humanoid or not hrp or humanoid.Health <= 0 then return end
 	
-	-- 1. 무적 상태 체크 (구르기 등)
-	if CombatService.isPlayerInvulnerable(userId) then
-		return
-	end
+	if CombatService.isPlayerInvulnerable(userId) then return end
 	
-	-- 1.5 크리처 선공 → 전투 교전 등록
-	if sourceCreatureId then
-		engageCombat(userId, sourceCreatureId, true)
-	end
+	if sourceCreatureId then engageCombat(userId, sourceCreatureId, true) end
 	
-	-- 2. 방어력 계산
 	local defense = 0
 	if InventoryService and InventoryService.getTotalDefense then
 		defense = InventoryService.getTotalDefense(userId)
 	end
 	
-	-- 데미지 감쇄 공식: final = raw * (100 / (100 + defense))
 	local reductionMult = 100 / (100 + defense)
-	-- ★ 크리처 공격 데미지 등락폭 (±VARIANCE)
 	local variance = Balance.DAMAGE_VARIANCE or 0.15
-	local varianceMult = 1 + (math.random() * 2 - 1) * variance
-	local finalDamage = math.max(1, rawDamage * reductionMult * varianceMult)
+	local finalDamage = math.max(1, rawDamage * reductionMult * (1 + (math.random() * 2 - 1) * variance))
 	
-	-- 3. 방어구 내구도 감소
 	if InventoryService and InventoryService.decreaseEquipmentDurability then
 		local armorDamage = math.max(1, math.floor(rawDamage * (Balance.ARMOR_DURABILITY_LOSS_RATIO or 0.1)))
 		local equip = InventoryService.getEquipment(userId)
-		
 		if equip.SUIT then
 			local headDamage = equip.HEAD and math.max(1, math.ceil(armorDamage * 0.2)) or 0
-			local suitDamage = math.max(1, armorDamage - headDamage)
-			InventoryService.decreaseEquipmentDurability(userId, "SUIT", suitDamage)
-			if equip.HEAD and headDamage > 0 then
-				InventoryService.decreaseEquipmentDurability(userId, "HEAD", headDamage)
-			end
-		else
-			if equip.HEAD then
-				InventoryService.decreaseEquipmentDurability(userId, "HEAD", armorDamage)
-			end
+			InventoryService.decreaseEquipmentDurability(userId, "SUIT", armorDamage - headDamage)
+			if headDamage > 0 then InventoryService.decreaseEquipmentDurability(userId, "HEAD", headDamage) end
+		elseif equip.HEAD then
+			InventoryService.decreaseEquipmentDurability(userId, "HEAD", armorDamage)
 		end
 	end
 	
-	-- 4. 데미지 적용
 	humanoid:TakeDamage(finalDamage)
 	
-	-- 5. ★ 넉백을 클라이언트로 이관
-	-- 플레이어 캐릭터는 클라이언트 소유(Network Ownership)이므로
-	-- 서버에서 AssemblyLinearVelocity를 바꾸면 Rubberbanding 발생
-	-- 넉백 정보를 이벤트에 담아 클라이언트에서 직접 물리를 적용
-	
-	-- 6. 클라이언트 연출 요청 (화면 흔들림, 피격 효과, 넉백 등)
 	if NetController then
 		NetController.FireClient(player, "Combat.Player.Hit", {
 			damage = finalDamage,
@@ -1152,62 +1032,29 @@ function CombatService.damagePlayer(userId: number, rawDamage: number, sourcePos
 			knockbackForce = sourcePos and (Balance.KNOCKBACK_FORCE or 25) or nil,
 		})
 	end
-	
-	print(string.format("[CombatService] Player %s took %.1f damage (Raw: %.1f, Def: %d)", 
-		player.Name, finalDamage, rawDamage, defense))
-end
-
---========================================
--- Network Handlers
---========================================
-
-local function handleHitRequest(player, payload)
-	local targetId = payload.targetId or payload.targetInstanceId
-	local attackMeta = {
-		bowShot = payload.bowShot,
-		chargeRatio = payload.chargeRatio,
-		aimDirection = payload.aimDirection,
-		aimOrigin = payload.aimOrigin,
-		heldSec = payload.heldSec,
-	}
-	
-	local success, errorCode, result = CombatService.processPlayerAttack(player, targetId, attackMeta)
-	
-	if not success then
-		return { success = false, errorCode = errorCode }
-	end
-	return { success = true, data = result }
 end
 
 function CombatService.GetHandlers()
 	return {
-		["Combat.Hit.Request"] = handleHitRequest
+		["Combat.Hit.Request"] = function(player, payload)
+			local targetId = payload.targetId or payload.targetInstanceId
+			local success, errorCode, result = CombatService.processPlayerAttack(player, targetId, {
+				bowShot = payload.bowShot,
+				chargeRatio = payload.chargeRatio,
+				aimDirection = payload.aimDirection,
+				aimOrigin = payload.aimOrigin,
+				heldSec = payload.heldSec,
+			})
+			if not success then return { success = false, errorCode = errorCode } end
+			return { success = true, data = result }
+		end
 	}
 end
 
---- 퀘스트 콜백 설정 (Phase 8)
-function CombatService.SetQuestCallback(callback)
-	questCallback = callback
-end
-
---- 크리처 디스폰/사망 시 외부 호출용 전투 상태 해제
-function CombatService.disengageCreature(instanceId: string)
-	disengageCreature(instanceId)
-end
-
---- 외부에서 전투 상태 진입 (스킬 공격 등)
-function CombatService.engageCombat(userId: number, instanceId: string)
-	engageCombat(userId, instanceId, false)
-end
-
---- 외부에서 플레이어 직접 전투 상태 진입 (플레이어 스킬/공격용)
-function CombatService.engagePlayerCombat(userId: number, instanceId: string)
-	engageCombat(userId, instanceId, true)
-end
-
---- 플레이어의 현재 전투 대상 반환
-function CombatService.getPlayerCombatTarget(userId: number): string?
-	return playerCombatPrimaryTarget[userId]
-end
+function CombatService.SetQuestCallback(callback) questCallback = callback end
+function CombatService.disengageCreature(instanceId: string) disengageCreature(instanceId) end
+function CombatService.engageCombat(userId: number, instanceId: string) engageCombat(userId, instanceId, false) end
+function CombatService.engagePlayerCombat(userId: number, instanceId: string) engageCombat(userId, instanceId, true) end
+function CombatService.getPlayerCombatTarget(userId: number): string? return playerCombatPrimaryTarget[userId] end
 
 return CombatService

@@ -39,6 +39,12 @@ Balance.MAP_EXTENT = 2500          -- 초기 스폰 시 탐색할 맵 최대 범
 Balance.SEA_LEVEL = 2              -- 해수면 높이 (0 -> 2)
 
 --========================================
+-- 카메라 (Camera)
+--========================================
+Balance.CAM_MAX_ZOOM = 45          -- 줌아웃 최대 거리 (스터드)
+Balance.CAM_MIN_ZOOM = 0           -- 줌인 최소 거리 (1인칭 허용)
+
+--========================================
 -- 야생동물 / 크리처
 --========================================
 Balance.WILDLIFE_CAP = 400         -- 서버 전체 야생동물 최대 수
@@ -197,6 +203,8 @@ Balance.RECALL_COOLDOWN = 60           -- 귀환 쿨다운(초)
 Balance.SLEEP_FADE_OUT_TIME = 0.8      -- 수면 페이드아웃 시간(초)
 Balance.SLEEP_BLACK_HOLD_TIME = 0.5    -- 암전 유지 시간(초)
 Balance.SLEEP_FADE_IN_TIME = 1.0       -- 기상 페이드인 시간(초)
+Balance.REST_HEAL_RATE = 5             -- 휴식 시 초당 체력 회복량
+Balance.REST_STAMINA_REGEN_RATE = 15   -- 휴식 시 초당 기력 추가 회복량
 
 
 -- 채집 홀드 시스템 (E키 꿉 누르기)

@@ -500,6 +500,7 @@ CombatService.SetStaminaService(StaminaService)
 local PetService = require(Services.PetService)
 PetService.Init(NetController, DataService, PlayerStatService, SaveService, CreatureService, CombatService)
 
+
 -- PetService 핸들러 등록
 for command, handler in pairs(PetService.GetHandlers()) do
 	NetController.RegisterHandler(command, handler)
@@ -511,7 +512,7 @@ CharacterSetupService.Init()
 
 -- PortalService 초기화 (고대 포탈 - 수리 + 텔레포트)
 local PortalService = require(Services.PortalService)
-PortalService.Init(NetController, SaveService, InventoryService, HarvestService, CreatureService)
+PortalService.Init(NetController, SaveService, InventoryService, HarvestService, CreatureService, NPCShopService)
 
 -- PortalService 핸들러 등록
 for command, handler in pairs(PortalService.GetHandlers()) do

@@ -35,7 +35,7 @@ function _initPlayerSkills(userId: number)
 			unlockedSkills = {},
 			combatTreeId = nil,
 			skillPointsSpent = 0,
-			activeSkillSlots = { nil, nil, nil },
+			activeSkillSlots = { nil, nil, nil, nil },
 		}
 		return
 	end
@@ -44,7 +44,7 @@ function _initPlayerSkills(userId: number)
 		unlockedSkills = type(state.unlockedSkills) == "table" and state.unlockedSkills or {},
 		combatTreeId = state.combatTreeId,
 		skillPointsSpent = state.skillPointsSpent or 0,
-		activeSkillSlots = type(state.activeSkillSlots) == "table" and state.activeSkillSlots or { nil, nil, nil },
+		activeSkillSlots = type(state.activeSkillSlots) == "table" and state.activeSkillSlots or { nil, nil, nil, nil },
 	}
 	
 	-- 건축 등 자동 해금 스킬 처리
@@ -318,7 +318,7 @@ local function handleSetSlot(player: Player, payload: any)
 	local slotIndex = payload and payload.slot
 	local skillId = payload and payload.skillId -- nil = 슬롯 비우기
 
-	if type(slotIndex) ~= "number" or slotIndex < 1 or slotIndex > 3 then
+	if type(slotIndex) ~= "number" or slotIndex < 1 or slotIndex > 4 then
 		return { success = false, errorCode = "BAD_REQUEST" }
 	end
 	slotIndex = math.floor(slotIndex)
@@ -337,7 +337,7 @@ local function handleSetSlot(player: Player, payload: any)
 			return { success = false, errorCode = "NOT_ACTIVE_SKILL" }
 		end
 		-- 이미 다른 슬롯에 장착된 경우 제거
-		for i = 1, 3 do
+		for i = 1, 4 do
 			if cache.activeSkillSlots[i] == skillId then
 				cache.activeSkillSlots[i] = nil
 			end
@@ -364,7 +364,7 @@ local function handleResetSkills(player: Player, _payload: any)
 	cache.unlockedSkills = {}
 	cache.combatTreeId = nil
 	cache.skillPointsSpent = 0
-	cache.activeSkillSlots = { nil, nil, nil }
+	cache.activeSkillSlots = { nil, nil, nil, nil }
 	_syncToSave(userId)
 
 	print(string.format("[SkillService] %s RESET all skills (SP refunded)", player.Name))

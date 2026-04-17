@@ -34,7 +34,7 @@ local STARTER_NODE_TARGET_PER_TYPE = 2
 local STARTER_NODE_CHECK_RADIUS = 45
 local STARTER_NODE_MIN_DIST = 8
 local STARTER_NODE_MAX_DIST = 24
-local STARTER_NODE_TYPES = { "GROUND_BRANCH", "GROUND_STONE", "GROUND_FIBER" }
+local STARTER_NODE_TYPES = { "GROUND_BRANCH", "GROUND_FIBER" }
 
 -- 섬별 스폰 밸런싱 데이터
 local SpawnConfig = require(ReplicatedStorage.Shared.Config.SpawnConfig)
@@ -71,9 +71,9 @@ local GROUND_MATERIALS = {
 
 -- 지형별 초기 스폰 노드 풀
 local GRASS_TERRAIN_NODES = { "TREE_THIN", "BUSH_BERRY", "GROUND_FIBER", "GROUND_BRANCH" }
-local ROCK_TERRAIN_NODES = { "ROCK_SOFT", "GROUND_STONE" }
-local SAND_TERRAIN_NODES = { "GROUND_STONE", "GROUND_BRANCH" }
-local GROUND_TERRAIN_NODES = { "GROUND_FIBER", "GROUND_BRANCH", "GROUND_STONE" }
+local ROCK_TERRAIN_NODES = { "ROCK_SOFT" }
+local SAND_TERRAIN_NODES = { "GROUND_BRANCH" }
+local GROUND_TERRAIN_NODES = { "GROUND_FIBER", "GROUND_BRANCH" }
 
 --========================================
 -- Dependencies (Init에서 주입)
@@ -293,9 +293,9 @@ local function setupModelForNode(model: Model, position: Vector3, nodeData: any,
 	-- Toolbox 모델 정리
 	cleanModelForHarvest(model)
 
-	-- 잔돌/나뭇가지는 식별성을 위해 시각 크기를 소폭 상향
-	if nodeData and (nodeData.id == "GROUND_BRANCH" or nodeData.id == "GROUND_STONE") then
-		local scaleMul = nodeData.id == "GROUND_STONE" and 1.4 or 1.15
+	-- 나뭇가지는 식별성을 위해 시각 크기를 소폭 상향
+	if nodeData and nodeData.id == "GROUND_BRANCH" then
+		local scaleMul = 1.15
 		for _, part in ipairs(model:GetDescendants()) do
 			if part:IsA("BasePart") and part.Transparency < 1 then
 				part.Size = part.Size * scaleMul
@@ -1070,6 +1070,10 @@ function HarvestService.registerNode(nodeId: string, position: Vector3, isAutoSp
 	local nodeUID = generateNodeUID()
 	local nodeData = DataService.getResourceNode(nodeId)
 	
+	if nodeId == "GROUND_STONE" then
+		return nodeUID -- 블랙리스트는 조용히 무시
+	end
+
 	if not nodeData then
 		warn(string.format("[HarvestService] Unknown node: %s", nodeId))
 		return nodeUID
@@ -2167,6 +2171,12 @@ function HarvestService._setupPrePlacedNodes()
 
 	local function resolveNodeId(nodeModel)
 		if not nodeModel then
+			return nil, nil
+		end
+
+		-- [수정] GROUND_STONE은 더 이상 스폰되지 않아야 하므로 블랙리스트 처리 (확장 매칭 대응)
+		local nameNorm = normalizeNodeName(nodeModel.Name)
+		if nameNorm == "groundstone" or nameNorm == "smallstone" or nameNorm == "stone" then
 			return nil, nil
 		end
 

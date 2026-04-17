@@ -22,6 +22,7 @@ local RadioStoryController = require(Client.Controllers.RadioStoryController)
 local WindowManager = require(Client.Utils.WindowManager)
 local HarvestUI = require(Client.UI.HarvestUI)
 local UIManager = nil -- Circular dependency check (will require inside if needed)
+local FacilityRadialUI = require(Client.UI.FacilityRadialUI)
 
 local InteractController = {}
 
@@ -55,6 +56,9 @@ local mountedControlState = { forward = false, backward = false, left = false, r
 local lastMountControlThrottle = 0
 local lastMountControlSteer = 0
 local NPC_TARGET_PRIORITY_BONUS = 3.5
+local isResting = false
+local restAnimTrack = nil
+local restMovementConn = nil
 
 -- UIManager 참조 (Init 후 설정)
 local UIManager = nil
@@ -83,7 +87,7 @@ local function closeSleepConfirm()
 	sleepConfirmActive = false
 end
 
-local function showSleepConfirm(structureId: string)
+function InteractController.showSleepConfirm(structureId: string)
 	if sleepConfirmActive or sleepTransitionBusy then return end
 	sleepConfirmActive = true
 
@@ -487,42 +491,83 @@ end
 
 --- 시설 상호작용
 local function interactFacility(target: Instance)
-	local facilityId = target:GetAttribute("FacilityId")
-	local structureId = target:GetAttribute("StructureId") or target:GetAttribute("id") or target.Name
+	if not FacilityRadialUI then
+		FacilityRadialUI = require(Client.UI.FacilityRadialUI)
+	end
 	
-	print("[InteractController] Interacting with facility:", facilityId, "(ID:", structureId .. ")")
-	
-	if not facilityId then return end
-	
-	local facilityData = DataHelper.GetData("FacilityData", facilityId)
-	if not facilityData then return end
-	
-	if facilityData.functionType == "CRAFTING_T1" then
-		-- 기초작업대는 이제 전용 제작 UI(FacilityUI)를 엽니다.
-		local FacilityController = require(Client.Controllers.FacilityController)
-		FacilityController.openFacility(structureId)
-	elseif facilityData.functionType == "CRAFTING" or facilityData.functionType == "CRAFTING_T2" or facilityData.functionType == "CRAFTING_T3" then
-		-- 일반 제작대는 인벤토리 제작 탭 안내
-		if UIManager then
-			UIManager.notify("도구 및 장비 제작은 인벤토리[I]의 제작 탭에서 가능합니다.", Color3.fromRGB(255, 210, 80))
-		end
-	elseif facilityData.functionType == "COOKING" or facilityData.functionType:find("SMELTING") then
-		-- 요리, 제련용 시설 UI 열기
-		local FacilityController = require(Client.Controllers.FacilityController)
-		FacilityController.openFacility(structureId)
-	elseif facilityData.functionType == "STORAGE" then
-		-- 보관함 UI 열기
-		local StorageController = require(Client.Controllers.StorageController)
-		StorageController.openStorage(structureId)
-	elseif facilityData.functionType == "BASE_CORE" then
-		local TotemController = require(Client.Controllers.TotemController)
-		TotemController.openTotem(structureId)
-	elseif facilityData.functionType == "RESPAWN" then
-		showSleepConfirm(structureId)
+	if FacilityRadialUI.IsOpen() then
+		FacilityRadialUI.Close()
+	else
+		FacilityRadialUI.Open(target)
 	end
 end
 
-local function removeFacility(target: Instance)
+function InteractController.startRest()
+	if isResting then return end
+	
+	local character = player.Character
+	local humanoid = character and character:FindFirstChild("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then return end
+	
+	isResting = true
+	NetClient.Request("Facility.Rest.Start", {})
+	
+	-- 애니메이션 재생
+	local animId = AnimationIds.MISC.REST
+	if animId then
+		-- Assets에서 애니메이션 로드
+		local asset = ReplicatedStorage.Assets.Animations:FindFirstChild(animId)
+		if asset then
+			restAnimTrack = humanoid:LoadAnimation(asset)
+			restAnimTrack.Priority = Enum.AnimationPriority.Action
+			restAnimTrack.Looped = false
+			restAnimTrack:Play()
+			
+			-- 마지막 프레임에서 멈추기 (애니메이션 길이만큼 대기 후 속도 0)
+			task.spawn(function()
+				task.wait(restAnimTrack.Length * 0.95)
+				if isResting and restAnimTrack then
+					restAnimTrack:AdjustSpeed(0)
+				end
+			end)
+		end
+	end
+	
+	if UIManager then
+		UIManager.notify("휴식 중... 이동하면 취소됩니다.", Color3.fromRGB(150, 255, 150))
+	end
+	
+	-- 움직임 감지하여 자동 취소
+	restMovementConn = RunService.Heartbeat:Connect(function()
+		local moveDir = humanoid.MoveDirection
+		if moveDir.Magnitude > 0.1 or humanoid.Jump then
+			InteractController.stopRest()
+		end
+	end)
+end
+
+function InteractController.stopRest()
+	if not isResting then return end
+	isResting = false
+	
+	if restMovementConn then
+		restMovementConn:Disconnect()
+		restMovementConn = nil
+	end
+	
+	if restAnimTrack then
+		restAnimTrack:Stop(0.3)
+		restAnimTrack = nil
+	end
+	
+	NetClient.Request("Facility.Rest.Stop", {})
+	
+	if UIManager then
+		UIManager.notify("휴식을 마쳤습니다.")
+	end
+end
+
+local function removeFacility(target: Instance, skipConfirm: boolean)
 	local structureId = getStructureIdFromTarget(target)
 	if not structureId then
 		clearPendingRemove()
@@ -530,7 +575,7 @@ local function removeFacility(target: Instance)
 	end
 
 	local now = tick()
-	local isConfirmed = (pendingRemoveStructureId == structureId) and (now <= pendingRemoveExpireAt)
+	local isConfirmed = skipConfirm or ((pendingRemoveStructureId == structureId) and (now <= pendingRemoveExpireAt))
 	if not isConfirmed then
 		pendingRemoveStructureId = structureId
 		pendingRemoveExpireAt = now + REMOVE_CONFIRM_WINDOW
@@ -577,6 +622,15 @@ function InteractController.onFacilityInteractPress()
 		-- 시설 상호작용 키(R)로 UI 닫기까지 일관 처리
 		if HarvestUI.IsOpen() then
 			HarvestUI.Close()
+			return
+		end
+		if FacilityRadialUI.IsOpen() then
+			FacilityRadialUI.Close()
+			return
+		end
+		local PalRadialUI = require(Client.UI.PalRadialUI)
+		if PalRadialUI.IsOpen() then
+			PalRadialUI.Close()
 			return
 		end
 		if WindowManager then
@@ -640,14 +694,16 @@ function InteractController.onFacilityInteractPress()
 	end
 end
 
-function InteractController.onFacilityRemovePress()
-	if InputManager.isUIOpen() then
+function InteractController.onFacilityRemovePress(skipConfirm: boolean)
+	skipConfirm = skipConfirm or false
+	
+	if not skipConfirm and InputManager.isUIOpen() then
 		return
 	end
 
 	local facTarget = currentFacilityTarget or (currentTargetType == "facility" and currentTarget)
 	if facTarget then
-		removeFacility(facTarget)
+		removeFacility(facTarget, skipConfirm)
 	else
 		clearPendingRemove()
 	end
@@ -681,15 +737,16 @@ local function sendMountedControl(force)
 		steer = 0
 	end
 
-	if not force and throttle == lastMountControlThrottle and steer == lastMountControlSteer then
-		return
-	end
-
 	lastMountControlThrottle = throttle
 	lastMountControlSteer = steer
+
+	local camera = workspace.CurrentCamera
+	local lookDir = camera and camera.CFrame.LookVector or Vector3.new(0, 0, -1)
+
 	NetClient.Request("Party.Mount.Control.Request", {
 		throttle = throttle,
 		steer = steer,
+		lookDir = lookDir,
 	})
 end
 
@@ -903,6 +960,64 @@ function InteractController.Init()
 			if player:GetAttribute("MountedPalUID") then
 				sendMountedControl(false)
 			end
+		end
+	end)
+
+	-- [UX 개선] 클라이언트측 물리 업데이트 (부드러운 카메라 상대 이동 및 회전)
+	RunService.Heartbeat:Connect(function(dt)
+		local mountedUID = player:GetAttribute("MountedPalUID")
+		if not mountedUID then return end
+
+		-- 현재 내가 타고 있는 공룡 모델 찾기
+		local creatures = workspace:FindFirstChild("Creatures")
+		local myMount = nil
+		if creatures then
+			for _, m in ipairs(creatures:GetChildren()) do
+				if m:GetAttribute("MountedByUserId") == player.UserId then
+					myMount = m
+					break
+				end
+			end
+		end
+
+		if not myMount then return end
+		local rootPart = myMount.PrimaryPart or myMount:FindFirstChild("HumanoidRootPart")
+		local humanoid = myMount:FindFirstChildOfClass("Humanoid")
+		if not rootPart or not humanoid then return end
+
+		local throttle, steer = getMountControlValues()
+		local hasThrottle = math.abs(throttle) > 0.01
+		local hasSteer = math.abs(steer) > 0.01
+
+		if hasThrottle or hasSteer then
+			local camera = workspace.CurrentCamera
+			if not camera then return end
+
+			local camCF = camera.CFrame
+			local camForward = Vector3.new(camCF.LookVector.X, 0, camCF.LookVector.Z).Unit
+			local camRight = camCF.RightVector.Unit
+
+			local moveDir = (camForward * throttle) + (camRight * steer)
+			if moveDir.Magnitude > 0 then
+				moveDir = moveDir.Unit
+			end
+
+			-- 회전 처리: S키(후진) 시에는 정면(카메라 앞)을 바라보고, 그 외에는 이동 방향을 바라보며 즉시 회전
+			local faceDir = moveDir
+			if throttle < 0 then
+				faceDir = camForward
+			end
+
+			if faceDir.Magnitude > 0.01 then
+				-- [Refinement] 즉시 스냅 대신 부드러운 회전(Lerp) 적용하여 더 자연스러운 느낌 제공
+				local targetCF = CFrame.lookAt(rootPart.Position, rootPart.Position + faceDir)
+				-- 0.05초(20Hz) 원격 호출 대비 Heartbeat(60Hz)에서 쾌적하게 작동하도록 높은 가중치(18) 사용
+				rootPart.CFrame = rootPart.CFrame:Lerp(targetCF, math.clamp(dt * 18, 0, 1))
+			end
+
+			humanoid:Move(moveDir, false)
+		else
+			humanoid:Move(Vector3.zero, false)
 		end
 	end)
 	

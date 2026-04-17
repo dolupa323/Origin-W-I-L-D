@@ -160,6 +160,7 @@ local PortalUI = require(UI.PortalUI)
 local SkillTreeUI = require(UI.SkillTreeUI)
 local ActiveSkillBarUI = require(UI.ActiveSkillBarUI)
 local HarvestUI = require(UI.HarvestUI)
+local PortalRadialUI = require(UI.PortalRadialUI)
 
 local CollectionController = require(Controllers.CollectionController)
 local SkillController = require(Controllers.SkillController)
@@ -1184,14 +1185,16 @@ function UIManager.refreshPersonalCrafting(forceRefresh)
 			
 			if isLocked then
 				icon.ImageColor3 = Color3.fromRGB(100,100,100)
-				nf.BackgroundColor3 = Color3.fromRGB(35,35,40)
+				nf.BackgroundColor3 = C.BG_DARK
+				nf.BackgroundTransparency = 0.8
 				lockBG.Visible = true
 				if st then st.Color = (recipe.id == selectedPersonalRecipeId) and C.GOLD or C.DIM end
 			else
 				lockBG.Visible = false
+				nf.BackgroundTransparency = T.SLOT
 				if canCraft then
 					icon.ImageColor3 = Color3.new(1,1,1)
-					nf.BackgroundColor3 = Color3.fromRGB(50, 70, 50) -- Success hint
+					nf.BackgroundColor3 = Color3.fromRGB(45, 65, 45) -- Subtle Green Hint
 				else
 					icon.ImageColor3 = Color3.fromRGB(150,150,150)
 					nf.BackgroundColor3 = C.BG_SLOT
@@ -1804,54 +1807,50 @@ function UIManager.highlightTotemZone()
 end
 
 ----------------------------------------------------------------
--- Portal UI (WindowManager 연동)
+-- Portal UI (Radial Menu)
 ----------------------------------------------------------------
 
-function UIManager.openPortal(statusData)
-	WindowManager.open("PORTAL", statusData)
-end
-
-function UIManager._onOpenPortal(statusData)
-	PortalUI.SetData(statusData)
-	PortalUI.SetVisible(true)
-	updateUIMode()
-	PortalUI.Refresh()
+function UIManager.openPortal(status)
+	if not status then return end
+	PortalRadialUI:Open(status)
 end
 
 function UIManager.closePortal()
-	WindowManager.close("PORTAL")
+	PortalRadialUI:Close()
+	PortalUI.SetVisible(false)
+end
+
+function UIManager._onOpenPortal(data)
+	UIManager.openPortal(data)
 end
 
 function UIManager._onClosePortal()
-	PortalUI.SetVisible(false)
+	UIManager.closePortal()
 end
 
 function UIManager.refreshPortal(newData)
 	PortalUI.Refresh(newData)
 end
 
-function UIManager.requestPortalDeposit(itemId, remaining)
-	local reqAmount = math.max(1, tonumber(remaining) or 1)
-	local ok, dataOrErr = NetClient.Request("Portal.Deposit.Request", {
-		itemId = itemId,
-		amount = reqAmount,
-	})
-	if not ok then
-		if dataOrErr == "NO_ITEM" then
-			UIManager.sideNotify("❌ 재료가 부족합니다: " .. tostring(itemId), C.RED)
-		elseif dataOrErr == "OUT_OF_RANGE" then
-			UIManager.sideNotify("❌ 포탈에 더 가까이 접근해야 합니다.", C.RED)
-		else
-			warn("[UIManager] Portal deposit failed:", dataOrErr)
-			UIManager.sideNotify("❌ 재료를 투입할 수 없습니다. 다시 시도해주세요.", C.RED)
-		end
-		return
-	end
+function UIManager.openPortalGoldInput(data)
+	PortalUI.SetData(data)
+	PortalUI.SetVisible(true)
+end
 
-	if type(dataOrErr) == "table" and dataOrErr.repaired then
-		UIManager.notify("🌀 고대 포탈이 수리되었습니다!", Color3.fromRGB(255, 200, 0))
+function UIManager.requestPortalDeposit(itemId, amount)
+	-- itemId가 nil 또는 빈 문자열이면 골드로 취급
+	local ok, data = NetClient.Request("Portal.Deposit.Request", {
+		itemId = itemId,
+		amount = amount
+	})
+	if ok then
+		PortalUI.Refresh(data)
+		if data and data.repaired then
+			UIManager.notify("🌀 고대 포탈이 수리되었습니다!", Color3.fromRGB(255, 200, 0))
+		end
+	else
+		UIManager.notify(friendlyError(data, "포탈 활성화"), C.RED)
 	end
-	UIManager.refreshPortal(dataOrErr)
 end
 
 function UIManager.sortInventory()
@@ -2766,15 +2765,8 @@ local function setupEventListeners()
 			UIManager.openPortal(data)
 		end)
 
-		NetClient.On("Portal.MissingMaterials", function(data)
-			if data and data.cost then
-				UIManager.notify("⚡ 포탈 수리 재료가 부족합니다", Color3.fromRGB(255, 200, 80))
-				for _, item in ipairs(data.cost) do
-					local status = item.met and "✅ 충분" or "❌ 부족"
-					local msg = string.format("%s %d개 — %s", item.name or item.itemId, item.required or 0, status)
-					UIManager.sideNotify(msg, item.met and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(255, 120, 80))
-				end
-			end
+		NetClient.On("Portal.MissingMaterials", function()
+			UIManager.notify("⚡ 골드가 부족하거나 잘못된 요청입니다.", Color3.fromRGB(255, 120, 80))
 		end)
 
 		NetClient.On("Portal.Repaired", function(_data)
@@ -3058,6 +3050,7 @@ function UIManager.Init()
 	CollectionUI.Init(mainGui, UIManager, isMobile)
 	TotemUI.Init(mainGui, UIManager, isMobile)
 	PortalUI.Init(mainGui, UIManager, isMobile)
+	PortalRadialUI:Init(UIManager)
 	SkillTreeUI.Init(mainGui, UIManager, isMobile)
 	SkillTreeUI.SetController(SkillController)
 	ActiveSkillBarUI.Init(mainGui)

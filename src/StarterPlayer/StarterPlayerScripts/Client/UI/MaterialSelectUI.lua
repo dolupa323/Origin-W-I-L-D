@@ -117,7 +117,8 @@ end
 local function updateConfirmButton()
 	if not MaterialSelectUI.Refs.BtnConfirm then return end
 	local ok = isAllFulfilled()
-	MaterialSelectUI.Refs.BtnConfirm.BackgroundColor3 = ok and C.GOLD or C.BG_SLOT
+	MaterialSelectUI.Refs.BtnConfirm.BackgroundColor3 = ok and C.BTN or C.BTN_GRAY
+	MaterialSelectUI.Refs.BtnConfirm.TextColor3 = ok and C.BG_PANEL or C.GRAY
 	MaterialSelectUI.Refs.BtnConfirm.Text = ok and UILocalizer.Localize("제작 시작") or UILocalizer.Localize("재료를 선택하세요")
 	MaterialSelectUI.Refs.BtnConfirm.Active = ok
 	MaterialSelectUI.Refs.BtnConfirm.AutoButtonColor = ok
@@ -327,7 +328,7 @@ function MaterialSelectUI.Init(parent, UIManager)
 		pos = UDim2.new(0.5, 0, 0.5, 0),
 		anchor = Vector2.new(0.5, 0.5),
 		bg = C.BG_PANEL,
-		bgT = 0.05,
+		bgT = T.PANEL,
 		r = 10,
 		stroke = 2,
 		strokeC = C.BORDER,
@@ -360,9 +361,9 @@ function MaterialSelectUI.Init(parent, UIManager)
 		size = UDim2.new(0, 50, 0, 50),
 		pos = UDim2.new(1, -8, 0, 5),
 		anchor = Vector2.new(1, 0),
-		bgT = 1,
+		bgT = 0.6,
 		ts = 28,
-		color = C.WHITE,
+		isNegative = true,
 		fn = function() MaterialSelectUI.Close() end,
 		parent = main,
 	})
@@ -403,11 +404,10 @@ function MaterialSelectUI.Init(parent, UIManager)
 	MaterialSelectUI.Refs.BtnCancel = Utils.mkBtn({
 		text = UILocalizer.Localize("취소"),
 		size = UDim2.new(0, 180, 0, 56),
-		bg = C.BTN,
+		isNegative = true,
 		r = 6,
 		font = F.TITLE,
 		ts = 22,
-		color = C.WHITE,
 		fn = function() MaterialSelectUI.Close() end,
 		parent = footer,
 	})
@@ -415,11 +415,9 @@ function MaterialSelectUI.Init(parent, UIManager)
 	MaterialSelectUI.Refs.BtnConfirm = Utils.mkBtn({
 		text = UILocalizer.Localize("재료를 선택하세요"),
 		size = UDim2.new(0, 300, 0, 56),
-		bg = C.BG_SLOT,
 		r = 6,
 		font = F.TITLE,
 		ts = 22,
-		color = C.BG_DARK,
 		parent = footer,
 	})
 	

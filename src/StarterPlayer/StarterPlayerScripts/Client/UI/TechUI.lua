@@ -315,10 +315,14 @@ function TechUI.Init(parent, UIManager, isMobile)
 	local tlLayout = Instance.new("UIListLayout"); tlLayout.Padding=UDim.new(0,1); tlLayout.Parent=tabListPanel
 	
 	for i, cat in ipairs(CATEGORY_TABS) do
+		local isDefault = (i == activeTab)
 		local tBtn = Utils.mkBtn({
 			text = "   " .. cat.name, size = UDim2.new(1,0,0,50),
-			bg = C.BTN, bgT = 0, color=C.GRAY,
+			bg = isDefault and C.GOLD_SEL or C.BTN_GRAY, 
+			bgT = isDefault and 0.2 or 0.6, 
+			color = isDefault and C.WHITE or C.GRAY,
 			ts = 15, font = F.TITLE, r=0,
+			noHover = true,
 			parent = tabListPanel
 		})
 		tBtn.TextXAlignment = Enum.TextXAlignment.Left
@@ -327,7 +331,7 @@ function TechUI.Init(parent, UIManager, isMobile)
 		ind.Size = UDim2.new(0,4,1,0)
 		ind.BackgroundColor3 = C.GOLD
 		ind.BorderSizePixel = 0
-		ind.Visible = false
+		ind.Visible = isDefault
 		ind.Parent = tBtn
 		
 		TechUI.Refs.Tabs[i] = { Btn = tBtn, Ind = ind }
@@ -335,12 +339,13 @@ function TechUI.Init(parent, UIManager, isMobile)
 		tBtn.MouseButton1Click:Connect(function()
 			activeTab = i
 			for j, tref in ipairs(TechUI.Refs.Tabs) do
-				if j == activeTab then
-					tref.Btn.BackgroundColor3 = C.BTN_H
-					tref.Btn.TextColor3 = C.GOLD
+				local isSelected = (j == activeTab)
+				if isSelected then
+					Utils.setBtnState(tref.Btn, C.GOLD_SEL, 0.2)
+					tref.Btn.TextColor3 = C.WHITE
 					tref.Ind.Visible = true
 				else
-					tref.Btn.BackgroundColor3 = C.BTN
+					Utils.setBtnState(tref.Btn, C.BTN_GRAY, 0.6)
 					tref.Btn.TextColor3 = C.GRAY
 					tref.Ind.Visible = false
 				end
@@ -355,14 +360,15 @@ function TechUI.Init(parent, UIManager, isMobile)
 	end
 	
 	-- 초기 탭 세팅
-	TechUI.Refs.Tabs[1].Btn.BackgroundColor3 = C.BTN_H
-	TechUI.Refs.Tabs[1].Btn.TextColor3 = C.GOLD
+	TechUI.Refs.Tabs[1].Btn.BackgroundColor3 = C.BTN
+	TechUI.Refs.Tabs[1].Btn.BackgroundTransparency = 0
+	TechUI.Refs.Tabs[1].Btn.TextColor3 = C.BG_DARK
 	TechUI.Refs.Tabs[1].Ind.Visible = true
 
 	-- 중앙 캔버스 영역
 	local canvasWrapper = Utils.mkFrame({
 		name="CanvasWrap", size=UDim2.new(1, -180, 1, 0),
-		pos=UDim2.new(0,180,0,0), bg=C.BG_PANEL_L, bgT=0.2, parent=contentBox
+		pos=UDim2.new(0,180,0,0), bgT=1, parent=contentBox
 	})
 	
 	TechUI.Refs.Canvas = Instance.new("ScrollingFrame")
@@ -387,7 +393,7 @@ function TechUI.Init(parent, UIManager, isMobile)
 	TechUI.Refs.DetailFrame = Utils.mkFrame({
 		name="Detail", size=UDim2.new(0, detailSize, 1, -16),
 		pos=UDim2.new(1, -detailSize - 8, 0, 8),
-		bg=C.BG_PANEL, bgT=T.PANEL, r=6, stroke=1, strokeC=C.BORDER,
+		bg=C.BG_PANEL, bgT=T.PANEL, r=6,
 		parent=canvasWrapper
 	})
 	-- 선택 전엔 숨김

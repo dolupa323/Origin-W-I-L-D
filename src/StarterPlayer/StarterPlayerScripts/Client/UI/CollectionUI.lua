@@ -27,7 +27,7 @@ local REGION_TABS = {
 	{ label = "초원", key = "GRASSLAND" },
 	{ label = "열대", key = "TROPICAL" },
 	{ label = "사막", key = "DESERT" },
-	{ label = "툰드라", key = "TUNDRA" },
+	{ label = "설원", key = "SNOWY" },
 }
 
 -- 현재 운영 기준: 초원섬 도감은 3종 중심으로 노출
@@ -40,7 +40,7 @@ local REGION_MAP = {
 	STEGOSAURUS = "TROPICAL",
 	ANKYLOSAURUS = "DESERT",
 	RAPTOR = "DESERT",
-	TREX = "TUNDRA"
+	TREX = "SNOWY"
 }
 
 local activeTabKey = "ALL"
@@ -160,32 +160,25 @@ local function _renderRegionTabs()
 	end
 	
 	for i, tab in ipairs(REGION_TABS) do
-		local btn = Instance.new("TextButton")
-		btn.Name = "Tab_" .. tab.key
-		btn.Size = UDim2.new(1, 0, 0, 50)
-		btn.Font = F.TITLE
-		btn.TextSize = 22
-		btn.Text = UILocalizer.Localize(tab.label)
-		
-		if activeTabKey == tab.key then
-			btn.BackgroundColor3 = C.GOLD
-			btn.TextColor3 = C.BG_OVERLAY
-		else
-			btn.BackgroundColor3 = C.BG_PANEL
-			btn.TextColor3 = C.DIM
-		end
-		
-		local corner = Instance.new("UICorner")
-		corner.CornerRadius = UDim.new(0, 6)
-		corner.Parent = btn
+		local isSelected = (activeTabKey == tab.key)
+		local btn = Utils.mkBtn({
+			name = "Tab_" .. tab.key,
+			text = UILocalizer.Localize(tab.label),
+			size = UDim2.new(1, 0, 0, 50),
+			bg = isSelected and C.GOLD_SEL or C.BTN_GRAY,
+			bgT = isSelected and 0.2 or 0.6,
+			color = isSelected and C.WHITE or C.GRAY,
+			ts = 22,
+			font = F.TITLE,
+			noHover = true,
+			parent = CollectionUI.Refs.TabList
+		})
 		
 		btn.MouseButton1Click:Connect(function()
 			activeTabKey = tab.key
 			_renderRegionTabs()
 			CollectionUI.refreshData()
 		end)
-		
-		btn.Parent = CollectionUI.Refs.TabList
 	end
 end
 
@@ -554,8 +547,8 @@ local function _renderPetTab()
 		if CollectionController.isCodexComplete(cid) then
 			hasAny = true
 			
-			local card = Utils.CreateFrame("PetCard_" .. cid, UDim2.new(0, CARD_W, 0, CARD_H), UDim2.new(0, x, 0, y), C.BTN)
-			Instance.new("UICorner", card).CornerRadius = UDim.new(0, 8)
+			local card = Utils.CreateFrame("PetCard_" .. cid, UDim2.new(0, CARD_W, 0, CARD_H), UDim2.new(0, x, 0, y), C.BG_SLOT)
+			card.BackgroundTransparency = T.SLOT
 			
 			local stroke = Instance.new("UIStroke")
 			stroke.Thickness = 2
@@ -647,7 +640,8 @@ function CollectionUI.refreshData()
 			local dCount = CollectionController.getDnaCount(cid)
 			local dRequired = data.dnaRequired or 5
 			
-			local card = Utils.CreateFrame("Card_"..cid, UDim2.new(0, CARD_W, 0, CARD_H), UDim2.new(0, x, 0, y), C.BTN)
+			local card = Utils.CreateFrame("Card_"..cid, UDim2.new(0, CARD_W, 0, CARD_H), UDim2.new(0, x, 0, y), C.BG_SLOT)
+			card.BackgroundTransparency = T.SLOT
 			local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 8); corner.Parent = card
 			
 			-- 선택 하이라이트

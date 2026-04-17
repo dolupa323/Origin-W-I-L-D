@@ -42,6 +42,7 @@ end
 local playerDeathState = {} -- [userId] = { isDead, deathTime, respawnPoint, respawnPart }
 local playerRespawnPreference = {} -- [userId] = { structureId = string }
 local recallCooldowns = {} -- [userId] = os.clock()
+local restingPlayers = {} -- [userId] = true
 
 --========================================
 -- Internal Helpers
@@ -282,6 +283,30 @@ function PlayerLifeService.Init(_NetController, _DataService, _InventoryService,
 		playerDeathState[player.UserId] = nil
 		playerRespawnPreference[player.UserId] = nil
 		recallCooldowns[player.UserId] = nil
+		restingPlayers[player.UserId] = nil
+	end)
+
+	-- 휴식 회복 루프 (1초 주기)
+	task.spawn(function()
+		while true do
+			task.wait(1)
+			local Balance = require(ReplicatedStorage.Shared.Config.Balance)
+			for userId, _ in pairs(restingPlayers) do
+				local p = Players:GetPlayerByUserId(userId)
+				if p and p.Character then
+					local hum = p.Character:FindFirstChild("Humanoid")
+					if hum and hum.Health > 0 and hum.Health < hum.MaxHealth then
+						hum.Health = math.min(hum.MaxHealth, hum.Health + (Balance.REST_HEAL_RATE or 5))
+					end
+					
+					-- 기력 회복 (StaminaService 연동)
+					local StaminaService = require(game:GetService("ServerScriptService").Server.Services.StaminaService)
+					if StaminaService and StaminaService.addStamina then
+						StaminaService.addStamina(userId, Balance.REST_STAMINA_REGEN_RATE or 15)
+					end
+				end
+			end
+		end
 	end)
 
 	print("[PlayerLifeService] Initialized")
@@ -438,6 +463,14 @@ end
 function PlayerLifeService.GetHandlers()
 	return {
 		["Recall.Request"] = handleRecallRequest,
+		["Facility.Rest.Start"] = function(player)
+			restingPlayers[player.UserId] = true
+			return { success = true }
+		end,
+		["Facility.Rest.Stop"] = function(player)
+			restingPlayers[player.UserId] = nil
+			return { success = true }
+		end,
 	}
 end
 

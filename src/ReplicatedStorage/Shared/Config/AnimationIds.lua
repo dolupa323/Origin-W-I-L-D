@@ -65,6 +65,7 @@ AnimationIds.MISC = {
 	HIT = "InteractHit",
 	DEATH = "InteractDeath",
 	JUMP = "MovementJump",
+	REST = "InteractRest",
 }
 
 --========================================

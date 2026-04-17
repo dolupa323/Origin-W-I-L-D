@@ -11,7 +11,7 @@ local FacilityData = {
 		description = "요리와 빛을 제공하고 체온을 유지합니다.",
 		modelName = "Campfire",
 		iconName = "CAMPFIRE",
-		requirements = { { itemId = "BRANCH", amount = 5 } },
+		requirements = { { itemId = "BRANCH", amount = 1 } },
 		alternateWoodIds = { "BRANCH", "PLANK", "LOG", "PALM_LOG", "REED" },
 		maxHealth = 100,
 		interactRange = 15,

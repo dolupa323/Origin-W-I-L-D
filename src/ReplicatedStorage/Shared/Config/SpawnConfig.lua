@@ -23,6 +23,18 @@ local ZONES = {
 		spawnPoint = Vector3.new(-184, 45, 2788),       -- 열대 섬 기본 스폰 지점 (귀환 포탈 근처)
 		creatureSpawnRadius = 180,                      -- 열대섬은 육지 폭이 좁아서 스폰 반경을 별도로 줄인다
 	},
+	DESERT = {
+		center = Vector3.new(6000, 10, 6000),           -- 사막 섬 중심 좌표
+		radius = 2500,
+		spawnPoint = Vector3.new(6000, 45, 6000),
+		creatureSpawnRadius = 300,
+	},
+	SNOWY = {
+		center = Vector3.new(-6000, 10, -6000),          -- 설원 섬 중심 좌표
+		radius = 2500,
+		spawnPoint = Vector3.new(-6000, 45, -6000),
+		creatureSpawnRadius = 300,
+	},
 }
 
 SpawnConfig.HUB_ZONE = HUB_ZONE
@@ -44,9 +56,8 @@ local ZONE_CONFIGS = {
 			{ id = "TREE_THIN", weight = 50 },
 			{ id = "ROCK_SOFT", weight = 40 },
 			{ id = "BUSH_BERRY", weight = 45 },
-			{ id = "GROUND_FIBER", weight = 55 },
-			{ id = "GROUND_BRANCH", weight = 80 },
-			{ id = "GROUND_STONE", weight = 130 },
+			{ id = "GROUND_FIBER", weight = 90 },
+			{ id = "GROUND_BRANCH", weight = 120 },
 		},
 	},
 	TROPICAL = {
@@ -58,13 +69,30 @@ local ZONE_CONFIGS = {
 		},
 		Harvests = {
 			{ id = "BUSH_BERRY", weight = 70 },
-			{ id = "GROUND_FIBER", weight = 60 },
-			{ id = "GROUND_BRANCH", weight = 60 },
+			{ id = "GROUND_FIBER", weight = 100 },
+			{ id = "GROUND_BRANCH", weight = 100 },
 			{ id = "ROCK_SOFT", weight = 50 },
-			{ id = "GROUND_STONE", weight = 90 },
 			{ id = "FALM_TREE", weight = 55 },
 			{ id = "OBSIDIAN_NODE", weight = 25 },
 			{ id = "REED_BUSH", weight = 50 },
+		},
+	},
+	DESERT = {
+		Creatures = {
+			{ id = "RAPTOR", weight = 60 },
+			{ id = "TRICERATOPS", weight = 40 },
+		},
+		Harvests = {
+			{ id = "ROCK_SOFT", weight = 50 },
+		},
+	},
+	SNOWY = {
+		Creatures = {
+			{ id = "RAPTOR", weight = 40 },
+			{ id = "STEGOSAURUS", weight = 60 },
+		},
+		Harvests = {
+			{ id = "ROCK_SOFT", weight = 50 },
 		},
 	},
 }
@@ -98,7 +126,7 @@ end
 
 --- XZ 평면 거리 기반으로 위치가 속한 Zone 이름을 반환
 --- @param position Vector3 월드 좌표
---- @return string? Zone 이름 ("GRASSLAND" | "TROPICAL" | nil)
+--- @return string? Zone 이름 ("GRASSLAND" | "TROPICAL" | "DESERT" | "SNOWY" | nil)
 function SpawnConfig.GetZoneAtPosition(position: Vector3): string?
 	if not position then return nil end
 	local bestZone = nil

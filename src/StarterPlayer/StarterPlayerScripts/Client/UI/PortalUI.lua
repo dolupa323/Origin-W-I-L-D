@@ -1,5 +1,5 @@
 -- PortalUI.lua
--- 고대 포탈 상호작용 UI (WindowManager 연동)
+-- 고대 포탈 골드 투입 UI (PortalRadialUI에서 호출)
 
 local Theme = require(script.Parent.UITheme)
 local Utils = require(script.Parent.UIUtils)
@@ -12,12 +12,6 @@ PortalUI.Refs = {}
 
 local currentUIManager = nil
 local statusData = nil
-local currentTab = "REPAIR" -- REPAIR | USE
-local titleLabel = nil -- 동적 제목 참조
-
--- forward declarations
-local renderUseTab
-local renderRepairTab
 
 ----------------------------------------------------------------
 -- Init
@@ -26,9 +20,8 @@ function PortalUI.Init(parent, UIManager, isMobile)
 	currentUIManager = UIManager
 
 	local window = Utils.mkWindow({
-		name = "PortalWindow",
-		size = UDim2.new(0.88, 0, 0.6, 0),
-		maxSize = Vector2.new(470, 500),
+		name = "PortalGoldWindow",
+		size = UDim2.new(0, 360, 0, 240),
 		pos = UDim2.new(0.5, 0, 0.5, 0),
 		anchor = Vector2.new(0.5, 0.5),
 		bg = C.BG_PANEL,
@@ -40,13 +33,13 @@ function PortalUI.Init(parent, UIManager, isMobile)
 	})
 	PortalUI.Refs.Frame = window
 
-	-- 제목 (포탈마다 동적 변경)
-	titleLabel = Utils.mkLabel({
-		text = "고대 포탈",
-		size = UDim2.new(1, -70, 0, 46),
+	-- 제목
+	PortalUI.Refs.Title = Utils.mkLabel({
+		text = "포탈 활성화",
+		size = UDim2.new(1, -70, 0, 40),
 		pos = UDim2.new(0, 16, 0, 10),
 		font = F.TITLE,
-		ts = 24,
+		ts = 20,
 		color = C.WHITE,
 		ax = Enum.TextXAlignment.Left,
 		parent = window,
@@ -55,73 +48,78 @@ function PortalUI.Init(parent, UIManager, isMobile)
 	-- 닫기 버튼
 	Utils.mkBtn({
 		text = "X",
-		size = UDim2.new(0, 42, 0, 42),
-		pos = UDim2.new(1, -12, 0, 12),
+		size = UDim2.new(0, 32, 0, 32),
+		pos = UDim2.new(1, -8, 0, 8),
 		anchor = Vector2.new(1, 0),
 		bg = C.BG_SLOT,
-		ts = 20,
+		ts = 16,
 		fn = function()
-			UIManager.closePortal()
+			PortalUI.SetVisible(false)
 		end,
 		parent = window,
 	})
 
-	-- 탭 영역 (ShopUI 컨벤션: 투명 컨테이너 + UIListLayout)
-	local tabContainer = Utils.mkFrame({
-		name = "TabContainer",
-		size = UDim2.new(1, -32, 0, 40),
-		pos = UDim2.new(0, 16, 0, 62),
-		bgT = 1,
-		parent = window,
-	})
-	local tabList = Instance.new("UIListLayout")
-	tabList.FillDirection = Enum.FillDirection.Horizontal
-	tabList.Padding = UDim.new(0, 10)
-	tabList.Parent = tabContainer
-
-	PortalUI.Refs.BtnRepairTab = Utils.mkBtn({
-		text = "포탈 활성화",
-		size = UDim2.new(0.48, 0, 0, 40),
-		bg = C.BTN_H,
-		font = F.TITLE,
-		ts = 14,
-		r = 4,
-		parent = tabContainer,
-	})
-
-	local btnUse = Utils.mkBtn({
-		text = "포탈 이용",
-		size = UDim2.new(0.48, 0, 0, 40),
-		bg = C.BTN,
-		font = F.TITLE,
-		ts = 14,
-		r = 4,
-		parent = tabContainer,
-	})
-	btnUse.Visible = false
-	PortalUI.Refs.BtnUseTab = btnUse
-	PortalUI.Refs.TabContainer = tabContainer
-
-	-- 본문 영역 (투명 컨테이너)
+	-- 본문 영역
 	local body = Utils.mkFrame({
 		name = "Body",
-		size = UDim2.new(1, -32, 1, -120),
-		pos = UDim2.new(0, 16, 0, 110),
+		size = UDim2.new(1, -32, 1, -80),
+		pos = UDim2.new(0, 16, 0, 60),
 		bgT = 1,
-		clips = true,
 		parent = window,
 	})
 	PortalUI.Refs.Body = body
 
-	-- 탭 전환 이벤트
-	PortalUI.Refs.BtnRepairTab.MouseButton1Click:Connect(function()
-		currentTab = "REPAIR"
-		PortalUI.Refresh()
-	end)
-	PortalUI.Refs.BtnUseTab.MouseButton1Click:Connect(function()
-		currentTab = "USE"
-		PortalUI.Refresh()
-	end)
+	-- 설명
+	PortalUI.Refs.Desc = Utils.mkLabel({
+		text = "포탈을 활성화하기 위해 골드가 필요합니다.",
+		size = UDim2.new(1, 0, 0, 30),
+		pos = UDim2.new(0, 0, 0, 0),
+		ax = Enum.TextXAlignment.Left,
+		ts = 14,
+		color = C.INK,
+		parent = body,
+	})
+
+	-- 골드 현황
+	local goldProgressFrame = Utils.mkFrame({
+		name = "GoldProgress",
+		size = UDim2.new(1, 0, 0, 50),
+		pos = UDim2.new(0, 0, 0, 40),
+		bg = C.BG_DARK,
+		bgT = 0.3,
+		r = 4,
+		parent = body,
+	})
+	
+	PortalUI.Refs.GoldText = Utils.mkLabel({
+		text = "0 / 0 Gold",
+		size = UDim2.new(1, -20, 1, 0),
+		pos = UDim2.new(0, 10, 0, 0),
+		font = F.TITLE,
+		ts = 18,
+		color = C.GOLD,
+		parent = goldProgressFrame,
+	})
+
+	-- 활성화 버튼
+	PortalUI.Refs.BtnActivate = Utils.mkBtn({
+		text = "골드 기부하기",
+		size = UDim2.new(1, 0, 0, 40),
+		pos = UDim2.new(0, 0, 1, -40),
+		bg = C.GOLD,
+		color = C.BG_DARK,
+		font = F.TITLE,
+		ts = 16,
+		fn = function()
+			if statusData then
+				local need = statusData.requiredGold - statusData.currentGold
+				if need > 0 then
+					currentUIManager.requestPortalDeposit(nil, need) -- itemId=nil은 골드 의미
+				end
+			end
+		end,
+		parent = body,
+	})
 end
 
 ----------------------------------------------------------------
@@ -129,7 +127,7 @@ end
 ----------------------------------------------------------------
 function PortalUI.SetVisible(visible)
 	if PortalUI.Refs.Frame then
-		PortalUI.Refs.Frame.Visible = visible
+		 PortalUI.Refs.Frame.Visible = visible
 	end
 end
 
@@ -137,175 +135,28 @@ end
 -- SetData
 ----------------------------------------------------------------
 function PortalUI.SetData(data)
-	statusData = data or { repaired = false, cost = {} }
-	if statusData.isReturn then
-		-- 귀환 포탈: 항상 USE 탭만 표시
-		currentTab = "USE"
-	elseif statusData.repaired then
-		currentTab = "USE"
-	else
-		currentTab = "REPAIR"
-	end
+	statusData = data
+	PortalUI.Refresh()
 end
 
 ----------------------------------------------------------------
 -- Refresh
 ----------------------------------------------------------------
 function PortalUI.Refresh(newData)
-	if newData then
-		statusData = newData
-	end
-	if not statusData then
-		return
-	end
+	if newData then statusData = newData end
+	if not statusData then return end
 
-	local repaired = statusData.repaired == true
-	local isReturn = statusData.isReturn == true
-
-	-- 제목 동적 갱신
-	if titleLabel then
-		titleLabel.Text = statusData.displayName or "고대 포탈"
+	if PortalUI.Refs.Title then
+		PortalUI.Refs.Title.Text = statusData.displayName or "포탈 활성화"
 	end
 
-	-- 탭 상태 갱신
-	local btnRepair = PortalUI.Refs.BtnRepairTab
-	local btnUse = PortalUI.Refs.BtnUseTab
-	if btnRepair then
-		btnRepair.Visible = not isReturn
-		btnRepair.BackgroundColor3 = (currentTab == "REPAIR") and C.BTN_H or C.BTN
+	if PortalUI.Refs.GoldText then
+		PortalUI.Refs.GoldText.Text = string.format("%d / %d Gold", statusData.currentGold or 0, statusData.requiredGold or 0)
 	end
-	if btnUse then
-		btnUse.Visible = repaired or isReturn
-		btnUse.BackgroundColor3 = (currentTab == "USE") and C.BTN_H or C.BTN
-	end
-
-	-- 본문 렌더링
-	local body = PortalUI.Refs.Body
-	if not body then
-		return
-	end
-	for _, ch in ipairs(body:GetChildren()) do
-		if ch:IsA("GuiObject") then
-			ch:Destroy()
-		end
-	end
-
-	if currentTab == "USE" and repaired then
-		renderUseTab(body)
-	else
-		renderRepairTab(body)
-	end
-end
-
-----------------------------------------------------------------
--- Tab: USE
-----------------------------------------------------------------
-renderUseTab = function(body)
-	local isReturn = statusData and statusData.isReturn == true
-	local destName = statusData and statusData.destinationName or "다음 스페이스"
-
-	local descText = isReturn
-		and "귀환 포탈이 활성화되어 있습니다.\n초원섬으로 돌아갈 수 있습니다."
-		or string.format("포탈이 활성화되었습니다.\n%s(으)로 이동할 수 있습니다.", destName)
-
-	Utils.mkLabel({
-		text = descText,
-		size = UDim2.new(1, 0, 0, 60),
-		pos = UDim2.new(0, 0, 0, 8),
-		ax = Enum.TextXAlignment.Left,
-		ay = Enum.TextYAlignment.Top,
-		wrap = true,
-		ts = 16,
-		color = C.INK,
-		parent = body,
-	})
-
-	local btnText = isReturn and "초원섬으로 돌아가기" or (destName .. "(으)로 이동")
-
-	Utils.mkBtn({
-		text = btnText,
-		size = UDim2.new(1, -4, 0, 44),
-		pos = UDim2.new(0, 2, 1, -56),
-		bg = C.GOLD,
-		color = C.BG_DARK,
-		font = F.TITLE,
-		ts = 17,
-		fn = function()
-			currentUIManager.requestPortalTeleport()
-		end,
-		parent = body,
-	})
-end
-
-----------------------------------------------------------------
--- Tab: REPAIR
-----------------------------------------------------------------
-renderRepairTab = function(body)
-	local costList = statusData.cost or {}
-
-	Utils.mkLabel({
-		text = "수리 재료를 넣어 포탈을 활성화하세요.",
-		size = UDim2.new(1, 0, 0, 26),
-		pos = UDim2.new(0, 0, 0, 4),
-		ax = Enum.TextXAlignment.Left,
-		ts = 16,
-		color = C.INK,
-		parent = body,
-	})
-
-	local rowY = 36
-	for _, item in ipairs(costList) do
-		local row = Utils.mkFrame({
-			name = "CostRow_" .. tostring(item.itemId),
-			size = UDim2.new(1, -4, 0, 44),
-			pos = UDim2.new(0, 2, 0, rowY),
-			bg = C.BG_DARK,
-			bgT = 0.25,
-			r = 6,
-			stroke = 1,
-			strokeC = item.met and C.GREEN or C.BORDER_DIM,
-			parent = body,
-		})
-
-		local infoText = string.format("%s  %d / %d", item.name or item.itemId, item.current or 0, item.required or 0)
-		Utils.mkLabel({
-			text = infoText,
-			size = UDim2.new(0.62, 0, 1, 0),
-			pos = UDim2.new(0, 12, 0, 0),
-			ax = Enum.TextXAlignment.Left,
-			ts = 16,
-			color = item.met and C.GREEN or C.INK,
-			parent = row,
-		})
-
-		if item.met then
-			Utils.mkLabel({
-				text = "완료",
-				size = UDim2.new(0, 78, 0, 30),
-				pos = UDim2.new(1, -86, 0.5, 0),
-				anchor = Vector2.new(0, 0.5),
-				font = F.TITLE,
-				ts = 16,
-				color = C.GREEN,
-				parent = row,
-			})
-		else
-			Utils.mkBtn({
-				text = "넣기",
-				size = UDim2.new(0, 78, 0, 30),
-				pos = UDim2.new(1, -86, 0.5, 0),
-				anchor = Vector2.new(0, 0.5),
-				bg = C.BG_SLOT,
-				font = F.TITLE,
-				ts = 16,
-				fn = function()
-					currentUIManager.requestPortalDeposit(item.itemId, item.remaining)
-				end,
-				parent = row,
-			})
-		end
-
-		rowY += 50
+	
+	-- 이미 활성화된 경우 UI 닫기
+	if statusData.repaired then
+		PortalUI.SetVisible(false)
 	end
 end
 
