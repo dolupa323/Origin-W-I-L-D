@@ -153,16 +153,26 @@ local function updateCreatureAnimation(model, info)
 	local animSet = CreatureAnimationIds[creatureId] or CreatureAnimationIds.DEFAULT
 	local attackAnimName = animSet.ATTACK
 	
-	-- ★ 사망 상태면 공격 플래그 강제 해제 → 사망 애니메이션 우선
+	-- ★ 사망 상태면 모든 공격/이동 애니메이션 강제 중단 → 사망 애니메이션만 허용
 	if currentState == "DEAD" then
 		info.isAttacking = false
+		local deathAnimName = animSet.DEATH
+		local animator = humanoid:FindFirstChildOfClass("Animator")
+		if animator then
+			for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+				-- 사망 애니메이션을 제외한 모든 이전 애니메이션(공격 등) 중단
+				if track.Name ~= deathAnimName and (track.Animation and track.Animation.Name ~= deathAnimName) then
+					track:Stop(0.05)
+				end
+			end
+		end
 	elseif info.isAttacking then
 		-- 공격 애니메이션이 끝났는지 체크 (캐시된 트랙 활용)
 		local attackTrack = AnimationManager.load(humanoid, attackAnimName)
 		if attackTrack and not attackTrack.IsPlaying then
 			info.isAttacking = false
 		else
-			-- 아직 공격 중이면 이동 애니메이션 생략
+			-- 아직 공격 중이면 다른 애니메이션 전환 차단
 			return
 		end
 	end
@@ -195,6 +205,12 @@ local function updateCreatureAnimation(model, info)
 			if track then
 				local isDeath = (currentState == "DEAD")
 				track.Looped = not isDeath
+				
+				-- ★ 사망 애니메이션 우선순위를 최상위로 설정 (공격 동작 덮어쓰기)
+				if isDeath then
+					track.Priority = Enum.AnimationPriority.Action4
+				end
+				
 				-- 보행/달리기 속도 조절
 				if isLocomotion then
 					track:AdjustSpeed(locomotionSpeed)
@@ -327,7 +343,9 @@ function CreatureAnimationController.Init()
 		if model then
 			local info = activeCreatures[model]
 			local humanoid = model:FindFirstChildOfClass("Humanoid")
-			if humanoid and info then
+			local currentState = model:GetAttribute("State")
+			
+			if humanoid and info and currentState ~= "DEAD" then
 				local creatureId = model:GetAttribute("CreatureId") or model.Name:upper()
 				local animSet = CreatureAnimationIds[creatureId] or CreatureAnimationIds.DEFAULT
 				local attackAnimName = animSet.ATTACK
@@ -339,12 +357,20 @@ function CreatureAnimationController.Init()
 					end
 					
 					task.spawn(function()
+						if model:GetAttribute("State") == "DEAD" then return end
 						info.isAttacking = true
+						
 						local prepTrack = AnimationManager.play(humanoid, attackAnimName, 0.1)
 						if prepTrack then
 							prepTrack.Priority = Enum.AnimationPriority.Action
 							task.wait(prepTrack.Length > 0 and prepTrack.Length or 0.5)
 						end
+						
+						if model:GetAttribute("State") == "DEAD" then 
+							info.isAttacking = false
+							return 
+						end
+						
 						task.wait(0.1)
 						info.isAttacking = false
 					end)
@@ -366,7 +392,9 @@ function CreatureAnimationController.Init()
 		if model then
 			local info = activeCreatures[model]
 			local humanoid = model:FindFirstChildOfClass("Humanoid")
-			if humanoid and info then
+			local currentState = model:GetAttribute("State")
+			
+			if humanoid and info and currentState ~= "DEAD" then
 				local creatureId = model:GetAttribute("CreatureId") or model.Name:upper()
 				local animSet = CreatureAnimationIds[creatureId] or CreatureAnimationIds.DEFAULT
 				local windupTime = data.windupTime or 0.5
@@ -417,10 +445,18 @@ function CreatureAnimationController.Init()
 						if highlight and highlight.Parent then
 							highlight:Destroy()
 						end
+						
+						-- ★ 선딜 대기 중 사망 시 중단
+						if model:GetAttribute("State") == "DEAD" then 
+							info.isAttacking = false
+							return 
+						end
 					else
 						-- windupAnim 없는 경우에도 마지막 0.5초 발광
 						local flashLeadTime = math.min(0.5, windupTime * 0.8)
 						task.wait(windupTime - flashLeadTime)
+						
+						if model:GetAttribute("State") == "DEAD" then return end
 						
 						local highlight = Instance.new("Highlight")
 						highlight.Name = "TelegraphGlow"
@@ -436,10 +472,22 @@ function CreatureAnimationController.Init()
 						if highlight and highlight.Parent then
 							highlight:Destroy()
 						end
+						
+						-- ★ 선딜 대기 중 사망 시 중단
+						if model:GetAttribute("State") == "DEAD" then 
+							info.isAttacking = false
+							return 
+						end
 					end
 					
 					-- 2단계: 공격 모션 (attack) — 선행 모션과 크로스페이드
 					if attackAnimName then
+						-- ★ 최종 상태 체크 (공격 애니 직전)
+						if model:GetAttribute("State") == "DEAD" then 
+							info.isAttacking = false
+							return 
+						end
+						
 						local attackTrack = AnimationManager.play(humanoid, attackAnimName, 0.05)
 						if attackTrack then
 							attackTrack.Priority = Enum.AnimationPriority.Action

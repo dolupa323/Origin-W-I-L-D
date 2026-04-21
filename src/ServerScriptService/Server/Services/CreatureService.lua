@@ -122,23 +122,12 @@ local PACK_MENTALITY_HEIGHT_DIFF = 15 -- 동족 인식 최대 고저차 (절벽 
 local COLLAPSE_HP_RATIO = 0.2 -- 체력 20% 이하 시 쓰러짐
 -- local COLLAPSE_DURATION = 15.0 -- ★ 제거: 영구 쓰러짐으로 변경 (회복 없음)
 
--- ★ 크리처별 지면 오프셋 (HarvestService의 CORPSE_GROUND_OFFSETS와 동일)
-local CORPSE_GROUND_OFFSETS = {
-	TROODON = -1.5,
-	OLOROTITAN = -6,
-	ARCHAEOPTERYX = 0.5,
-	PARASAUR = 0,
-	STEGOSAURUS = -3,
-	TRICERATOPS = 0,
-	RAPTOR = 4,
-	KELENKEN = 2.0,
-	DEINOCHEIRUS = 8.0,
-}
+-- 크리처 지면 스냅 (CreatureData의 corpseOffset 참조)
 
 --- 크리처 모델을 지면에 스냅하는 헬퍼 (HarvestService.snapToGround와 동일 로직)
-local function snapCreatureToGround(model, rootPart, creatureId)
+local function snapCreatureToGround(model, rootPart, creatureData)
 	if not rootPart or not model or not model.Parent then return end
-	local groundOffset = CORPSE_GROUND_OFFSETS[creatureId] or 2
+	local groundOffset = (creatureData and creatureData.corpseOffset) or 2
 
 	local lowestY = math.huge
 	for _, part in ipairs(model:GetDescendants()) do
@@ -1025,7 +1014,7 @@ function CreatureService.processAttack(instanceId: string, hpDamage: number, tor
 							end
 						end
 						
-						snapCreatureToGround(creature.model, creature.rootPart, creature.creatureId)
+						snapCreatureToGround(creature.model, creature.rootPart, creature.data)
 						
 						-- ★ 포즈 및 위치 영구 고정
 						for _, part in ipairs(creature.model:GetDescendants()) do

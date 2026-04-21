@@ -26,6 +26,7 @@ local CreatureData = {
 		palBagSlots = 2,
 		previewZoom = 0.25, -- 시조새 전용 카메라 줌 (더욱 가깝게 보정)
 		cameraMaxZoom = 12, -- 목표 크기 (스터드)
+		corpseOffset = 0.5,
 	},
 	{
 		id = "TROODON",
@@ -48,6 +49,7 @@ local CreatureData = {
 		-- 도감 시스템   -- 공격력 +3%     -- 목표 크기 (스터드)
 		palBagSlots = 2,
 		cameraMaxZoom = 15,
+		corpseOffset = -1.5,
 	},
 	{
 		id = "PARASAUR",
@@ -76,6 +78,7 @@ local CreatureData = {
 		mountJumpPower = 46,
 		palBagSlots = 8,
 		cameraMaxZoom = 45,
+		corpseOffset = 0,
 	},
 
 	--========================================
@@ -104,6 +107,7 @@ local CreatureData = {
 		-- 도감 시스템         -- 방어력 +5     -- 50 목표 크기 (스터드)
 		palBagSlots = 24,
 		cameraMaxZoom = 50,
+		corpseOffset = 0,
 	},
 	{
 		id = "OLOROTITAN",
@@ -129,6 +133,7 @@ local CreatureData = {
 		mountSpeedMultiplier = 1.0,
 		mountJumpPower = 48,
 		cameraMaxZoom = 48,
+		corpseOffset = -6,
 	},
 	{
 		id = "STEGOSAURUS",
@@ -152,6 +157,7 @@ local CreatureData = {
 		-- 도감 시스템      -- 최대 체력 +20     -- 48 목표 크기 (스터드)
 		palBagSlots = 12,
 		cameraMaxZoom = 48,
+		corpseOffset = -3.0,
 	},
 	{
 		id = "ANKYLOSAURUS",
@@ -171,6 +177,7 @@ local CreatureData = {
 		xpReward = 50,
 		-- 도감 시스템         -- 방어력 +8     -- 42 목표 크기 (스터드)
 		cameraMaxZoom = 42,
+		corpseOffset = 2.0,
 	},
 
 	--========================================
@@ -202,6 +209,7 @@ local CreatureData = {
 		mountJumpPower = 58,
 		palBagSlots = 6,
 		cameraMaxZoom = 35,
+		corpseOffset = 4.0,
 	},
 	{
 		id = "TREX",
@@ -221,6 +229,7 @@ local CreatureData = {
 		xpReward = 120,
 		-- 도감 시스템   -- 공격력 +8%     -- 85 목표 크기 (스터드)
 		cameraMaxZoom = 85,
+		corpseOffset = 2.0,
 	},
 	{
 		id = "KELENKEN",
@@ -246,6 +255,7 @@ local CreatureData = {
 		previewZoom = 0.8,    -- 더 확대
 		previewYOffset = 1.2, -- 카메라를 대폭 높여 머리 중앙 배치
 		cameraMaxZoom = 40,   -- 목표 크기 (스터드)
+		corpseOffset = -2.0,
 	},
 	{
 		id = "DEINOCHEIRUS",
@@ -271,6 +281,7 @@ local CreatureData = {
 		previewZoom = 0.3,    -- 대폭 확대하여 크게 보이게 함
 		previewYOffset = 1.6, -- 얼굴 포커스 상향
 		cameraMaxZoom = 65,   -- 목표 크기 (스터드)
+		corpseOffset = -2.0,
 	},
 }
 

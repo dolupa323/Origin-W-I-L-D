@@ -425,7 +425,7 @@ SkillTreeData.BUILD = {
 		spCost = 0,
 		prereqs = { "BUILD_T1" },
 		effects = {},
-		description = "추후 기획 반영 예정",
+		description = "청동기 작업대 및 중급 건축 시설을 해금합니다.",
 	},
 	{
 		id = "BUILD_T3",
@@ -436,7 +436,7 @@ SkillTreeData.BUILD = {
 		spCost = 0,
 		prereqs = { "BUILD_T2" },
 		effects = {},
-		description = "추후 기획 반영 예정",
+		description = "철기 작업대 및 고급 건축 시설을 해금합니다.",
 	},
 	{
 		id = "BUILD_T4",
@@ -447,7 +447,7 @@ SkillTreeData.BUILD = {
 		spCost = 0,
 		prereqs = { "BUILD_T3" },
 		effects = {},
-		description = "추후 기획 반영 예정",
+		description = "석조 건축 블럭 등 최상위 건축 기술을 해금합니다.",
 	},
 }
 

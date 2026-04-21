@@ -2877,17 +2877,64 @@ local function setupEventListeners()
 		end)
 	end
 
-	-- Humanoid HP
-	task.spawn(function()
-		local char = player.Character or player.CharacterAdded:Wait()
-		local hum = char:WaitForChild("Humanoid")
+	-- Humanoid HP / Stats Sync
+	local function connectHumanoid(hum)
 		UIManager.updateHealth(hum.Health, hum.MaxHealth)
-		hum.HealthChanged:Connect(function(h) UIManager.updateHealth(h, hum.MaxHealth) end)
+		
+		hum.HealthChanged:Connect(function(h)
+			UIManager.updateHealth(h, hum.MaxHealth)
+		end)
+		
+		hum:GetPropertyChangedSignal("MaxHealth"):Connect(function()
+			UIManager.updateHealth(hum.Health, hum.MaxHealth)
+		end)
+	end
+
+	-- MovementController 연동 (스태미나)
+	local function setupMovementController()
+		local MovementController = require(Client.Controllers.MovementController)
+		if MovementController and MovementController.onStaminaChanged then
+			MovementController.onStaminaChanged(function(cur, max)
+				UIManager.updateStamina(cur, max)
+			end)
+			
+			-- 초기값 반영
+			local c, m = MovementController.getStamina()
+			UIManager.updateStamina(c, m)
+		end
+	end
+
+	-- Hunger sync 연동
+	NetClient.On("Hunger.Update", function(data)
+		UIManager.updateHunger(data.current, data.max)
+	end)
+
+	task.spawn(function()
+		setupMovementController()
+		
+		-- 초기 배고픔 요청
+		local okH, dH = NetClient.Request("Hunger.GetState", {})
+		if okH and dH then
+			UIManager.updateHunger(dH.current, dH.max)
+		end
+
+		local char = player.Character or player.CharacterAdded:Wait()
+		local hum = char:WaitForChild("Humanoid", 10)
+		if hum then connectHumanoid(hum) end
+		
 		player.CharacterAdded:Connect(function(c)
-			local h2 = c:WaitForChild("Humanoid")
-			UIManager.updateHealth(h2.Health, h2.MaxHealth)
-			h2.HealthChanged:Connect(function(h) UIManager.updateHealth(h, h2.MaxHealth) end)
-			-- 리스폰 시 레벨/XP 재동기화
+			local h2 = c:WaitForChild("Humanoid", 10)
+			if h2 then 
+				connectHumanoid(h2)
+				-- [Safety] 리스폰 시 서버가 스탯을 적용할 시간을 주기 위해 약간 지연 후 강제 갱신
+				task.delay(0.5, function()
+					if h2 and h2.Parent then
+						UIManager.updateHealth(h2.Health, h2.MaxHealth)
+					end
+				end)
+			end
+			
+			-- 리스폰 시 레벨/XP/배고픔/스태미나 재동기화
 			task.delay(0.5, function()
 				local ok2, d2 = NetClient.Request("Player.Stats.Request", {})
 				if ok2 and d2 then
@@ -2895,6 +2942,11 @@ local function setupEventListeners()
 					if d2.level then UIManager.updateLevel(d2.level) end
 					if d2.currentXP and d2.requiredXP then UIManager.updateXP(d2.currentXP, d2.requiredXP) end
 					if d2.statPointsAvailable then UIManager.updateStatPoints(d2.statPointsAvailable) end
+				end
+				
+				local okH2, dH2 = NetClient.Request("Hunger.GetState", {})
+				if okH2 and dH2 then
+					UIManager.updateHunger(dH2.current, dH2.max)
 				end
 			end)
 		end)
@@ -3049,7 +3101,7 @@ function UIManager.Init()
 
 	UIManager.refreshInventory()
 	UIManager.refreshHotbar()
-	UIManager.updateHealth(100,100)
+	-- UIManager.updateHealth(100,100) -- 제거: 캐릭터 스폰 리스너에서 처리함
 	UIManager.updateStamina(100,100)
 	UIManager.updateXP(0,100)
 	UIManager.updateLevel(1)

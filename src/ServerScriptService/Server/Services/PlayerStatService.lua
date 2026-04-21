@@ -27,7 +27,7 @@ local recentActionXP = {} -- [userId] = { [bucketKey] = { count, lastAt } }
 
 -- Level up callback (Phase 8)
 local levelUpCallback = nil
-local INIT_STATE_WAIT_TIMEOUT = 12
+local INIT_STATE_WAIT_TIMEOUT = 45
 local INIT_STATE_WAIT_INTERVAL = 0.1
 
 local function _waitForPlayerState(userId: number)
@@ -43,6 +43,52 @@ local function _waitForPlayerState(userId: number)
 	end
 
 	return state
+end
+
+local function _normalizeStatInvested(raw: any): {[string]: number}
+	local normalized = {
+		[Enums.StatId.MAX_HEALTH] = 0,
+		[Enums.StatId.MAX_STAMINA] = 0,
+		[Enums.StatId.INV_SLOTS] = 0,
+		[Enums.StatId.WORK_SPEED] = 0,
+		[Enums.StatId.ATTACK] = 0,
+		[Enums.StatId.DEFENSE] = 0,
+	}
+
+	if type(raw) == "table" then
+		for statId, value in pairs(raw) do
+			if Enums.StatId[statId] then
+				normalized[statId] = math.max(0, math.floor(tonumber(value) or 0))
+			end
+		end
+	end
+
+	-- 레거시 마이그레이션: 기존 WEIGHT 스탯을 INV_SLOTS로 변환
+	if type(raw) == "table" and raw["WEIGHT"] and raw["WEIGHT"] > 0 then
+		normalized[Enums.StatId.INV_SLOTS] = (normalized[Enums.StatId.INV_SLOTS] or 0) + raw["WEIGHT"]
+	end
+
+	return normalized
+end
+
+local function _hydrateStatsFromSave(userId: number, state: any): boolean
+	if not state or type(state.stats) ~= "table" then
+		return false
+	end
+
+	local savedStats = state.stats
+	local target = playerStats[userId]
+	if not target then
+		return false
+	end
+
+	target.level = savedStats.level or target.level or 1
+	target.currentXP = savedStats.currentXP or target.currentXP or 0
+	target.totalXP = savedStats.totalXP or target.totalXP or 0
+	target.techPointsSpent = savedStats.techPointsSpent or target.techPointsSpent or 0
+	target.statInvested = _normalizeStatInvested(savedStats.statInvested)
+	target._hydratedFromSave = true
+	return true
 end
 
 --========================================
@@ -94,7 +140,16 @@ end
 
 --- 플레이어 스탯 초기화/로드
 local function _initPlayerStats(userId: number)
-	if playerStats[userId] then return end
+	if playerStats[userId] then
+		-- SaveService 지연 로딩으로 기본값이 먼저 들어온 경우를 보정
+		if not playerStats[userId]._hydratedFromSave and SaveService and SaveService.getPlayerState then
+			local state = SaveService.getPlayerState(userId)
+			if state then
+				_hydrateStatsFromSave(userId, state)
+			end
+		end
+		return
+	end
 	
 	-- SaveService에서 로드
 	local state = _waitForPlayerState(userId)
@@ -106,21 +161,9 @@ local function _initPlayerStats(userId: number)
 		totalXP = savedStats and savedStats.totalXP or 0,
 		techPointsSpent = savedStats and savedStats.techPointsSpent or 0,
 		-- 투자된 스탯 포인트 (포인트 수치)
-		statInvested = savedStats and savedStats.statInvested or {
-			[Enums.StatId.MAX_HEALTH] = 0,
-			[Enums.StatId.MAX_STAMINA] = 0,
-			[Enums.StatId.INV_SLOTS] = 0,
-			[Enums.StatId.WORK_SPEED] = 0,
-			[Enums.StatId.ATTACK] = 0,
-		},
+		statInvested = _normalizeStatInvested(savedStats and savedStats.statInvested),
+		_hydratedFromSave = savedStats ~= nil,
 	}
-	
-	-- 레거시 마이그레이션: 기존 WEIGHT 스탯을 INV_SLOTS로 변환
-	local si = playerStats[userId].statInvested
-	if si["WEIGHT"] and si["WEIGHT"] > 0 then
-		si[Enums.StatId.INV_SLOTS] = (si[Enums.StatId.INV_SLOTS] or 0) + si["WEIGHT"]
-		si["WEIGHT"] = nil
-	end
 end
 
 --- 플레이어 스탯 저장
@@ -192,7 +235,7 @@ local function _getActionXPMultiplier(userId: number, bucketKey: string?): numbe
 end
 
 --========================================
--- XP Addition (Updated with logging)
+-- XP Addition
 --========================================
 function PlayerStatService.addXP(userId: number, amount: number, source: string?): (boolean, number)
 	_initPlayerStats(userId)
@@ -217,13 +260,11 @@ function PlayerStatService.addXP(userId: number, amount: number, source: string?
 		local techPointsGained = (newLevel - oldLevel) * Balance.TECH_POINTS_PER_LEVEL
 		local statPointsGained = (newLevel - oldLevel) * Balance.STAT_POINTS_PER_LEVEL
 		
-		print(string.format("[PlayerStatService] Player %d leveled up: %d → %d (gained %d TP, %d SP)", 
+		print(string.format("[PlayerStatService] Player %d leveled up: %d \226\134\146 %d (gained %d TP, %d SP)", 
 			userId, oldLevel, newLevel, techPointsGained, statPointsGained))
 		
 		if levelUpCallback then
 			for reachedLevel = oldLevel + 1, newLevel do
-				-- Backward-compatible: existing callbacks can keep using (userId, level).
-				-- Extended metadata (oldLevel/newLevel) is provided for multi-level unlock handling.
 				levelUpCallback(userId, reachedLevel, oldLevel, newLevel)
 			end
 		end
@@ -427,14 +468,25 @@ function PlayerStatService.applyStats(userId: number)
 		if humanoid then
 			local oldMax = humanoid.MaxHealth
 			humanoid.MaxHealth = calc.maxHealth
+			
 			-- 최대 체력이 늘어났을 때 현재 체력도 그만큼 비율로 채워주거나, 최소한 줄어들진 않게 함
 			if calc.maxHealth > oldMax then
 				humanoid.Health = humanoid.Health + (calc.maxHealth - oldMax)
 			end
+			
+			-- [Defense] 로블록스 엔진이 간혹 스폰 직후 MaxHealth를 100으로 리셋하는 경우를 대비해 한 번 더 적용
+			task.delay(0.1, function()
+				if humanoid and humanoid.Parent then
+					humanoid.MaxHealth = calc.maxHealth
+				end
+			end)
+			
+			print(string.format("[PlayerStatService] Applied stats to %s: MaxHealth=%.1f (was %.1f), MaxStamina=%.1f", 
+				player.Name, calc.maxHealth, oldMax, calc.maxStamina))
 		end
 	end
 	
-	-- 2. 기력(스태미나) 적용
+	-- 2. 스태미나 적용 (StaminaService 연동)
 	if StaminaService then
 		StaminaService.setMaxStamina(userId, calc.maxStamina)
 	end
@@ -514,8 +566,6 @@ function PlayerStatService.refundTechPoints(userId: number, amount: number)
 end
 
 --========================================
-
---========================================
 -- Public API: Reset All Stats
 --========================================
 
@@ -540,7 +590,7 @@ function PlayerStatService.resetAllStats(userId: number): (boolean, number)
 end
 
 --========================================
--- Handlers
+-- Handlers for Networking
 --========================================
 
 local function handleGetStats(player: Player, payload: any)
@@ -576,23 +626,18 @@ end
 local function handleResetStats(player: Player, payload: any)
 	local userId = player.UserId
 	
-	-- 1. 초기화 전 현재 maxSlots 기억
 	local oldCalc = PlayerStatService.GetCalculatedStats(userId)
 	local oldMaxSlots = oldCalc.maxSlots or Balance.BASE_INV_SLOTS
 	
-	-- 2. 스탯 초기화
 	local ok, refunded = PlayerStatService.resetAllStats(userId)
 	if not ok then
 		return { success = false, errorCode = "NOTHING_TO_RESET" }
 	end
 	
-	-- 3. 초기화 후 새 maxSlots (= BASE_INV_SLOTS, 모든 스탯 0이므로)
 	local newMaxSlots = Balance.BASE_INV_SLOTS
 	
-	-- 4. 인벤토리 초과 아이템 월드 드랍 처리
 	local droppedItems = {}
 	if newMaxSlots < oldMaxSlots then
-		-- InventoryService 지연 로딩 (순환 참조 방지)
 		local invOk, InventoryService = pcall(function()
 			return require(game:GetService("ServerScriptService").Server.Services.InventoryService)
 		end)
@@ -621,42 +666,64 @@ function PlayerStatService.Init(netController, saveService, dataService, stamina
 	DataService = dataService
 	StaminaService = staminaService
 	
-	-- [PRE-CALCULATE] XP Lookup Table (O(N^2) 방지)
+	-- [PRE-CALCULATE] XP Lookup Table
 	local runningTotal = 0
 	totalXPTable[1] = 0
 	for l = 1, Balance.PLAYER_MAX_LEVEL - 1 do
 		local xpNeededForThisLevel = math.floor(Balance.BASE_XP_PER_LEVEL * (Balance.XP_SCALING ^ (l - 1)))
 		runningTotal = runningTotal + xpNeededForThisLevel
-		totalXPTable[l + 1] = runningTotal
+		totalXPTable[l+1] = runningTotal
 	end
 	
-	-- Player 접속 시 스탯 초기화
-	game:GetService("Players").PlayerAdded:Connect(function(player)
+	-- Player 접속 시 스탯 초기화 및 리스너 연결
+	local function onPlayerAdded(player)
 		_initPlayerStats(player.UserId)
+		
+		task.spawn(function()
+			-- SaveService 로딩 대기 루프
+			local deadline = os.clock() + INIT_STATE_WAIT_TIMEOUT
+			while player.Parent and os.clock() < deadline do
+				local state = SaveService and SaveService.getPlayerState and SaveService.getPlayerState(player.UserId)
+				if state and state.stats then
+					local stats = playerStats[player.UserId]
+					if stats and not stats._hydratedFromSave then
+						_hydrateStatsFromSave(player.UserId, state)
+						PlayerStatService.applyStats(player.UserId)
+					end
+					break
+				end
+				task.wait(0.5)
+			end
+		end)
+
 		player.CharacterAdded:Connect(function(character)
 			local humanoid = character:WaitForChild("Humanoid", 5)
 			if humanoid then
 				PlayerStatService.applyStats(player.UserId)
 			end
 		end)
-	end)
-	
+		
+		-- 초기 접속 시 캐릭터가 이미 있으면 즉시 적용
+		if player.Character then
+			PlayerStatService.applyStats(player.UserId)
+		end
+	end
+
+	game:GetService("Players").PlayerAdded:Connect(onPlayerAdded)
+	for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
+		onPlayerAdded(player)
+	end
+
 	-- Player 퇴장 시 정리
 	game:GetService("Players").PlayerRemoving:Connect(function(player)
 		_savePlayerStats(player.UserId)
 		playerStats[player.UserId] = nil
 		recentActionXP[player.UserId] = nil
 	end)
-	
-	-- 이미 접속한 플레이어 처리
-	for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
-		_initPlayerStats(player.UserId)
-	end
-	
-	print("[PlayerStatService] Initialized")
+
+	print("[PlayerStatService] Initialized (with CharacterAdded fix)")
 end
 
---- 레벨업 콜백 설정 (Phase 8)
 function PlayerStatService.SetLevelUpCallback(callback)
 	levelUpCallback = callback
 end

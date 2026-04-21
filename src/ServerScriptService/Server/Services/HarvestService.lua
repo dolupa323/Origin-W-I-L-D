@@ -1285,19 +1285,9 @@ function HarvestService.registerCorpseNode(creatureId: string, position: Vector3
 		rootPart.CanTouch = true
 	end
 
-	-- 크리처별 지면 오프셋 (체형에 따라 다름)
-	local CORPSE_GROUND_OFFSETS = {
-		TROODON = -1.5,
-		OLOROTITAN = -6,
-		ARCHAEOPTERYX = 0.5,
-		PARASAUR = 0,
-		STEGOSAURUS = -3,
-		TRICERATOPS = 0,
-		RAPTOR = 4,
-		KELENKEN = 2.0,
-		DEINOCHEIRUS = 8.0,
-	}
-	local groundOffset = CORPSE_GROUND_OFFSETS[creatureId] or 2
+-- 크리처별 지면 오프셋 (CreatureData의 설정값 참조)
+	local creatureData = DataService.getCreature(creatureId)
+	local groundOffset = (creatureData and creatureData.corpseOffset) or 2
 
 	-- 지면 스냅 헬퍼 (최종 포즈 상태에서 호출)
 	local function snapToGround()
@@ -1331,9 +1321,10 @@ function HarvestService.registerCorpseNode(creatureId: string, position: Vector3
 
 	-- ★ 위치 잡기 및 애니메이션 프리즈
 	if hasCollapsed then
-		-- ★ 이미 CreatureService에서 쓰러짐(Collapse) 처리가 완료된 경우:
-		-- 추가적인 스냅이나 애니메이션 재생 없이 현재 상태(포즈/위치)를 그대로 유지합니다.
-		-- (여기서 다시 스냅하면 미세한 오차가 발생하여 시체가 튀어 보일 수 있음)
+		-- ★ 이미 CreatureService에서 쓰러짐(Collapse) 처리가 완료된 경우라도
+		-- 최종 사망 등록 시점에 최신 오프셋을 반영하여 재스냅합니다.
+		snapToGround()
+		
 		for _, part in ipairs(model:GetDescendants()) do
 			if part:IsA("BasePart") then
 				part.Anchored = true
