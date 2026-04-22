@@ -87,25 +87,24 @@ local CreatureData = {
 	{
 		id = "TRICERATOPS",
 		name = "트리케라톱스",
-		description = "단단한 뿔을 가진 초식공룡. 건드리면 위험하다",
+		description = "단단한 뿔을 가진 대형 초식공룡. 엄청나게 큰 가방을 메고 다닐 수 있습니다.",
 		level = 8,
-		maxHealth = 7000,
+		maxHealth = 4500,
 		walkSpeed = 6,
-		runSpeed = 12,
+		runSpeed = 10,
 		damage = 35,
 		attackRange = 12,
 		detectRange = 18,
 		behavior = "NEUTRAL",
 		modelName = "Triceratops",
 		xpReward = 40,
-		attackDelay = 1.3,
-		attackCooldown = 8.75,
-		attacks = {
-			{ name = "박치기", pattern = "CONE", angle = 90, range = 25, damage = 35, windupTime = 3.6, attackTime = 0.7, anim = "ATTACK" },
-			{ name = "앞발찍기", pattern = "CIRCLE", radius = 18, damage = 25, windupTime = 6.0, attackTime = 0.5, anim = "STOMP" },
-		},
-		-- 도감 시스템         -- 방어력 +5     -- 50 목표 크기 (스터드)
-		palBagSlots = 24,
+		attackDelay = 0.8,
+		attackCooldown = 2.5,
+		mountable = true,
+		mountSeatOffset = Vector3.new(0, 5.0, -8.0),
+		mountSpeedMultiplier = 1.0,
+		mountJumpPower = 40,
+		palBagSlots = 32, -- 전 공룡 중 최대 가방
 		cameraMaxZoom = 50,
 		corpseOffset = 0,
 	},
@@ -124,7 +123,8 @@ local CreatureData = {
 		attackCooldown = 2.0,
 		behavior = "NEUTRAL",
 		modelName = "Olorotitan",
-		scale = 0.8,
+		cameraMaxZoom = 48,
+		scale = 3.5, -- 3.0에서 3.5로 최종 조정
 		xpReward = 15,
 		-- 도감 시스템      -- 최대 체력 +10     -- 48 목표 크기 (스터드)
 		palBagSlots = 8,
@@ -132,7 +132,6 @@ local CreatureData = {
 		mountSeatOffset = Vector3.new(0, 10, -5.5), -- 높이를 10으로 올려 완벽하게 등 위로 배치
 		mountSpeedMultiplier = 1.0,
 		mountJumpPower = 48,
-		cameraMaxZoom = 48,
 		corpseOffset = -6,
 	},
 	{
@@ -160,11 +159,11 @@ local CreatureData = {
 		corpseOffset = -3.0,
 	},
 	{
-		id = "ANKYLOSAURUS",
-		name = "안킬로사우루스",
-		description = "갑옷 같은 피부와 꼬리 곤봉을 가진 방어형 공룡",
+		id = "TITANOSAURUS",
+		name = "티타노사우루스",
+		description = "사막의 거대한 지배자. 산맥과 같은 거대함으로 모든 공격을 무디게 만듭니다. 너무 거대하여 길들일 수 없습니다.",
 		level = 10,
-		maxHealth = 1500,
+		maxHealth = 6500, -- 강력한 탱커
 		walkSpeed = 4,
 		runSpeed = 8,
 		damage = 40,
@@ -173,11 +172,10 @@ local CreatureData = {
 		attackDelay = 1.0,
 		attackCooldown = 3.5,
 		behavior = "NEUTRAL",
-		modelName = "Ankylosaurus",
+		modelName = "Titanosaurus",
 		xpReward = 50,
-		-- 도감 시스템         -- 방어력 +8     -- 42 목표 크기 (스터드)
-		cameraMaxZoom = 42,
-		corpseOffset = 2.0,
+		cameraMaxZoom = 80, -- 대형 공룡에 맞춘 카메라 줌 확대
+		corpseOffset = 3.0,
 	},
 
 	--========================================
@@ -237,8 +235,8 @@ local CreatureData = {
 		description = "매우 거대한 공포의 새. 압도적인 질주 속도를 자랑합니다.",
 		level = 4,
 		maxHealth = 450,
-		walkSpeed = 9,
-		runSpeed = 22,
+		walkSpeed = 8,
+		runSpeed = 16,
 		damage = 15,
 		attackRange = 6,
 		detectRange = 40,
@@ -249,7 +247,7 @@ local CreatureData = {
 		xpReward = 15,
 		mountable = true,
 		mountSeatOffset = Vector3.new(0, 4.2, 0.5), -- 더 뒤로 이동
-		mountSpeedMultiplier = 2.1,
+		mountSpeedMultiplier = 1.65,
 		mountJumpPower = 55,
 		palBagSlots = 4,
 		previewZoom = 0.8,    -- 더 확대
@@ -275,13 +273,61 @@ local CreatureData = {
 		xpReward = 45,
 		mountable = true,
 		mountSeatOffset = Vector3.new(0, 6.0, -5.0),
-		mountSpeedMultiplier = 1.8, -- 켈렌켄 수준으로 상향
+		mountSpeedMultiplier = 1.25, -- 파라(14)와 켈렌(26.4)의 중간인 20.0으로 밸런싱
 		mountJumpPower = 45,
 		palBagSlots = 12,
 		previewZoom = 0.3,    -- 대폭 확대하여 크게 보이게 함
 		previewYOffset = 1.6, -- 얼굴 포커스 상향
 		cameraMaxZoom = 65,   -- 목표 크기 (스터드)
 		corpseOffset = -2.0,
+	},
+	{
+		id = "ALLOSAURUS",
+		name = "알로사우루스",
+		description = "사막의 위계 높은 포식자. 길들여지면 누구보다 강력한 전투력을 발휘합니다.",
+		level = 12,
+		maxHealth = 3800,
+		walkSpeed = 8,
+		runSpeed = 15,
+		damage = 70, -- 케라토보다 살짝 상향된 강력한 위력
+		attackRange = 12,
+		detectRange = 60,
+		attackDelay = 0.7,
+		attackCooldown = 3.5,
+		behavior = "AGGRESSIVE",
+		modelName = "Allosaurus",
+		xpReward = 80,
+		mountable = true,
+		mountSeatOffset = Vector3.new(0, 7.0, -10.0),
+		mountSpeedMultiplier = 1.5,
+		mountJumpPower = 48,
+		palBagSlots = 5,
+		cameraMaxZoom = 70,
+		corpseOffset = 0,
+	},
+	{
+		id = "UTAH_RAPTOR",
+		name = "유타랍토르",
+		description = "사막의 바람을 가르는 초고속 공룡. 전투보다는 이동에 최적화되어 있습니다.",
+		level = 7,
+		maxHealth = 900,
+		walkSpeed = 10,
+		runSpeed = 22,
+		damage = 18,
+		attackRange = 8,
+		detectRange = 50,
+		attackDelay = 0.4,
+		attackCooldown = 1.5,
+		behavior = "AGGRESSIVE",
+		modelName = "UtahRaptor",
+		xpReward = 25,
+		mountable = true,
+		mountSeatOffset = Vector3.new(0, 3.5, -5.0),
+		mountSpeedMultiplier = 1.7, -- 켈렌켄보다 빠른 속도
+		mountJumpPower = 65,
+		palBagSlots = 3,
+		cameraMaxZoom = 40,
+		corpseOffset = 1.5,
 	},
 }
 

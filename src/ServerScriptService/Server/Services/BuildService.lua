@@ -368,7 +368,7 @@ end
 --- 설비 모델 정리 (스크립트 제거 등)
 local function cleanModelForBuild(model: Model)
 	for _, descendant in ipairs(model:GetDescendants()) do
-		if descendant:IsA("LuaSourceContainer") or descendant:IsA("Sound") then
+		if descendant:IsA("LuaSourceContainer") or descendant:IsA("Sound") or descendant:IsA("Light") or descendant:IsA("ParticleEmitter") then
 			descendant:Destroy()
 		end
 	end
@@ -432,9 +432,19 @@ local function setupFacilityModel(model: Model, facilityId: string, facilityData
 	for _, part in ipairs(model:GetDescendants()) do
 		if part:IsA("BasePart") then
 			part.Anchored = true
-			part.CanCollide = true
-			part.CanQuery = true
-			part.CanTouch = true
+			
+			-- 충돌 그룹 설정 (서버 최적화)
+			pcall(function() part.CollisionGroup = "Structures" end)
+			
+			-- [중요] 투명한 파트(히트박스용 등)는 CanCollide를 켜지 않음 (투명벽 방지)
+			if part.Transparency < 0.9 then
+				part.CanCollide = true
+			else
+				part.CanCollide = false
+			end
+			
+			part.CanQuery = true -- 상호작용 레이캐스트용
+			part.CanTouch = true -- 트리거용
 		end
 	end
 	
@@ -527,9 +537,11 @@ end
 -- Internal: 구조물 제거 (Workspace)
 --========================================
 local function despawnFacilityModel(structureId: string)
-	local facility = facilitiesFolder:FindFirstChild(structureId)
-	if facility then
-		facility:Destroy()
+	-- [수정] FindFirstChild 대신 루프를 사용하여 중복된 모델이 있다면 모두 제거 (잔상 방지)
+	for _, child in ipairs(facilitiesFolder:GetChildren()) do
+		if child.Name == structureId or child:GetAttribute("StructureId") == structureId then
+			child:Destroy()
+		end
 	end
 end
 

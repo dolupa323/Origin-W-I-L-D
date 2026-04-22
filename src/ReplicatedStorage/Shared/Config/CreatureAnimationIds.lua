@@ -105,6 +105,37 @@ local CreatureAnimationIds = {
 		MOUNT_IDLE = "Deinocheirus_Idle",
 		MOUNT_RUN = "Deinocheirus_Run",
 	},
+
+	-- 알로사우루스
+	ALLOSAURUS = {
+		IDLE = "Allosaurus_Idle",
+		WALK = "Allosaurus_Walk",
+		RUN = "Allosaurus_Run",
+		ATTACK = "Allosaurus_Attack",
+		DEATH = "Allosaurus_Death",
+		MOUNT_IDLE = "Allosaurus_Idle",
+		MOUNT_RUN = "Allosaurus_Run",
+	},
+
+	-- 유타랍토르
+	UTAH_RAPTOR = {
+		IDLE = "UtahRaptor_Idle",
+		WALK = "UtahRaptor_Walk",
+		RUN = "UtahRaptor_Run",
+		ATTACK = "UtahRaptor_Attack",
+		DEATH = "UtahRaptor_Death",
+		MOUNT_IDLE = "UtahRaptor_Idle",
+		MOUNT_RUN = "UtahRaptor_Run",
+	},
+
+	-- 티타노사우루스
+	TITANOSAURUS = {
+		IDLE = "Titanosaurus_Idle",
+		WALK = "Titanosaurus_Walk",
+		RUN = "Titanosaurus_Run",
+		ATTACK = "Titanosaurus_Attack",
+		DEATH = "Titanosaurus_Death",
+	},
 }
 
 return CreatureAnimationIds

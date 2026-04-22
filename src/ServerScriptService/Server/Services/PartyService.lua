@@ -8,6 +8,7 @@ local RunService = game:GetService("RunService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Enums = require(Shared.Enums.Enums)
 local Balance = require(Shared.Config.Balance)
+local PalTraitData = require(ReplicatedStorage.Data.PalTraitData)
 
 local PartyService = {}
 
@@ -71,19 +72,28 @@ local function getCreatureData(creatureId: string)
 end
 
 local function resolveMountSpeed(palData, creatureData, fallbackSpeed: number?): number
+	-- 1. 베이스 속도 결정 (종족의 달리기 속도를 우선, 없을 시 걷기)
+	-- 기존 팰들의 stale 데이터(16 고정) 방지를 위해 creatureData를 우선 참조하거나 보정
 	local baseSpeed = tonumber(
-		palData and palData.stats and palData.stats.speed
-		or creatureData and creatureData.runSpeed
+		creatureData and creatureData.runSpeed
 		or creatureData and creatureData.walkSpeed
-		or fallbackSpeed
+		or palData and palData.stats and palData.stats.speed
+		or (fallbackSpeed and fallbackSpeed > 0 and fallbackSpeed)
 		or 16
 	) or 16
-	local multiplier = tonumber(creatureData and creatureData.mountSpeedMultiplier) or 1
-	return baseSpeed * multiplier
+
+	-- 2. 특성(Traits)에 의한 보정 (속도 증가/감소 특성 반영)
+	local traitMultiplier = PalTraitData.GetStatMultiplier(palData and palData.traits, "speed")
+
+	-- 3. 탑승 전용 배율 적용
+	local mountMultiplier = tonumber(creatureData and creatureData.mountSpeedMultiplier) or 1
+	
+	return baseSpeed * traitMultiplier * mountMultiplier
 end
 
 local function resolveCurrentMountMoveSpeed(summon, throttle: number): number
-	local moveSpeed = resolveMountSpeed(summon.palData, summon.creatureData, summon.baseSpeed)
+	local baseSpeed = summon.mountBaseSpeed or resolveMountSpeed(summon.palData, summon.creatureData, summon.baseSpeed)
+	local moveSpeed = baseSpeed
 	if throttle < 0 then
 		local reverseMultiplier = tonumber(summon.creatureData and summon.creatureData.mountReverseSpeedMultiplier)
 			or MOUNT_REVERSE_SPEED_MULTIPLIER
@@ -216,8 +226,14 @@ local function beginMountState(summon, riderPlayer: Player)
 	summon.isDismounting = false
 	summon.model:SetAttribute("MountedByUserId", riderPlayer.UserId)
 	summon.model:SetAttribute("MountedAnimState", "IDLE")
-	summon.mountSpeed = resolveMountSpeed(summon.palData, summon.creatureData, summon.baseSpeed)
-	summon.humanoid.WalkSpeed = summon.mountSpeed
+	-- 속도 및 조작 설정 초기화
+	summon.mountThrottle = 0
+	summon.mountSteer = 0
+	summon.mountBaseSpeed = resolveMountSpeed(summon.palData, summon.creatureData, summon.baseSpeed)
+	-- [FIX] 초기 속도 동기화 강제: -1로 설정하여 첫 프레임 업데이트 시 서버가 WalkSpeed를 강제로 쓰게 함
+	summon.mountSpeed = -1 
+	summon.mountSyncCount = 10 -- [FIX] 소유권 이전 시점의 속도 패킷 유실 방지를 위해 10프레임 동안 강제 동기화
+	summon.humanoid.WalkSpeed = summon.mountBaseSpeed
 	summon.humanoid.JumpPower = (summon.creatureData and summon.creatureData.mountJumpPower) or 48
 	summon.humanoid.AutoRotate = false
 	setPalState(summon, "MOUNTED")
@@ -317,9 +333,25 @@ local function updateMountedSummons(dt)
 		end
 
 		-- 서버 물리 엔진 영향 최소화 (클라이언트 조작 방해 금지)
-		-- 단, WalkSpeed는 서버에서 설정하여 스테미나/스탯 보정을 유지함
-		summon.mountSpeed = resolveCurrentMountMoveSpeed(summon, throttle)
-		summon.humanoid.WalkSpeed = summon.mountSpeed
+		-- [FIX] 탑승 초기 또는 속도 변화 시 강제 동기화
+		local newMountSpeed = resolveCurrentMountMoveSpeed(summon, throttle)
+		local needsSync = math.abs((summon.mountSpeed or 0) - newMountSpeed) > 0.1
+		if summon.mountSyncCount and summon.mountSyncCount > 0 then
+			needsSync = true
+			summon.mountSyncCount -= 1
+		end
+
+		if needsSync then
+			-- [FIX] 로블록스 엔진은 값이 동일하면 패킷을 보내지 않으므로, 
+			-- 초기 동기화 프레임(mountSyncCount > 0) 동안은 미세한 오차(0.01)를 주어 강제로 패킷 전송을 유도함.
+			local flicker = 0
+			if summon.mountSyncCount and summon.mountSyncCount > 0 then
+				flicker = (summon.mountSyncCount % 2 == 0) and 0.01 or 0
+			end
+			
+			summon.mountSpeed = newMountSpeed
+			summon.humanoid.WalkSpeed = newMountSpeed + flicker
+		end
 	end
 end
 

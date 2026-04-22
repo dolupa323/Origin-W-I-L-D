@@ -506,33 +506,42 @@ local function setupModelForCreature(model: Model, position: Vector3, data: any)
 	return model, rootPart, humanoid
 end
 
---- 모델 찾기 (유연한 이름 매칭)
-local function findCreatureModel(modelsFolder, modelName, creatureId)
-	if not modelsFolder then return nil end
+--- 모델 찾기 (정확한 매칭 우선)
+local function findCreatureModel(assetsFolder, modelName, creatureId)
+	if not assetsFolder then return nil end
 	
-	-- 1. 정확한 이름 매칭
-	local template = modelsFolder:FindFirstChild(modelName)
-	if template then return template end
+	-- 지원하는 모든 모델 폴더 후보군 체크
+	local candidates = {
+		assetsFolder:FindFirstChild("CreatureModels"),
+		assetsFolder:FindFirstChild("Creatures")
+	}
 	
-	-- 2. creatureId로 매칭 (예: "RAPTOR" -> "Raptor")
-	template = modelsFolder:FindFirstChild(creatureId)
-	if template then return template end
-	
-	-- 3. 대소문자 무시 매칭
 	local lowerModelName = modelName:lower()
 	local lowerCreatureId = creatureId:lower()
 	
-	for _, child in ipairs(modelsFolder:GetChildren()) do
-		local childNameLower = child.Name:lower()
-		
-		-- modelName 또는 creatureId와 대소문자 무시 매칭
-		if childNameLower == lowerModelName or childNameLower == lowerCreatureId then
-			return child
+	-- 1단계: 정확한 이름 매칭 (대소문자 무시)
+	for _, folder in ipairs(candidates) do
+		if folder then
+			for _, child in ipairs(folder:GetChildren()) do
+				local name = child.Name:lower()
+				if name == lowerModelName or name == lowerCreatureId then
+					return child
+				end
+			end
 		end
-		
-		-- 부분 문자열 매칭 (예: "VelociraptorModel"에서 "raptor" 찾기)
-		if childNameLower:find(lowerCreatureId) or lowerCreatureId:find(childNameLower) then
-			return child
+	end
+	
+	-- 2단계: 퍼지 매칭 (매우 제한적으로만 사용)
+	-- 이름이 완전히 포함되면서도 충분히 긴 경우에만 허용하여 "Raptor"가 "UtahRaptor"를 가로채지 못하게 함
+	for _, folder in ipairs(candidates) do
+		if folder then
+			for _, child in ipairs(folder:GetChildren()) do
+				local name = child.Name:lower()
+				-- 모델 이름이 크리처 ID를 포함하거나 그 반대인 경우 (완전 일치에 가까운 경우만)
+				if name:find(lowerModelName) and #name > #lowerModelName * 0.8 then
+					return child
+				end
+			end
 		end
 	end
 	
@@ -561,14 +570,10 @@ function CreatureService.spawn(creatureId, position)
 	local rootPart = nil
 	local humanoid = nil
 	
-	-- 1. ReplicatedStorage/Assets/CreatureModels에서 모델 찾기
-	local modelsFolder = ReplicatedStorage:FindFirstChild("Assets")
-	if modelsFolder then
-		modelsFolder = modelsFolder:FindFirstChild("CreatureModels")
-	end
-	
+	-- Assets 폴더에서 모델 찾기
+	local assetsFolder = ReplicatedStorage:FindFirstChild("Assets")
 	local modelName = data.modelName or creatureId
-	local template = findCreatureModel(modelsFolder, modelName, creatureId)
+	local template = findCreatureModel(assetsFolder, modelName, creatureId)
 	
 	if template then
 		-- 실제 모델 복제

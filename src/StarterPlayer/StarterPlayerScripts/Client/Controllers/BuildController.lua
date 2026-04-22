@@ -909,6 +909,19 @@ local function onRemoved(data)
 		structureCount = structureCount - 1
 	end
 
+	-- [추가] 클라이언트측 즉시 물리 비활성화 (서버 통신 지연으로 인한 진동/투명벽 현상 방지)
+	local facilitiesFolder = workspace:FindFirstChild("Facilities")
+	if facilitiesFolder then
+		local model = facilitiesFolder:FindFirstChild(data.id)
+		if model then
+			for _, part in ipairs(model:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.CanCollide = false
+				end
+			end
+		end
+	end
+
 	if focusedStructureId == data.id then
 		hideWorldDurabilityBar()
 	end

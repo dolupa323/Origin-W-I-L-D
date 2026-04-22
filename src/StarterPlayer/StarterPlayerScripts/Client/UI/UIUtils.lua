@@ -394,6 +394,18 @@ function UIUtils.AddCorner(guiObject, radius)
 	return c
 end
 
+--- UI 요소에 부드러운 그림자 효과 추가 (UIStroke 활용)
+function UIUtils.AddShadow(guiObject, thickness)
+	local s = Instance.new("UIStroke")
+	s.Name = "ShadowStroke"
+	s.Thickness = thickness or 2.5
+	s.Color = Color3.new(0, 0, 0)
+	s.Transparency = 0.8
+	s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	s.Parent = guiObject
+	return s
+end
+
 function UIUtils.CreateCloseButton(UIManager, winId)
 	local btn = UIUtils.mkBtn({
 		name = "CloseBtn",

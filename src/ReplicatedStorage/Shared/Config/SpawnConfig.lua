@@ -24,9 +24,9 @@ local ZONES = {
 		creatureSpawnRadius = 180,                      -- 열대섬은 육지 폭이 좁아서 스폰 반경을 별도로 줄인다
 	},
 	DESERT = {
-		center = Vector3.new(6000, 10, 6000),           -- 사막 섬 중심 좌표
+		center = Vector3.new(2694, 10, 56),           -- 사막 섬 중심 좌표
 		radius = 2500,
-		spawnPoint = Vector3.new(6000, 45, 6000),
+		spawnPoint = Vector3.new(2694, 45, 56),
 		creatureSpawnRadius = 300,
 	},
 	SNOWY = {
@@ -79,8 +79,10 @@ local ZONE_CONFIGS = {
 	},
 	DESERT = {
 		Creatures = {
-			{ id = "RAPTOR", weight = 60 },
-			{ id = "TRICERATOPS", weight = 40 },
+			{ id = "UTAH_RAPTOR", weight = 50 },
+			{ id = "TRICERATOPS", weight = 35 },
+			{ id = "TITANOSAURUS", weight = 10 },
+			{ id = "ALLOSAURUS", weight = 5 },
 		},
 		Harvests = {
 			{ id = "ROCK_SOFT", weight = 50 },
