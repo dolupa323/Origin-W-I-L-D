@@ -1024,9 +1024,9 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 
 			tooltip.Position = UDim2.new(
 				0,
-				math.floor(math.clamp(desiredX, TOOLTIP_MARGIN, maxX)),
+				math.floor(math.clamp(desiredX, TOOLTIP_MARGIN, math.max(TOOLTIP_MARGIN, maxX))),
 				0,
-				math.floor(math.clamp(desiredY, TOOLTIP_MARGIN, maxY))
+				math.floor(math.clamp(desiredY, TOOLTIP_MARGIN, math.max(TOOLTIP_MARGIN, maxY)))
 			)
 		end
 	end)

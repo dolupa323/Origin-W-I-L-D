@@ -79,7 +79,7 @@ local ZONE_CONFIGS = {
 	},
 	DESERT = {
 		Creatures = {
-			{ id = "UTAH_RAPTOR", weight = 50 },
+			{ id = "GIGANTORAPTOR", weight = 50 },
 			{ id = "TRICERATOPS", weight = 35 },
 			{ id = "TITANOSAURUS", weight = 10 },
 			{ id = "ALLOSAURUS", weight = 5 },
@@ -90,8 +90,8 @@ local ZONE_CONFIGS = {
 	},
 	SNOWY = {
 		Creatures = {
-			{ id = "RAPTOR", weight = 40 },
-			{ id = "STEGOSAURUS", weight = 60 },
+			{ id = "ALLOSAURUS", weight = 40 },
+			{ id = "TITANOSAURUS", weight = 15 },
 		},
 		Harvests = {
 			{ id = "ROCK_SOFT", weight = 50 },

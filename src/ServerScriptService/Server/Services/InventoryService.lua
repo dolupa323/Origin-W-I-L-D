@@ -1744,11 +1744,14 @@ local function handleUse(player: Player, payload: any)
 		local SkillTreeDataModule = require(game:GetService("ReplicatedStorage").Data.SkillTreeData)
 		local SkillServiceRef = require(game:GetService("ServerScriptService").Server.Services.SkillService)
 
-		local creatureLevel = 1
-		for _, cData in ipairs(CreatureDataModule) do
-			if cData.id == creatureId then
-				creatureLevel = cData.level or 1
-				break
+		local creatureLevel = (slotData.attributes and slotData.attributes.level) or 1
+		if not slotData.attributes or not slotData.attributes.level then
+			-- 폴백: 데이터 모듈에서 기본 레벨 조회
+			for _, cData in ipairs(CreatureDataModule) do
+				if cData.id == creatureId then
+					creatureLevel = cData.minLevel or 1
+					break
+				end
 			end
 		end
 
@@ -1798,20 +1801,22 @@ local function handleUse(player: Player, payload: any)
 			end
 		end
 
-		-- 크리처별 스탯 조회
-		local creatureLevel = 1
+		-- [UPDATE] 아이템 속성에 저장된 레벨과 스탯 사용
+		local creatureLevel = slotData.attributes and slotData.attributes.level or 1
+		local creaturePetHealth = slotData.attributes and slotData.attributes.baseMaxHealth
+		local creatureCombatPower = slotData.attributes and slotData.attributes.baseDamage
+		
 		local creatureWorkTypes = {}
-		local creatureCombatPower = 0
-		local creaturePetHealth = 100
 		local creaturePetSpeed = 16
 		local creatureDefense = 0
+
+		-- 나머지 고정 데이터 (WorkTypes, Speed, Defense) 조회
 		for _, cEntry in ipairs(CreatureDataModule) do
 			if cEntry.id == creatureId then
-				creatureLevel = cEntry.level or 1
 				creatureWorkTypes = cEntry.workTypes or {}
-				creatureCombatPower = cEntry.petDamage or cEntry.damage or 0
-				creaturePetHealth = cEntry.petHealth or cEntry.maxHealth or 100
+				creaturePetHealth = creaturePetHealth or cEntry.petHealth or cEntry.baseHealth or 100
 				creaturePetSpeed = cEntry.runSpeed or cEntry.walkSpeed or 16
+				creatureCombatPower = creatureCombatPower or cEntry.petDamage or cEntry.damage or 0
 				creatureDefense = cEntry.petDefense or cEntry.defense or 0
 				break
 			end

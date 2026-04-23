@@ -156,6 +156,19 @@ local function applySkillDamage(player: Player, targetInstanceId: string, damage
 		hpDamage = damage * 0.5
 		torporDamage = damage * 0.5
 	end
+
+	-- ★ 레벨 차이 데미지 보정 (Active Skill)
+	if CombatService and CombatService.getLevelModifier then
+		local creature = CreatureService.getCreatureRuntime(targetInstanceId)
+		if creature then
+			local playerLevel = PlayerStatService.getLevel(userId)
+			local creatureLevel = creature.level or 1
+			local levelMod = CombatService.getLevelModifier(playerLevel, creatureLevel)
+			
+			hpDamage = hpDamage * levelMod
+			torporDamage = torporDamage * levelMod
+		end
+	end
 	
 	local killed, dropPos = CreatureService.processAttack(targetInstanceId, hpDamage, torporDamage, player)
 	

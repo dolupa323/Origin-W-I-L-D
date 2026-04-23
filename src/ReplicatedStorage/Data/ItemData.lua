@@ -1061,6 +1061,30 @@ local ItemData = {
 		modelName = "CaptureBox",
 		creatureId = "STEGOSAURUS",
 	},
+	{
+		id = "ALLOSAURUS_BOX",
+		name = "알로사우루스 포획 상자",
+		type = "CAPTURE_BOX",
+		rarity = "RARE",
+		maxStack = 1,
+		weight = 18.0,
+		description = "포획한 알로사우루스가 들어있는 상자. 사용하면 길들이기를 시도합니다.",
+		iconName = "CAPTURE_BOX",
+		modelName = "CaptureBox",
+		creatureId = "ALLOSAURUS",
+	},
+	{
+		id = "GIGANTORAPTOR_BOX",
+		name = "기간토랍토르 포획 상자",
+		type = "CAPTURE_BOX",
+		rarity = "UNCOMMON",
+		maxStack = 1,
+		weight = 8.0,
+		description = "포획한 기간토랍토르가 들어있는 상자. 사용하면 길들이기를 시도합니다.",
+		iconName = "CAPTURE_BOX",
+		modelName = "CaptureBox",
+		creatureId = "GIGANTORAPTOR",
+	},
 }
 
 return ItemData

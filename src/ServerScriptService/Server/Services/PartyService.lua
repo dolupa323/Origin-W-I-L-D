@@ -756,6 +756,18 @@ function PartyService._createPalModel(palData, position: Vector3, ownerUserId: n
 		}
 		for _, folder in ipairs(searchFolders) do
 			if folder then
+				-- 1단계: 유연한 매칭 (대소문자 무시 + 언더바 제거 매칭)
+				local target = modelName:lower():gsub("_", "")
+				for _, child in ipairs(folder:GetChildren()) do
+					local cName = child.Name:lower():gsub("_", "")
+					if cName == target or cName == palData.creatureId:lower():gsub("_", "") then
+						template = child
+						break
+					end
+				end
+				if template then break end
+				
+				-- 2단계: 폴백 (기존 recursive 검색)
 				local found = folder:FindFirstChild(modelName, true)
 				if found and found:IsA("Model") then
 					template = found
@@ -848,7 +860,8 @@ function PartyService._createPalModel(palData, position: Vector3, ownerUserId: n
 		humanoid.JumpPower = 5
 
 		-- 물리 안정화: 탄성 0 + 높은 마찰 (튕김/날아감 방지)
-		rootPart.CustomPhysicalProperties = PhysicalProperties.new(1.0, 2, 0, 1, 0)
+		-- [Improvement] 마찰력을 대폭 높이고 FrictionWeight를 부여하여 고속 이동 시 미끄러짐(Skidding) 방지
+		rootPart.CustomPhysicalProperties = PhysicalProperties.new(1.0, 5.0, 0, 100, 0)
 		rootPart.RootPriority = 127
 
 		-- HipHeight 계산 (모델 바닥 ~ HRP 바닥 거리)
@@ -1238,12 +1251,16 @@ function PartyService.dismount(userId: number, shouldReposition: boolean?): (boo
 	summon.isDismounting = true
 	summon.ignoreSeatExitUntil = 0
 
+	-- 중요: 먼저 용접을 해제(endMountState)한 뒤에 캐릭터를 이동시켜야 합니다.
+	-- 그렇지 않으면 용접된 상태로 이동할 때 공룡 전체가 함께 끌려가 땅에 박히는 현상이 발생합니다.
+	endMountState(summon, true)
+
 	if shouldReposition ~= false and character and summon.rootPart then
+		-- 하차 위치 계산 (공룡 우측 4스터드, 지면에서 2스터드 위)
 		local dismountPos = summon.rootPart.Position + summon.rootPart.CFrame.RightVector * 4 + Vector3.new(0, 2, 0)
 		character:PivotTo(CFrame.new(dismountPos, dismountPos + summon.rootPart.CFrame.LookVector))
 	end
 
-	endMountState(summon, true)
 	return true, nil
 end
 

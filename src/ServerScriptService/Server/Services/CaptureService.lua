@@ -25,28 +25,10 @@ local PlayerStatService
 --========================================
 -- 포획 확률 계산
 --========================================
--- 기본 포획률: 크리처 레벨이 높을수록 낮아짐
--- baseRate = clamp(1.0 - level * 0.06, 0.10, 0.95)
--- 최종 = baseRate + tamingRateBonus (스킬 보너스)
-
-local function getCreatureDataById(creatureId: string)
-	for _, data in ipairs(CreatureData) do
-		if data.id == creatureId then
-			return data
-		end
-	end
-	return nil
-end
 
 local function calcCaptureRate(creatureId: string, tamingBonus: number): number
-	-- [DEV] 개발용 100% 확률 고정 — 릴리스 시 아래 원래 공식으로 복원할 것
-	-- 원래 공식:
-	-- local data = getCreatureDataById(creatureId)
-	-- if not data then return 0 end
-	-- local level = data.level or 1
-	-- local baseRate = math.clamp(0.50 - level * 0.05, 0.05, 0.50)
-	-- return math.clamp(baseRate + tamingBonus, 0.03, 0.60)
-	return 1.0 -- [DEV] 포획 100%
+	-- [DEV] 포획 100% (개발 편의성)
+	return 1.0
 end
 
 --========================================
@@ -92,7 +74,7 @@ local function handleCaptureAttempt(player: Player, payload: any)
 
 	local creatureId = creature.creatureId
 
-	-- 2. 거리 확인 (Balance.CAPTURE_RANGE + 서버 보정 여유)
+	-- 2. 거리 확인
 	local character = player.Character
 	local hrp = character and character:FindFirstChild("HumanoidRootPart")
 	if not hrp or not creature.rootPart then
@@ -100,11 +82,11 @@ local function handleCaptureAttempt(player: Player, payload: any)
 	end
 	local captureRange = Balance and Balance.CAPTURE_RANGE or 30
 	local dist = (hrp.Position - creature.rootPart.Position).Magnitude
-	if dist > captureRange + 5 then -- +5 네트워크 보정 여유
+	if dist > captureRange + 5 then
 		return { success = false, errorCode = "OUT_OF_RANGE" }
 	end
 
-	-- 3. 스킬 해금 확인 (해당 크리처를 포획할 수 있는 스킬이 있는지)
+	-- 3. 스킬 해금 확인
 	local unlockedMap = SkillService.getUnlockedSkills(userId)
 	local learnedList = {}
 	for skillId, _ in pairs(unlockedMap) do
@@ -131,15 +113,12 @@ local function handleCaptureAttempt(player: Player, payload: any)
 	local roll = math.random()
 	local captured = roll <= captureRate
 
-	-- ★ 포획 시도 즉시 플래그 설정 (성공/실패 무관, 재시도 불가)
 	if creature.model then
 		creature.model:SetAttribute("CaptureAttempted", true)
 	end
 
 	if not captured then
-		-- 포획 실패 → 크리처 사망 처리 (사냥 완료)
 		CreatureService.killCreature(targetId)
-
 		local creatureName = creature.data and creature.data.name or creatureId
 		NetController.FireClient(player, "Notify.Message", {
 			text = creatureName .. " 포획에 실패했습니다... (확률: " .. math.floor(captureRate * 100) .. "%)",
@@ -147,8 +126,16 @@ local function handleCaptureAttempt(player: Player, payload: any)
 		return { success = false, captureRate = captureRate }
 	end
 
-	-- 6. 포획 성공 → 박스 아이템 지급
-	local added, remaining = InventoryService.addItem(userId, boxItemId, 1)
+	-- 6. 포획 성공 → 박스 아이템 지급 (레벨 및 스탯 전승)
+	local model = creature.model
+	local attributes = {
+		level = creature.level or (model and model:GetAttribute("Level")) or 1,
+		baseMaxHealth = creature.maxHealth or (model and model:GetAttribute("MaxHealth")) or (creature.data and creature.data.baseHealth) or 100,
+		baseDamage = creature.damage or (creature.data and creature.data.damage) or 10,
+		currentHealth = creature.currentHealth or (model and model:GetAttribute("CurrentHealth")),
+	}
+	
+	local added, remaining = InventoryService.addItem(userId, boxItemId, 1, nil, attributes)
 	if added == 0 then
 		NetController.FireClient(player, "Notify.Message", {
 			text = "인벤토리가 가득 차서 포획할 수 없습니다!",

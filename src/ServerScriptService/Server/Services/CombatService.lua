@@ -47,6 +47,11 @@ local CONTACT_STAGGER_DURATION = 0.3 -- 접촉 경직 시간 (초)
 local CONTACT_STAGGER_COOLDOWN = 2.0 -- 접촉 경직 쿨다운 (경직 해제 후 재발동까지)
 local CONTACT_CHECK_DIST = 3         -- 접촉 판정 거리 (스터드) (5 → 3, 과도한 감지 방지)
 
+-- Level Gap Constants
+local LEVEL_GAP_MULTIPLIER = 0.05 -- 레벨 차이당 5% 증감
+local MIN_DAMAGE_MODIFIER = 0.1  -- 최소 10% 데미지 보장
+local MAX_DAMAGE_MODIFIER = 3.0  -- 최대 300% 데미지 제한
+
 -- State
 local playerAttackCooldowns = {} -- [userId] = nextAttackTime
 
@@ -356,18 +361,29 @@ local function getAmmoForWeapon(itemId: string): string?
 end
 
 --- 무기 아이템 정보로 스킬 트리 ID 결정 (SWORD/BOW/AXE)
-local function getWeaponTreeId(itemData): string?
+local function getWeaponTreeId(itemData)
 	if not itemData then return nil end
-	local opt = string.upper(tostring(itemData.optimalTool or ""))
-	if opt == "SWORD" then return "SWORD" end
-	if opt == "BOW" or opt == "CROSSBOW" then return "BOW" end
-	if opt == "AXE" then return "AXE" end
+	local toolRole = tostring(itemData.optimalTool or ""):upper()
+	if toolRole == "AXE" then return "AXE"
+	elseif toolRole == "PICKAXE" then return "PICKAXE"
+	elseif toolRole == "SWORD" then return "SWORD"
+	elseif toolRole == "SPEAR" then return "SPEAR"
+	elseif toolRole == "HAMMER" then return "HAMMER"
+	elseif toolRole == "BOW" or toolRole == "CROSSBOW" then return "BOW"
+	end
+	
 	-- itemId 기반 폴백
 	local id = string.upper(tostring(itemData.id or ""))
 	if id:find("SWORD", 1, true) then return "SWORD" end
 	if id:find("BOW", 1, true) then return "BOW" end
 	if id:find("AXE", 1, true) then return "AXE" end
 	return nil
+end
+
+function CombatService.getLevelModifier(attackerLevel, defenderLevel)
+	local gap = attackerLevel - defenderLevel
+	local modifier = 1 + (gap * LEVEL_GAP_MULTIPLIER)
+	return math.clamp(modifier, MIN_DAMAGE_MODIFIER, MAX_DAMAGE_MODIFIER)
 end
 
 local BOW_HIT_CONE_HALF_ANGLE = 5   -- 화살 판정 원뿔 반각 (도) — 거의 직선에 가까운 보정만
@@ -661,12 +677,11 @@ end
 
 --- 플레이어가 대상을 공격 (Client Request)
 function CombatService.processPlayerAttack(player: Player, targetId: string?, attackMeta: any?)
-	if not player then 
-		return false, Enums.ErrorCode.BAD_REQUEST 
-	end
+	if not player then return false, Enums.ErrorCode.BAD_REQUEST end
 	attackMeta = attackMeta or {}
-
 	local userId = player.UserId
+	
+	-- print(string.format("[CombatService] Attack Request from %s (Target: %s)", player.Name, tostring(targetId)))
 	local toolSlot = 1
 	if InventoryService then
 		toolSlot = InventoryService.getActiveSlot(userId) or 1
@@ -914,6 +929,16 @@ function CombatService.processPlayerAttack(player: Player, targetId: string?, at
 		hpDamage = totalDamage * 0.5
 		torporDamage = totalDamage * 0.5
 	end
+
+	-- ★ 레벨 차이 데미지 보정 (Player -> Creature)
+	if targetType == "CREATURE" and creature then
+		local playerLevel = PlayerStatService.getLevel(userId)
+		local creatureLevel = creature.level or 1
+		local levelMod = CombatService.getLevelModifier(playerLevel, creatureLevel)
+		
+		hpDamage = hpDamage * levelMod
+		torporDamage = torporDamage * levelMod
+	end
 	
 	local killed = false
 	local dropPos = nil
@@ -1009,7 +1034,21 @@ function CombatService.damagePlayer(userId: number, rawDamage: number, sourcePos
 	
 	local reductionMult = 100 / (100 + defense)
 	local variance = Balance.DAMAGE_VARIANCE or 0.15
-	local finalDamage = math.max(1, rawDamage * reductionMult * (1 + (math.random() * 2 - 1) * variance))
+	local finalDamage = rawDamage * reductionMult * (1 + (math.random() * 2 - 1) * variance)
+
+	-- ★ 레벨 차이 데미지 보정 (Creature -> Player)
+	if sourceCreatureId then
+		local creature = CreatureService.getCreatureRuntime(sourceCreatureId)
+		if creature then
+			local playerLevel = PlayerStatService.getLevel(userId)
+			local creatureLevel = creature.level or 1
+			local levelMod = CombatService.getLevelModifier(creatureLevel, playerLevel)
+			
+			finalDamage = finalDamage * levelMod
+		end
+	end
+	
+	finalDamage = math.max(1, finalDamage)
 	
 	if InventoryService and InventoryService.decreaseEquipmentDurability then
 		local armorDamage = math.max(1, math.floor(rawDamage * (Balance.ARMOR_DURABILITY_LOSS_RATIO or 0.1)))

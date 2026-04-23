@@ -132,7 +132,7 @@ local function updateCreatureAnimation(model, info)
 	-- 1. 속도 기반 상태 측정 (★ EMA 스무딩 적용 — 네트워크 지연으로 인한 떨림 방지)
 	local velocity = rootPart.AssemblyLinearVelocity * Vector3.new(1, 0, 1)
 	local rawSpeed = velocity.Magnitude
-	local smoothing = 0.25 -- EMA 계수 (0~1, 낮을수록 부드러움)
+	local smoothing = 0.75 -- [Improved] EMA 계수 상향 (0.25 -> 0.75)하여 애니메이션 가속 지연(Perceived Acceleration) 해소
 	info.smoothedSpeed = info.smoothedSpeed and (info.smoothedSpeed + (rawSpeed - info.smoothedSpeed) * smoothing) or rawSpeed
 	local speed = info.smoothedSpeed
 	
@@ -214,6 +214,11 @@ local function updateCreatureAnimation(model, info)
 				-- 보행/달리기 속도 조절
 				if isLocomotion then
 					track:AdjustSpeed(locomotionSpeed)
+				elseif currentState == "MOUNTED" and speed < 0.5 then
+					-- [추가] 탑승 중 정지 상태: 초기에는 정지 포즈로 시작
+					info._mountIdleState = "STAY"
+					info._mountStateUntil = tick() + math.random(5, 12)
+					track:AdjustSpeed(0)
 				end
 				info.lastAnim = targetAnimName
 
@@ -265,6 +270,29 @@ local function updateCreatureAnimation(model, info)
 			-- 보행/달리기 속도 실시간 동기화
 			if isLocomotion then
 				track:AdjustSpeed(locomotionSpeed)
+			elseif currentState == "MOUNTED" and speed < 0.5 then
+				-- [추가] 탑승 중 정지 상태: Stay(정지)와 Idle(움직임)을 주기적으로 교체
+				local now = tick()
+				if not info._mountStateUntil or now >= info._mountStateUntil then
+					if info._mountIdleState == "IDLE" then
+						info._mountIdleState = "STAY"
+						info._mountStateUntil = now + math.random(8, 20) -- 8~20초 동안 정지
+					else
+						info._mountIdleState = "IDLE"
+						info._mountStateUntil = now + math.random(2, 5)  -- 2~5초 동안 숨쉬기/몸흔들기
+					end
+				end
+
+				if info._mountIdleState == "STAY" then
+					track:AdjustSpeed(0)
+				else
+					track:AdjustSpeed(1.0)
+				end
+			else
+				-- 일반 상태나 이동 중인 탑승 상태: 정상 속도 재생 및 타이머 초기화
+				track:AdjustSpeed(1.0)
+				info._mountStateUntil = nil
+				info._mountIdleState = nil
 			end
 		end
 	end

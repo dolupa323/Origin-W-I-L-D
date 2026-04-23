@@ -1319,14 +1319,26 @@ local function createPalListItem(palData, index, isSelected)
 	local function findCreatureIcon(cid)
 		local assets = ReplicatedStorage:FindFirstChild("Assets")
 		if not assets then return "" end
-		local searchFolders = {assets:FindFirstChild("CreatureIcons"), assets:FindFirstChild("ItemIcons"), assets:FindFirstChild("Icons")}
-		local aliases = {cid, creatureData and creatureData.modelName, creatureData and creatureData.name}
+		local searchFolders = {
+			assets:FindFirstChild("CreatureIcons"),
+			assets:FindFirstChild("ItemIcons"),
+			assets:FindFirstChild("Icons")
+		}
+		-- 유저 규칙: 얼굴은 Icon_공룡ID, 전신은 CreatureFull_공룡ID
+		local aliases = {
+			"Icon_" .. cid,
+			cid,
+			creatureData and creatureData.modelName,
+			"CreatureFull_" .. cid,
+		}
 		for _, folder in ipairs(searchFolders) do
 			if folder then
 				for _, alias in ipairs(aliases) do
 					if alias then
+						local lowerAlias = alias:lower():gsub("_", "")
 						for _, inst in ipairs(folder:GetChildren()) do
-							if inst.Name:lower() == alias:lower() then
+							local instName = inst.Name:lower():gsub("_", "")
+							if instName == lowerAlias then
 								if inst:IsA("Decal") or inst:IsA("Texture") then return inst.Texture end
 								if inst:IsA("ImageLabel") or inst:IsA("ImageButton") then return inst.Image end
 								if inst:IsA("StringValue") then return inst.Value end
@@ -1354,7 +1366,7 @@ local function createPalListItem(palData, index, isSelected)
 	Utils.mkLabel({name="Name", text=nameText, size=UDim2.new(1, -100, 0, 20), pos=UDim2.new(0, 52, 0, 6), ts=14, font=F.TITLE, color=nameColor, ax=Enum.TextXAlignment.Left, parent=frame})
 
 	local levelColor = isFainted and Color3.fromRGB(80, 80, 80) or C.GRAY
-	local levelText = "Lv. " .. tostring(creatureData and creatureData.level or 1)
+	local levelText = "Lv. " .. tostring(palData.level or 1)
 	Utils.mkLabel({name="Level", text=levelText, size=UDim2.new(0, 50, 0, 16), pos=UDim2.new(0, 52, 0, 28), ts=12, color=levelColor, ax=Enum.TextXAlignment.Left, parent=frame})
 
 	-- 상태 표시 (소환됨 / 기절)
@@ -1509,21 +1521,29 @@ function InventoryUI.ShowAnimalDetail(palData)
 		local baseStats = palData.baseStats or {}
 		local traits = palData.traits or {}
 
-		-- [수정] 과거 버전에 잡은 팰(구버전 호환) 및 UI 표기 정확도를 위해 서버와 동일하게 모든 스탯 동적 계산 보정
-		local baseHp = baseStats.hp or creatureData.petHealth or creatureData.maxHealth or 100
-		local baseDef = baseStats.defense or creatureData.petDefense or creatureData.defense or 0
-		local baseAtk = baseStats.attack or creatureData.petDamage or creatureData.damage or 0
-		-- [Sync] 속도는 개별 스탯보다 최신 밸런싱(CreatureData)을 우선 참조하여 일관성 유지
+		-- [UPDATE] 서버에서 전달받은 스탯 우선 사용
+		-- palData.stats.hp 는 특성까지 반영된 최종 '최대 체력'입니다.
+		-- palData.stats.currentHp 는 부상 시의 '현재 체력'이며, 풀피일 땐 nil일 수 있습니다.
+		local PalTraitData = require(game:GetService("ReplicatedStorage").Data.PalTraitData)
+		
+		local maxHp = stats.hp or stats.health or math.floor((baseStats.hp or baseStats.health or creatureData.baseHealth or 100) * PalTraitData.GetStatMultiplier(traits, "hp"))
+		local currentHp = stats.currentHp or maxHp
+		
+		local baseHp = baseStats.hp or baseStats.health or creatureData.baseHealth or 100
+		local baseDef = baseStats.defense or creatureData.defense or 0
+		local baseAtk = baseStats.attack or creatureData.damage or 0
 		local baseSpd = creatureData.runSpeed or creatureData.walkSpeed or baseStats.speed or 16
 
-		local PalTraitData = require(game:GetService("ReplicatedStorage").Data.PalTraitData)
-		stats.hp = math.floor(baseHp * PalTraitData.GetStatMultiplier(traits, "hp"))
-		stats.defense = math.floor(baseDef * PalTraitData.GetStatMultiplier(traits, "defense"))
-		stats.attack = math.floor(baseAtk * PalTraitData.GetStatMultiplier(traits, "attack"))
-		stats.speed = math.floor(baseSpd * PalTraitData.GetStatMultiplier(traits, "speed") * 10) / 10
+		-- 부족한 값들 채워주기 (구버전 대응)
+		if not stats.hp then stats.hp = maxHp end
+		if not stats.health then stats.health = maxHp end
+		if not stats.defense then stats.defense = math.floor(baseDef * PalTraitData.GetStatMultiplier(traits, "defense")) end
+		if not stats.attack then stats.attack = math.floor(baseAtk * PalTraitData.GetStatMultiplier(traits, "attack")) end
+		if not stats.speed then stats.speed = math.floor(baseSpd * PalTraitData.GetStatMultiplier(traits, "speed") * 10) / 10 end
 
-		-- 비교(색상) 함수 구동을 위해 baseStats가 비어있는 구(old)데이터더라도 값 채워주기
+		-- 비교(색상) 함수를 위해 baseStats 보정
 		baseStats.hp = baseHp
+		baseStats.health = baseHp
 		baseStats.defense = baseDef
 		baseStats.attack = baseAtk
 		baseStats.speed = baseSpd
@@ -1551,11 +1571,6 @@ function InventoryUI.ShowAnimalDetail(palData)
 		end
 
 		local order = 0
-		-- 생명: 현재HP / 최대HP (currentHp가 있으면 사용, 없으면 풀HP)
-		local maxHp = stats.hp or creatureData.petHealth or creatureData.maxHealth or 0
-		local currentHp = stats.currentHp
-		if currentHp == nil then currentHp = maxHp end
-
 		local hpDisplay = string.format("%d / %d", currentHp, maxHp)
 		local hpColor = getStatColor("hp")
 		if currentHp < maxHp then
@@ -1572,13 +1587,8 @@ function InventoryUI.ShowAnimalDetail(palData)
 		local atkVal = stats.attack or creatureData.petDamage or creatureData.damage or 0
 		order = order + 1; createAnimalStatCell(sf, "공격", tostring(atkVal), order, getStatColor("attack"))
 
-		-- 방어: palData.stats.defense (속성 반영)
-		local defVal = stats.defense or 0
-		order = order + 1; createAnimalStatCell(sf, "방어", tostring(defVal), order, getStatColor("defense"))
-
-		-- 배고픔 / 레벨 (속성 무관)
-		order = order + 1; createAnimalStatCell(sf, "배고픔", tostring(math.floor(stats.hunger or 100)) .. " / 100", order)
-		order = order + 1; createAnimalStatCell(sf, "레벨", tostring(palData.level or creatureData.level or 1), order)
+		-- 레벨 (속성 무관)
+		order = order + 1; createAnimalStatCell(sf, "레벨", tostring(palData.level or 1), order)
 
 		-- ★ 속성(특성) 표시 (그리드 셀 형식)
 		if #traits > 0 then

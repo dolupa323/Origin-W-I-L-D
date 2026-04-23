@@ -480,8 +480,8 @@ SkillTreeData.TAMING = {
 		effects = {
 			{ stat = "TAMING_RATE_BONUS", value = 0.03 },
 		},
-		unlockCreatures = { "KELENKEN" },
-		description = "포획 확률 +3%\n켈렌켄 포획 해금",
+		unlockCreatures = { "KELENKEN", "GIGANTORAPTOR" },
+		description = "포획 확률 +3%\n켈렌켄, 기간토랍토르 포획 해금",
 	},
 	{
 		id = "TAMING_T3",
@@ -494,8 +494,8 @@ SkillTreeData.TAMING = {
 		effects = {
 			{ stat = "TAMING_RATE_BONUS", value = 0.04 },
 		},
-		unlockCreatures = { "PARASAUR", "TRICERATOPS", "DEINOCHEIRUS", "STEGOSAURUS" },
-		description = "포획 확률 +4%\n파라사우롤로푸스, 트리케라톱스, 데이노키루스, 스테고사우루스 포획 해금",
+		unlockCreatures = { "PARASAUR", "TRICERATOPS", "DEINOCHEIRUS", "STEGOSAURUS", "ALLOSAURUS" },
+		description = "포획 확률 +4%\n파라사우롤로푸스, 트리케라톱스, 데이노키루스, 스테고사우루스, 알로사우루스 포획 해금",
 	},
 	{
 		id = "TAMING_T4",

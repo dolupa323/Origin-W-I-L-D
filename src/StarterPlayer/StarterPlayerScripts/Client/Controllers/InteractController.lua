@@ -1029,7 +1029,8 @@ function InteractController.Init()
 				-- [Refinement] 즉시 스냅 대신 부드러운 회전(Lerp) 적용하여 더 자연스러운 느낌 제공
 				local targetCF = CFrame.lookAt(rootPart.Position, rootPart.Position + faceDir)
 				-- 0.05초(20Hz) 원격 호출 대비 Heartbeat(60Hz)에서 쾌적하게 작동하도록 높은 가중치(18) 사용
-				rootPart.CFrame = rootPart.CFrame:Lerp(targetCF, math.clamp(dt * 18, 0, 1))
+				-- [Improvement] 유타랍토르 등 고속 크리처를 위해 회전 가중치 상향 (18 -> 24)하여 드리프트 현상 감소
+				rootPart.CFrame = rootPart.CFrame:Lerp(targetCF, math.clamp(dt * 24, 0, 1))
 			end
 
 			humanoid:Move(moveDir, false)

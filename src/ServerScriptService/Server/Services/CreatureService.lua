@@ -413,8 +413,8 @@ local function setupModelForCreature(model: Model, position: Vector3, data: any)
 	
 	-- 6. Humanoid 설정
 	humanoid.WalkSpeed = data.walkSpeed or 16
-	humanoid.MaxHealth = data.maxHealth
-	humanoid.Health = data.maxHealth
+	humanoid.MaxHealth = data.maxHealth or 100
+	humanoid.Health = humanoid.MaxHealth
 	
 	-- [추가] 지형 적응력 향상 (오르막/내리막)
 	humanoid.MaxSlopeAngle = 89 -- ★ 거의 모든 경사면 이동 가능 (경사 실패 방지)
@@ -566,6 +566,13 @@ function CreatureService.spawn(creatureId, position)
 		return nil
 	end
 	
+	-- ★ 레벨 결정 및 스탯 스케일링 (모델 설정 전으로 이동)
+	local level = math.random(data.minLevel or 1, data.maxLevel or 1)
+	local hpStep = data.hpStep or 0
+	local dmgStep = data.dmgStep or 0
+	local scaledMaxHP = (data.baseHealth or 100) + (level - 1) * hpStep
+	local scaledDamage = (data.damage or 10) + (level - 1) * dmgStep
+
 	local model = nil
 	local rootPart = nil
 	local humanoid = nil
@@ -608,21 +615,25 @@ function CreatureService.spawn(creatureId, position)
 		
 		humanoid = Instance.new("Humanoid")
 		humanoid.WalkSpeed = data.walkSpeed or 16
-		humanoid.MaxHealth = data.maxHealth
-		humanoid.Health = data.maxHealth
+		humanoid.MaxHealth = scaledMaxHP
+		humanoid.Health = scaledMaxHP
 		humanoid.Parent = model
 	end
-	
+
 	-- ★ UI 데이터를 Attribute로 설정 (클라이언트에서 BillboardGui를 생성·관리)
-	-- 서버에서 GUI를 직접 조작하면 250마리분의 UI 속성 복제로 대역폭 낭비 → Attribute만 설정
 	local creatureName = data.name or creatureId
-	if data.level then
-		creatureName = "Lv." .. data.level .. " " .. creatureName
-	end
+	creatureName = "Lv." .. level .. " " .. creatureName
+	
 	model:SetAttribute("DisplayName", creatureName)
-	model:SetAttribute("MaxHealth", data.maxHealth)
-	model:SetAttribute("CurrentHealth", data.maxHealth)
+	model:SetAttribute("MaxHealth", scaledMaxHP)
+	model:SetAttribute("CurrentHealth", scaledMaxHP)
 	model:SetAttribute("LabelVisibleUntil", 0)
+	model:SetAttribute("Level", level) -- 레벨 정보 저장
+
+	if humanoid then
+		humanoid.MaxHealth = scaledMaxHP
+		humanoid.Health = scaledMaxHP
+	end
 	
 	-- ★ 스폰 물리 안정화: workspace 배치 전 rootPart를 Anchored로 고정
 	-- 모든 파트가 Anchored=false인 채 배치되면 지형 겹침으로 물리 발사 발생
@@ -704,9 +715,11 @@ function CreatureService.spawn(creatureId, position)
 		humanoid = humanoid,
 		rootPart = rootPart,
 		data = data,
-		maxHealth = data.maxHealth,
-		currentHealth = data.maxHealth,
-		maxTorpor = data.maxTorpor or 100,
+		currentHealth = scaledMaxHP,
+		maxHealth = scaledMaxHP,
+		level = level,
+		damage = scaledDamage,
+		maxTorpor = data.maxTorpor or (50 + level * 10),
 		currentTorpor = 0,
 		state = "IDLE",
 		labelVisibleUntil = 0,
@@ -2464,7 +2477,7 @@ function CreatureService._updateAILoop()
 				end
 			end
 
-			local dmg = creature.data.damage or 0
+			local dmg = creature.damage or creature.data.damage or 0
 			if dmg > 0 then
 				-- ★ 공격 판정 거리 = 정지 거리와 동일 (attackRange * 1.3)
 				local attackTriggerRange = attackRange * 1.3
@@ -2565,7 +2578,13 @@ function CreatureService._updateAILoop()
 						humanoid:MoveTo(hrp.Position)
 						hrp.AssemblyLinearVelocity = Vector3.new(0, hrp.AssemblyLinearVelocity.Y, 0)
 						
-						local attackDamage = (chosenAttack and chosenAttack.damage) or dmg
+						local attackDamage = dmg
+						if chosenAttack and chosenAttack.damageMultiplier then
+							attackDamage = dmg * chosenAttack.damageMultiplier
+						elseif chosenAttack and chosenAttack.damage then
+							-- 레거시 지원: 고정 데미지가 있으면 사용하되 최소 dmg 보장
+							attackDamage = math.max(dmg, chosenAttack.damage)
+						end
 						
 						if closestPlayerHum and closestPlayerHum.Health > 0 then
 							-- 공격 선언 시점의 크리처 방향 기록 (PROJECTILE용 타겟 위치 포함)

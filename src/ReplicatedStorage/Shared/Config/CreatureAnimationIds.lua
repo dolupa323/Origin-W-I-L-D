@@ -117,15 +117,15 @@ local CreatureAnimationIds = {
 		MOUNT_RUN = "Allosaurus_Run",
 	},
 
-	-- 유타랍토르
-	UTAH_RAPTOR = {
-		IDLE = "UtahRaptor_Idle",
-		WALK = "UtahRaptor_Walk",
-		RUN = "UtahRaptor_Run",
-		ATTACK = "UtahRaptor_Attack",
-		DEATH = "UtahRaptor_Death",
-		MOUNT_IDLE = "UtahRaptor_Idle",
-		MOUNT_RUN = "UtahRaptor_Run",
+	-- 기간토랍토르
+	GIGANTORAPTOR = {
+		IDLE = "Gigantoraptor_Idle",
+		WALK = "Gigantoraptor_Walk",
+		RUN = "Gigantoraptor_Run",
+		ATTACK = "Gigantoraptor_Attack",
+		DEATH = "Gigantoraptor_Death",
+		MOUNT_IDLE = "Gigantoraptor_Idle",
+		MOUNT_RUN = "Gigantoraptor_Run",
 	},
 
 	-- 티타노사우루스
