@@ -1670,10 +1670,18 @@ function UIManager._onOpenFacility(structureId, data)
 			else
 				FacilityUI.Refs.Title.Text = UILocalizer.Localize("기초 작업대 제작 / 나무 블럭가공")
 			end
+		elseif currentFacilityType == "CRAFTING_T2" then
+			FacilityUI.Refs.Title.Text = UILocalizer.Localize("청동기 작업대 제작 / 뼈 및 금속 가공")
+		elseif currentFacilityType == "CRAFTING_T3" then
+			FacilityUI.Refs.Title.Text = UILocalizer.Localize("철기 작업대 제작")
 		elseif currentFacilityType == "COOKING" then
 			FacilityUI.Refs.Title.Text = UILocalizer.Localize("요리")
 		elseif currentFacilityType and string.find(currentFacilityType, "SMELTING") then
-			FacilityUI.Refs.Title.Text = UILocalizer.Localize("제련")
+			if currentFacilityId == "STONE_FURNACE" then
+				FacilityUI.Refs.Title.Text = UILocalizer.Localize("제련 및 요리")
+			else
+				FacilityUI.Refs.Title.Text = UILocalizer.Localize("제련")
+			end
 		else
 			FacilityUI.Refs.Title.Text = UILocalizer.Localize("제작")
 		end
@@ -1914,10 +1922,19 @@ function UIManager.refreshFacility()
 		local allRecipes = require(ReplicatedStorage.Data.RecipeData)
 		local recipes = {}
 		for _, r in pairs(allRecipes) do
-			if r.requiredFacility == currentFacilityType and recipeMatchesFacilityId(r, currentFacilityId) then
+			local typeMatch = (r.requiredFacility == currentFacilityType)
+			local idMatch = false
+			if r.allowedFacilityIds then
+				for _, aid in ipairs(r.allowedFacilityIds) do
+					if aid == currentFacilityId then idMatch = true; break end
+				end
+			end
+
+			-- 타입이 일치하고 ID 제약이 없거나 일치할 때, OR ID가 명시적으로 허용되었을 때
+			if (typeMatch and recipeMatchesFacilityId(r, currentFacilityId)) or idMatch then
 				local buildSkillId = r.buildSkillId
 				if not buildSkillId or SkillController.isSkillUnlocked(buildSkillId) then
-				table.insert(recipes, r)
+					table.insert(recipes, r)
 				end
 			end
 		end
@@ -1952,6 +1969,27 @@ function UIManager.refreshFacility()
 					CRAFT_STONE_ARROW = 11,
 				}
 			end
+			table.sort(recipes, function(a, b)
+				local ap = pinnedOrder[a.id] or 999
+				local bp = pinnedOrder[b.id] or 999
+				if ap ~= bp then
+					return ap < bp
+				end
+				return (a.id or "") < (b.id or "")
+			end)
+		elseif currentFacilityType == "CRAFTING_T2" then
+			local pinnedOrder = {
+				CRAFT_DESERT_PLANK = 1,
+				CRAFT_BONE_BLOCK = 2,
+				CRAFT_BRONZE_BLOCK = 3,
+				CRAFT_BRONZE_PICKAXE = 4,
+				CRAFT_BRONZE_AXE = 5,
+				CRAFT_BRONZE_SWORD = 6,
+				CRAFT_BRONZE_BOW = 7,
+				CRAFT_BRONZE_HELMET = 8,
+				CRAFT_BRONZE_ARMOR = 9,
+				CRAFT_BRONZE_ARROW = 10,
+			}
 			table.sort(recipes, function(a, b)
 				local ap = pinnedOrder[a.id] or 999
 				local bp = pinnedOrder[b.id] or 999

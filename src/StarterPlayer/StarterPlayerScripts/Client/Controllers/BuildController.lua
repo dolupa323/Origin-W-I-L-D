@@ -779,8 +779,8 @@ function BuildController.startPlacement(facilityId: string)
 			end
 			
 			local pos = currentPlacementGroundPosition or currentGhost.PrimaryPart.Position
-			-- rotation은 currentRotation 기반 또는 Ghost의 실제 rotation 전달
-			local rot = Vector3.new(0, (currentRotation + currentPlacementYawOffset) % 360, 0)
+			-- [수정] 서버에서 이미 placementYawOffset을 더해주므로, 여기서는 사용자가 R키로 돌린 값(currentRotation)만 전달합니다.
+			local rot = Vector3.new(0, currentRotation % 360, 0)
 			BuildController.requestPlace(currentFacilityId, pos, rot)
 		end
 	end)

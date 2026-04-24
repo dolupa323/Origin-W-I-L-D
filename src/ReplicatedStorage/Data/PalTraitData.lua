@@ -16,26 +16,45 @@ local PalTraitData = {}
 
 PalTraitData.Traits = {
 	-- 공격 카테고리
+	-- 공격 카테고리
+	-- 공격 카테고리
 	ATTACK = {
-		{ id = "BOLD",    name = "과감함", positive = true,  weight = 10, stat = "attack",  perLevel = 0.08, effect = "공격력 증가" },
-		{ id = "TIMID",   name = "소심함", positive = false, weight = 12, stat = "attack",  perLevel = 0.06, effect = "공격력 감소" },
+		{ id = "BOLD",    name = "과감함", positive = true,  weight = 10, stat = "attack",  perLevel = 0.02, effect = "공격력 증가" },
+		{ id = "TIMID",   name = "소심함", positive = false, weight = 12, stat = "attack",  perLevel = 0.015, effect = "공격력 감소" },
 	},
 	-- 방어 카테고리
 	DEFENSE = {
-		{ id = "CAREFUL",  name = "신중함", positive = true,  weight = 10, stat = "defense", perLevel = 0.08, effect = "방어력 증가" },
-		{ id = "RECKLESS", name = "경솔함", positive = false, weight = 12, stat = "defense", perLevel = 0.06, effect = "방어력 감소" },
+		{ id = "CAREFUL",  name = "신중함", positive = true,  weight = 10, stat = "defense", perLevel = 0.02, effect = "방어력 증가" },
+		{ id = "RECKLESS", name = "경솔함", positive = false, weight = 12, stat = "defense", perLevel = 0.015, effect = "방어력 감소" },
 	},
 	-- 속도 카테고리
 	SPEED = {
-		{ id = "AGILE",    name = "민첩함", positive = true,  weight = 10, stat = "speed",   perLevel = 0.08, effect = "이동속도 증가" },
-		{ id = "SLUGGISH", name = "둔감함", positive = false, weight = 12, stat = "speed",   perLevel = 0.06, effect = "이동속도 감소" },
+		{ id = "AGILE",    name = "민첩함", positive = true,  weight = 10, stat = "speed",   perLevel = 0.02, effect = "이동속도 증가" },
+		{ id = "SLUGGISH", name = "둔감함", positive = false, weight = 12, stat = "speed",   perLevel = 0.015, effect = "이동속도 감소" },
 	},
 	-- 생명 카테고리
 	HEALTH = {
-		{ id = "HARDY",  name = "강인함", positive = true,  weight = 10, stat = "hp",      perLevel = 0.08, effect = "생명력 증가" },
-		{ id = "FRAIL",  name = "나약함", positive = false, weight = 12, stat = "hp",      perLevel = 0.06, effect = "생명력 감소" },
+		{ id = "HARDY",  name = "강인함", positive = true,  weight = 10, stat = "hp",      perLevel = 0.02, effect = "생명력 증가" },
+		{ id = "FRAIL",  name = "나약함", positive = false, weight = 12, stat = "hp",      perLevel = 0.015, effect = "생명력 감소" },
 	},
 }
+
+-- [내부 함수] 특성 레벨 롤링 (지수적 확률 감소 적용)
+local function rollTraitLevel(creatureLevel: number)
+	local maxLvl = math.max(1, creatureLevel)
+	local current = 1
+	
+	-- [핵심] 레벨이 올라갈수록 성공 확률이 비례하여 줄어드는 모델
+	-- 75% 확률로 레벨 +1 성공, 실패 시 중단
+	-- 레벨 50 도달 확률: (0.75)^49 = 약 0.00007%
+	local p = 0.75 
+	
+	while current < maxLvl and math.random() < p do
+		current = current + 1
+	end
+	
+	return current
+end
 
 -- stat 한글 매핑 (UI 표시용)
 PalTraitData.StatNames = {
@@ -82,9 +101,8 @@ end
 --- @return table traits 배열 { { id, name, positive, stat, level, icon, category }, ... }
 function PalTraitData.RollTraits(creatureLevel: number)
 	local level = math.max(1, creatureLevel or 1)
-	-- 속성 개수: 1 ~ level (최소 1개 보장)
-	local traitCount = math.random(1, level)
-	-- 최대 4개 (카테고리 수만큼)
+	-- 속성 개수: 1 ~ level/10 + 1 (최대 4개)
+	local traitCount = math.random(1, math.max(1, math.floor(level / 10) + 1))
 	traitCount = math.min(traitCount, 4)
 
 	-- 카테고리 셔플 → 중복 카테고리 방지
@@ -104,8 +122,8 @@ function PalTraitData.RollTraits(creatureLevel: number)
 		local traitList = PalTraitData.Traits[category]
 		if traitList then
 			local picked = weightedPick(traitList)
-			-- 속성 레벨: 1 ~ creatureLevel
-			local traitLevel = math.random(1, level)
+			-- [수정] 편중된 확률로 레벨 결정
+			local traitLevel = rollTraitLevel(level)
 			table.insert(traits, {
 				id = picked.id,
 				name = picked.name,

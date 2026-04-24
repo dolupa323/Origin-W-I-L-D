@@ -191,6 +191,11 @@ local function updateCreatureAnimation(model, info)
 		else
 			locomotionSpeed = math.clamp(effectiveSpeed / math.max(walkSpeed, 1), 0.5, 2.0)
 		end
+		
+		-- [추가] 탑승용 공룡 달리기 애니메이션 속도 상향 (조금 더 빠르게 조정)
+		if currentState == "MOUNTED" and targetAnimName:lower():find("run") then
+			locomotionSpeed = locomotionSpeed * 1.2 -- 20% 속도 보너스
+		end
 	end
 	
 	if info.lastAnim ~= targetAnimName then

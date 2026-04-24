@@ -115,7 +115,9 @@ end
 --========================================
 -- Internal: 시설 거리 검증
 --========================================
-local function validateFacilityAccess(player: Player, structureId: string?, requiredFacility: string?): (boolean, string?)
+local function validateFacilityAccess(player: Player, structureId: string?, recipe: any): (boolean, string?)
+	local requiredFacility = recipe and recipe.requiredFacility
+	
 	-- 맨손 제작 (requiredFacility == nil)
 	if not requiredFacility then
 		return true, nil
@@ -138,7 +140,23 @@ local function validateFacilityAccess(player: Player, structureId: string?, requ
 		return false, Enums.ErrorCode.NOT_FOUND
 	end
 	
-	if facilityData.functionType ~= requiredFacility then
+	-- [수정] 타입이 일치하거나, 해당 시설 ID가 명시적으로 허용된 경우 통과
+	local typeMatch = (facilityData.functionType == requiredFacility)
+	
+	-- forward declaration check (recipeAllowsFacilityId는 아래에 정의됨)
+	local function checkRecipeAllows(rec, fId)
+		local allowed = rec and rec.allowedFacilityIds
+		if type(allowed) ~= "table" or #allowed == 0 then return true end
+		if not fId then return false end
+		for _, aid in ipairs(allowed) do
+			if aid == fId then return true end
+		end
+		return false
+	end
+	
+	local idMatch = checkRecipeAllows(recipe, structure.facilityId)
+	
+	if not typeMatch and not idMatch then
 		return false, Enums.ErrorCode.NO_FACILITY
 	end
 	
@@ -514,16 +532,9 @@ function CraftingService.start(player: Player, recipeId: string, structureId: st
 	end
 	
 	-- 3. 시설 접근 검증
-	local facilityOk, facilityErr = validateFacilityAccess(player, structureId, recipe.requiredFacility)
+	local facilityOk, facilityErr = validateFacilityAccess(player, structureId, recipe)
 	if not facilityOk then
 		return false, facilityErr, nil
-	end
-	if recipe.requiredFacility and structureId then
-		local structure = BuildService.get(structureId)
-		local facilityId = structure and structure.facilityId or nil
-		if not recipeAllowsFacilityId(recipe, facilityId) then
-			return false, Enums.ErrorCode.NO_FACILITY, nil
-		end
 	end
 	
 	-- 4. 재료 보유 검증

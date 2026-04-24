@@ -137,6 +137,11 @@ end
 
 local function getInitialGatherTotal(nodeState: any, nodeData: any): number
 	if nodeState and nodeState.resolvedResources then
+		local total = 0
+		for _, res in ipairs(nodeState.resolvedResources) do
+			total = total + (res.count or 0)
+		end
+		if total > 0 then return total end
 		return math.max(1, tonumber(nodeState.resolvedTotalGathers) or tonumber(nodeState.resolvedMaxHealth) or 1)
 	end
 
@@ -788,7 +793,16 @@ function HarvestService._ensureStarterGroundNodes(player: Player)
 		for _ = 1, math.max(0, deficit) do
 			local spawnPos = findSpawnPositionNearPlayer(hrp, STARTER_NODE_MIN_DIST, STARTER_NODE_MAX_DIST)
 			if spawnPos then
-				HarvestService._spawnAutoNode(nodeId, spawnPos)
+				-- [수정] 사막 섬(DESERT)에서는 섬유(GROUND_FIBER)가 스폰되지 않도록 예외 처리
+				local canSpawn = true
+				local zoneName = (SpawnConfig and SpawnConfig.GetZoneAtPosition) and SpawnConfig.GetZoneAtPosition(spawnPos)
+				if zoneName == "DESERT" and nodeId == "GROUND_FIBER" then
+					canSpawn = false
+				end
+
+				if canSpawn then
+					HarvestService._spawnAutoNode(nodeId, spawnPos)
+				end
 			end
 		end
 	end
@@ -968,10 +982,18 @@ function HarvestService._spawnLoop()
 					nodeId = SpawnConfig.GetRandomGroundHarvest()
 				end
 				if nodeId then
-					HarvestService._spawnAutoNode(nodeId, pos)
-					
-					totalActiveNodes = totalActiveNodes + 1
-					if totalActiveNodes >= NODE_CAP then break end
+					-- [수정] 사막 섬(DESERT)에서는 섬유(GROUND_FIBER)가 스폰되지 않도록 예외 처리
+					local canSpawn = true
+					local zoneNameAtPos = (SpawnConfig and SpawnConfig.GetZoneAtPosition) and SpawnConfig.GetZoneAtPosition(pos)
+					if zoneNameAtPos == "DESERT" and nodeId == "GROUND_FIBER" then
+						canSpawn = false
+					end
+
+					if canSpawn then
+						HarvestService._spawnAutoNode(nodeId, pos)
+						totalActiveNodes = totalActiveNodes + 1
+						if totalActiveNodes >= NODE_CAP then break end
+					end
 				end
 			end
 		end
@@ -1305,8 +1327,14 @@ function HarvestService.registerCorpseNode(creatureId: string, position: Vector3
 		end
 		-- 모델/ResourceNodes 제외, 레이캐스트로 실제 지형 검색
 		local rayParams = RaycastParams.new()
-		rayParams.FilterType = Enum.RaycastFilterType.Include
-		rayParams.FilterDescendantsInstances = {workspace.Terrain}
+		rayParams.FilterType = Enum.RaycastFilterType.Exclude
+		-- [수정] Terrain뿐만 아니라 일반 파트 지형(사막섬 등)도 감지하도록 Exclude 방식으로 변경
+		-- 자기 자신과 동적 객체들(다른 크리처, 자원노드, 플레이어)만 제외하면 나머지는 모두 지면으로 간주
+		local excludeList = {model, workspace:FindFirstChild("ResourceNodes"), workspace:FindFirstChild("Creatures")}
+		for _, p in ipairs(game:GetService("Players"):GetPlayers()) do
+			if p.Character then table.insert(excludeList, p.Character) end
+		end
+		rayParams.FilterDescendantsInstances = excludeList
 		local rayOrigin = rootPart.CFrame.Position + Vector3.new(0, 250, 0)
 		local rayResult = workspace:Raycast(rayOrigin, Vector3.new(0, -500, 0), rayParams)
 		if rayResult then
@@ -2055,6 +2083,13 @@ applyNodeIdentity = function(nodeInstance: Instance?, nodeId: string, nodeUID: s
 	nodeInstance:SetAttribute("NodeUID", nodeUID)
 	nodeInstance:SetAttribute("Depleted", depleted)
 	nodeInstance:SetAttribute("ResourceNode", true)
+
+	-- [수정] 클라이언트 UI 표시를 위해 NodeName 속성 명시적 추가
+	local nodeData = DataService and DataService.getResourceNode(nodeId)
+	if nodeData and nodeData.name then
+		nodeInstance:SetAttribute("NodeName", nodeData.name)
+	end
+
 	CollectionService:AddTag(nodeInstance, "ResourceNode")
 end
 
@@ -2466,10 +2501,19 @@ function HarvestService._replenishLoop()
 		if pos and material then
 			local nodeId = selectNodeForTerrain(material)
 			if nodeId then
-				local uid = HarvestService._spawnAutoNode(nodeId, pos)
-				if uid then
-					toSpawn = toSpawn - 1
+				-- [수정] 리플레니시 루프에서도 사막 섬유 스폰 방지
+				local canSpawn = true
+				local zoneNameAtPos = (SpawnConfig and SpawnConfig.GetZoneAtPosition) and SpawnConfig.GetZoneAtPosition(pos)
+				if zoneNameAtPos == "DESERT" and nodeId == "GROUND_FIBER" then
+					canSpawn = false
+				end
+
+				if canSpawn then
+					local uid = HarvestService._spawnAutoNode(nodeId, pos)
+					if uid then
+						toSpawn = toSpawn - 1
 					end
+				end
 			end
 		end
 	end

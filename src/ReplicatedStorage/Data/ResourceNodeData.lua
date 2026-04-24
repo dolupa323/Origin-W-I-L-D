@@ -147,36 +147,6 @@ local ResourceNodeData = {
 	-- 광석 광맥 (Tier 3-4)
 	--========================================
 	{
-		id = "ORE_COPPER",
-		name = "구리 광맥",
-		level = 7,
-		modelName = "CopperOre",
-		nodeType = "ORE",
-		optimalTool = "PICKAXE",
-		resources = {
-			{ itemId = "COPPER_ORE", min = 3, max = 6, weight = 1.0 },
-		},
-		maxHealth = 300,
-		respawnTime = 400,
-		xpPerHit = 5,
-		requiresTool = true,
-	},
-	{
-		id = "ORE_TIN",
-		name = "주석 광맥",
-		level = 7,
-		modelName = "TinOre",
-		nodeType = "ORE",
-		optimalTool = "PICKAXE",
-		resources = {
-			{ itemId = "TIN_ORE", min = 3, max = 6, weight = 1.0 },
-		},
-		maxHealth = 300,
-		respawnTime = 400,
-		xpPerHit = 5,
-		requiresTool = true,
-	},
-	{
 		id = "ORE_IRON",
 		name = "철 광맥",
 		level = 10,
@@ -480,6 +450,57 @@ local ResourceNodeData = {
 		respawnTime = 0,
 		xpPerHit = 25,
 		requiresTool = false,
+	},
+	--========================================
+	-- [사막섬 특화] 사막나무, 갈대, 청동 광맥 (고정 배치)
+	--========================================
+	{
+		id = "DESERT_TREE",
+		name = "사막나무",
+		level = 24,
+		modelName = "DESERT_TREE",
+		nodeType = "TREE",
+		optimalTool = "AXE",
+		resources = {
+			{ itemId = "DESERT_LOG", min = 2, max = 5, weight = 1.0 },
+			{ itemId = "DATE", min = 1, max = 2, weight = 0.6 },
+		},
+		maxHealth = 250,
+		respawnTime = 400,
+		xpPerHit = 15,
+		requiresTool = true,
+	},
+	{
+		id = "DESERT_REED",
+		name = "사막 갈대",
+		level = 22,
+		modelName = "DESERT_REED",
+		nodeType = "FIBER",
+		optimalTool = "AXE",
+		resources = {
+			{ itemId = "DESERT_REED", min = 3, max = 6, weight = 1.0 },
+			{ itemId = "FIBER", min = 1, max = 3, weight = 0.5 },
+		},
+		maxHealth = 60,
+		respawnTime = 240,
+		xpPerHit = 10,
+		requiresTool = true,
+	},
+	{
+		id = "BRONZE_ROCK",
+		name = "청동 광맥",
+		level = 28,
+		modelName = "BRONZE_ROCK",
+		nodeType = "ORE",
+		optimalTool = "PICKAXE",
+		resources = {
+			{ itemId = "BRONZE_ORE", min = 5, max = 10, weight = 1.0 },
+			{ itemId = "STONE", min = 2, max = 4, weight = 0.6 },
+		},
+		maxHealth = 600,
+		respawnTime = 600,
+		xpPerHit = 25,
+		requiresTool = true,
 	},
 }
 

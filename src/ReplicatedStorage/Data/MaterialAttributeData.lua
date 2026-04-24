@@ -56,8 +56,7 @@ MaterialAttributeData.ItemCategory = {
 	-- Blade 카테고리 (돌, 광석, 주괴, 부싯돌)
 	STONE          = "BLADE",
 	FLINT          = "BLADE",
-	COPPER_ORE     = "BLADE",
-	TIN_ORE        = "BLADE",
+	BRONZE_ORE     = "BLADE",
 	IRON_ORE       = "BLADE",
 	GOLD_ORE       = "BLADE",
 	COAL           = "BLADE",
@@ -81,8 +80,13 @@ MaterialAttributeData.ItemCategory = {
 	TROPICAL_LEATHER   = "LEATHER",
 	FEATHER            = "LEATHER",
 
-	-- Blade 추가 (열대 광석)
+	-- Blade 추가 (열대/사막 광석)
 	OBSIDIAN       = "BLADE",
+	BRONZE_ORE     = "BLADE",
+
+	-- Handle 추가 (사막 나무/갈대)
+	DESERT_LOG     = "HANDLE",
+	DESERT_REED    = "HANDLE",
 
 	-- 속성 미부여 (FIBER, RESIN, DURABLE_LEAF 등은 속성 없음)
 	-- FIBER       = nil (매핑 없으면 속성 부여 안 됨)
@@ -124,6 +128,21 @@ local function weightedRandom(pool: {any}): any?
 	return pool[#pool] -- fallback (부동소수점 오차 방어)
 end
 
+-- [내부 함수] 속성 레벨 롤링 (공룡과 동일한 지수적 확률 감소 적용)
+local function rollAttributeLevel(maxLevel: number)
+	local maxLvl = math.max(1, maxLevel or 1)
+	local current = 1
+	
+	-- 75% 확률로 레벨 +1 성공, 실패 시 중단
+	local p = 0.75 
+	
+	while current < maxLvl and math.random() < p do
+		current = current + 1
+	end
+	
+	return current
+end
+
 --- 아이템에 속성 롤링
 --- @param itemId string 아이템 ID
 --- @param maxLevel number? 부여 가능한 최대 레벨 (드랍 대상의 level, 기본 1)
@@ -148,8 +167,8 @@ function MaterialAttributeData.rollAttribute(itemId: string, maxLevel: number?):
 	local selected = weightedRandom(pool)
 	if not selected then return nil, nil end
 
-	-- 레벨 롤링: 1 ~ maxLevel 범위
-	local level = math.random(1, math.max(1, maxLevel or 1))
+	-- [수정] 지수적 확률 감소 로직 적용하여 레벨 결정
+	local level = rollAttributeLevel(maxLevel or 1)
 	return selected.id, level
 end
 

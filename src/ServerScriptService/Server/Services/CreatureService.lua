@@ -141,8 +141,13 @@ local function snapCreatureToGround(model, rootPart, creatureData)
 	end
 
 	local rayParams = RaycastParams.new()
-	rayParams.FilterType = Enum.RaycastFilterType.Include
-	rayParams.FilterDescendantsInstances = { workspace.Terrain }
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	-- [수정] 사막섬 등 일반 파트 지형에서도 정상 작동하도록 Exclude 방식으로 변경
+	local excludeList = {model, workspace:FindFirstChild("ResourceNodes"), workspace:FindFirstChild("Creatures")}
+	for _, p in ipairs(game:GetService("Players"):GetPlayers()) do
+		if p.Character then table.insert(excludeList, p.Character) end
+	end
+	rayParams.FilterDescendantsInstances = excludeList
 	local rayOrigin = rootPart.Position + Vector3.new(0, 250, 0)
 	local rayResult = workspace:Raycast(rayOrigin, Vector3.new(0, -500, 0), rayParams)
 	if rayResult then

@@ -927,16 +927,17 @@ function HarvestUI.Open(nodeUID, nodeId, nodeModel)
 
 	-- 실제 표시할 아이템만 필터링 (서버 응답 기준)
 	local displayResources = {}
-	for _, resource in ipairs(resources) do
-		local count
-		if serverRemaining then
-			count = serverRemaining[resource.itemId] or 0
-		else
-			count = math.random(resource.min, resource.max)
+	if serverRemaining then
+		for _, resource in ipairs(resources) do
+			local count = serverRemaining[resource.itemId] or 0
+			if count > 0 then
+				table.insert(displayResources, { resource = resource, count = count })
+			end
 		end
-		if count > 0 then
-			table.insert(displayResources, { resource = resource, count = count })
-		end
+	else
+		-- [수정] 서버 응답이 없으면 자의적으로 자원을 생성하지 않음 (확률 불일치 방지)
+		-- 단, 개발 환경 등에서 서버 응답이 누락된 경우를 위해 경고만 출력
+		warn("[HarvestUI] No server response for node resources. UID:", nodeUID)
 	end
 	local numItems = #displayResources
 

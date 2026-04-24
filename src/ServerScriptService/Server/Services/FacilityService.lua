@@ -87,9 +87,15 @@ local function findRecipeForInput(facilityId: string, inputItemId: string): any?
 	if not facilityData then return nil end
 	
 	for recipeId, recipe in pairs(allRecipes) do
-		-- 레시피의 requiredFacility가 이 시설의 functionType과 일치하고
-		-- inputs에 해당 아이템이 포함되어 있으면 매칭
-		if recipe.requiredFacility == facilityData.functionType then
+		-- 레시피의 requiredFacility가 이 시설의 functionType과 일치하거나
+		-- allowedFacilityIds에 이 시설이 포함되어 있으면 매칭
+		local typeMatch = (recipe.requiredFacility == facilityData.functionType)
+		local idMatch = false
+		if recipe.allowedFacilityIds and table.find(recipe.allowedFacilityIds, facilityId) then
+			idMatch = true
+		end
+
+		if typeMatch or idMatch then
 			for _, input in ipairs(recipe.inputs) do
 				if input.itemId == inputItemId then
 					return recipe, recipeId
@@ -305,8 +311,9 @@ function FacilityService.register(structureId: string, facilityId: string, owner
 	local facilityData = DataService.getFacility(facilityId)
 	if not facilityData then return end
 	
-	-- Input/Fuel/Output 슬롯이 있는 시설만 등록
-	if facilityData.hasInputSlot or facilityData.hasFuelSlot or facilityData.hasOutputSlot or facilityData.functionType == "CRAFTING_T1" then
+	-- Input/Fuel/Output 슬롯이 있는 시설이나 제작대 계열 등록
+	local isCraftingFacility = string.match(tostring(facilityData.functionType or ""), "CRAFTING_T")
+	if facilityData.hasInputSlot or facilityData.hasFuelSlot or facilityData.hasOutputSlot or isCraftingFacility then
 		facilityStates[structureId] = createFacilityRuntime(structureId, facilityId, ownerId)
 		print(string.format("[FacilityService] Registered facility: %s (%s)", structureId, facilityId))
 	end

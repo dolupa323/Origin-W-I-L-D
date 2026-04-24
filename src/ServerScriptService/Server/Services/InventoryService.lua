@@ -23,6 +23,7 @@ local InventoryService = {}
 local initialized = false
 local playerInventories = {}  -- [userId] = { slots = { [1] = {itemId, count}, ... }, equipment = { Head, Body, Feet, Hand } }
 local playerActiveSlots = {} -- [userId] = hotbarIndex (1-8)
+local playerFoodCooldowns = {} -- [userId] = os.clock() last eaten time
 
 -- NetController 참조
 local NetController = nil

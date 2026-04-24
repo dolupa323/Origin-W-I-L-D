@@ -67,21 +67,11 @@ local TechUnlockData = {
 	{
 		id = "TECH_WOOD_BUILD",
 		name = "나무 건축 숙련",
-		cost = { { itemId = "PLANK", amount = 20 }, { itemId = "FIBER", amount = 15 } },
+		cost = { { itemId = "PLANK", amount = 10 }, { itemId = "FIBER", amount = 5 } },
 		prerequisites = { "TECH_SETTLEMENT" },
 		unlocks = { recipes = {}, facilities = {} },
 		category = "SETTLEMENT",
 		description = "나무 건축 기술을 숙련하여 더 발전된 시설을 건설할 수 있는 기반을 마련합니다.",
-	},
-
-	{
-		id = "TECH_FARMING",
-		name = "농경 기술",
-		cost = { { itemId = "STONE", amount = 30 }, { itemId = "WOOD", amount = 20 } },
-		prerequisites = { "TECH_WOOD_BUILD" },
-		unlocks = { recipes = { "CRAFT_STONE_HOE" }, facilities = { "BERRY_PLANTATION", "BEAST_FEEDING_TROUGH" } },
-		category = "SURVIVAL",
-		description = "땅을 일구어 베리 농장을 건설하고 먹이통을 마련합니다.",
 	},
 
 	--========================================
@@ -90,7 +80,7 @@ local TechUnlockData = {
 	{
 		id = "TECH_FURNACE1",
 		name = "돌 용광로",
-		cost = { { itemId = "STONE", amount = 50 }, { itemId = "LOG", amount = 20 } },
+		cost = { { itemId = "STONE", amount = 15 }, { itemId = "LOG", amount = 5 } },
 		prerequisites = { "TECH_WOOD_BUILD" },
 		unlocks = { recipes = {}, facilities = { "STONE_FURNACE" } },
 		category = "FACILITIES",
@@ -99,7 +89,7 @@ local TechUnlockData = {
 	{
 		id = "TECH_BRONZE_SMELT",
 		name = "청동 제련",
-		cost = { { itemId = "STONE", amount = 20 }, { itemId = "COMPY_DNA", amount = 5 } },
+		cost = { { itemId = "STONE", amount = 10 }, { itemId = "COMPY_DNA", amount = 2 } },
 		prerequisites = { "TECH_FURNACE1" },
 		unlocks = { recipes = { "SMELT_BRONZE_INGOT" }, facilities = {} },
 		category = "FACILITIES",
@@ -108,7 +98,7 @@ local TechUnlockData = {
 	{
 		id = "TECH_WORKBENCH2",
 		name = "청동기 작업대",
-		cost = { { itemId = "LOG", amount = 30 }, { itemId = "BRONZE_INGOT", amount = 10 } },
+		cost = { { itemId = "LOG", amount = 10 }, { itemId = "BRONZE_INGOT", amount = 5 } },
 		prerequisites = { "TECH_BRONZE_SMELT" },
 		unlocks = { recipes = {}, facilities = { "BRONZE_WORKBENCH" } },
 		category = "FACILITIES",
@@ -117,7 +107,7 @@ local TechUnlockData = {
 	{
 		id = "TECH_BRONZE_TOOLS",
 		name = "청동 도구",
-		cost = { { itemId = "BRONZE_INGOT", amount = 15 } },
+		cost = { { itemId = "BRONZE_INGOT", amount = 5 } },
 		prerequisites = { "TECH_WORKBENCH2" },
 		unlocks = { recipes = { "CRAFT_BRONZE_PICKAXE", "CRAFT_BRONZE_AXE" }, facilities = {} },
 		category = "TOOLS",
@@ -126,7 +116,7 @@ local TechUnlockData = {
 	{
 		id = "TECH_BRONZE_WEAPONS",
 		name = "청동 무기 및 갑옷",
-		cost = { { itemId = "BRONZE_INGOT", amount = 30 }, { itemId = "LEATHER", amount = 20 } },
+		cost = { { itemId = "BRONZE_INGOT", amount = 10 }, { itemId = "LEATHER", amount = 5 } },
 		prerequisites = { "TECH_BRONZE_TOOLS", "TECH_BOW" },
 		unlocks = { recipes = { "CRAFT_BRONZE_SWORD", "CRAFT_BRONZE_BOW", "CRAFT_BRONZE_ARROW", "CRAFT_BRONZE_ARMOR" }, facilities = {} },
 		category = "WEAPONS",
@@ -135,7 +125,7 @@ local TechUnlockData = {
 	{
 		id = "TECH_LARGE_BOX",
 		name = "대형 보관함",
-		cost = { { itemId = "WOOD", amount = 50 }, { itemId = "STONE", amount = 50 } },
+		cost = { { itemId = "WOOD", amount = 15 }, { itemId = "STONE", amount = 10 } },
 		prerequisites = { "TECH_WOOD_BUILD" },
 		unlocks = { recipes = {}, facilities = { "LARGE_STORAGE_BOX" } },
 		category = "SETTLEMENT",
@@ -148,7 +138,7 @@ local TechUnlockData = {
 	{
 		id = "TECH_FURNACE2",
 		name = "철 용광로",
-		cost = { { itemId = "STONE", amount = 100 }, { itemId = "BRONZE_INGOT", amount = 20 } },
+		cost = { { itemId = "STONE", amount = 30 }, { itemId = "BRONZE_INGOT", amount = 10 } },
 		prerequisites = { "TECH_BRONZE_SMELT" },
 		unlocks = { recipes = { "SMELT_IRON_INGOT" }, facilities = { "IRON_FURNACE" } },
 		category = "FACILITIES",
@@ -157,7 +147,7 @@ local TechUnlockData = {
 	{
 		id = "TECH_STONE_BUILD",
 		name = "석조 건축",
-		cost = { { itemId = "STONE", amount = 200 }, { itemId = "IRON_INGOT", amount = 10 } },
+		cost = { { itemId = "STONE", amount = 30 } },
 		prerequisites = { "TECH_FURNACE2", "TECH_WOOD_BUILD" },
 		unlocks = { recipes = {}, facilities = { "STONE_FOUNDATION", "STONE_WALL", "STONE_ROOF" } },
 		category = "SETTLEMENT",
@@ -166,7 +156,7 @@ local TechUnlockData = {
 	{
 		id = "TECH_WORKBENCH3",
 		name = "철기 작업대",
-		cost = { { itemId = "IRON_INGOT", amount = 30 }, { itemId = "STONE", amount = 50 } },
+		cost = { { itemId = "IRON_INGOT", amount = 10 }, { itemId = "STONE", amount = 15 } },
 		prerequisites = { "TECH_FURNACE2", "TECH_WORKBENCH2" },
 		unlocks = { recipes = {}, facilities = { "IRON_WORKBENCH" } },
 		category = "FACILITIES",
