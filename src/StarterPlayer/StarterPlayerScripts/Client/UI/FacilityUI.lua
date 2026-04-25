@@ -16,6 +16,8 @@ local currentSelectedRecipe = nil
 local currentCraftCount = 1
 local maxCraftCount = 1
 local currentCanCraft = false
+local currentTab = "WEAPON_TOOL" -- 기본 탭
+local currentRawRecipeList = {} -- 전체 레시피 백업
 
 local FacilityUI = {}
 FacilityUI.Refs = {
@@ -41,6 +43,14 @@ FacilityUI.Refs = {
 		Fill = nil,
 		Label = nil,
 	},
+	Tabs = {}, -- { [tabId] = { Frame, Label } }
+}
+
+local TABS = {
+	{ id = "BLOCK", name = "블록가공", categories = { "BLOCK_PROCESS" } },
+	{ id = "WEAPON_TOOL", name = "무기, 도구 제작", categories = { "WEAPON", "TOOL", "AMMO" } },
+	{ id = "ARMOR", name = "방어구 제작", categories = { "ARMOR" } },
+	{ id = "PROCESSING", name = "가공", categories = { "RESOURCE" } },
 }
 
 function FacilityUI.Init(parent, UIManager, isMobile)
@@ -100,8 +110,50 @@ function FacilityUI.Init(parent, UIManager, isMobile)
 		parent=main
 	})
 
+	-- [Tabs Bar]
+	local tabBar = Utils.mkFrame({
+		name = "TabBar", size = UDim2.new(1, -40, 0, 36), pos = UDim2.new(0, 20, 0, 50),
+		bgT = 1, parent = main
+	})
+	local tabList = Instance.new("UIListLayout")
+	tabList.FillDirection = Enum.FillDirection.Horizontal; tabList.Padding = UDim.new(0, 8); tabList.Parent = tabBar
+
+	for _, tabInfo in ipairs(TABS) do
+		local tBtn = Utils.mkBtn({
+			text = UILocalizer.Localize(tabInfo.name), size = UDim2.new(0, 140, 1, 0),
+			bg = C.BG_SLOT, ts = 14, font = F.TITLE, r = 4,
+			parent = tabBar
+		})
+
+		FacilityUI.Refs.Tabs[tabInfo.id] = { Frame = tBtn }
+
+		tBtn.MouseButton1Click:Connect(function()
+			FacilityUI.SetTab(tabInfo.id)
+		end)
+	end
+
+	local function updateTabVisuals()
+		for id, ref in pairs(FacilityUI.Refs.Tabs) do
+			if id == currentTab then
+				ref.Frame.BackgroundColor3 = C.GOLD
+				ref.Frame.TextColor3 = C.WHITE -- 검정 글씨 제거, 흰 글씨로 통일
+				ref.Frame.BackgroundTransparency = 0.1
+			else
+				ref.Frame.BackgroundColor3 = C.BG_SLOT
+				ref.Frame.TextColor3 = Color3.fromRGB(200, 200, 200) -- 비활성 탭도 밝게 유지
+				ref.Frame.BackgroundTransparency = 0.4
+			end
+		end
+	end
+
+	function FacilityUI.SetTab(tabId)
+		currentTab = tabId
+		updateTabVisuals()
+		FacilityUI.Refresh(currentRawRecipeList, nil, UIManagerRef, true) -- 필터링된 리프레시
+	end
+
 	-- [Content Layout] - Left (Recipes) / Right (Detail)
-	local content = Utils.mkFrame({name="Content", size=UDim2.new(1, -20, 1, -70), pos=UDim2.new(0, 10, 0, 60), bgT=1, parent=main})
+	local content = Utils.mkFrame({name="Content", size=UDim2.new(1, -20, 1, -110), pos=UDim2.new(0, 10, 0, 100), bgT=1, parent=main})
 	
 	-- 3. Left Side: Recipe List
 	local leftPanel = Utils.mkFrame({
@@ -270,16 +322,40 @@ function FacilityUI.Init(parent, UIManager, isMobile)
 	syncQtyUI()
 end
 
-function FacilityUI.Refresh(recipeList, getIcon, UIManager)
+function FacilityUI.Refresh(recipeList, getIcon, UIManager, isTabSwitch)
 	local grid = FacilityUI.Refs.RecipeGrid
 	if not grid then return end
 	
+	if not isTabSwitch then
+		currentRawRecipeList = recipeList or {}
+	end
+	
+	-- 탭 필터링
+	local filtered = {}
+	local currentTabInfo = nil
+	for _, t in ipairs(TABS) do if t.id == currentTab then currentTabInfo = t; break end end
+	
+	if currentTabInfo then
+		for _, r in ipairs(currentRawRecipeList) do
+			local matched = false
+			for _, cat in ipairs(currentTabInfo.categories) do
+				if r.category == cat then matched = true; break end
+			end
+			if matched then table.insert(filtered, r) end
+		end
+	else
+		filtered = currentRawRecipeList
+	end
+
 	-- Clear (UIGridLayout과 UIPadding 보존)
 	for _, ch in ipairs(grid:GetChildren()) do
 		if ch:IsA("GuiObject") and not ch:IsA("UIGridLayout") then ch:Destroy() end
 	end
 	
-	for _, recipe in ipairs(recipeList) do
+	-- 아이콘 헬퍼 (탭 전환 시에는 외부에서 안 들어오므로 UIManager 참조 활용)
+	local iconGetter = getIcon or (UIManager and UIManager.getItemIcon)
+	
+	for _, recipe in ipairs(filtered) do
 		-- 배경색 보더 기법: ScrollingFrame 클리핑 회피
 		local borderFrame = Instance.new("Frame")
 		borderFrame.Name = recipe.id
@@ -315,8 +391,8 @@ function FacilityUI.Refresh(recipeList, getIcon, UIManager)
 		icon.Parent = inner
 
 		local output = recipe.outputs[1]
-		if output then
-			icon.Image = getIcon(output.itemId)
+		if output and iconGetter then
+			icon.Image = iconGetter(output.itemId)
 			icon.Visible = true
 		end
 
