@@ -397,6 +397,7 @@ local function findNearbyInteractable(): (Instance?, string?)
 						   check:GetAttribute("FacilityId") or 
 						   check:GetAttribute("NPCId") or
 						   check:GetAttribute("IsPal") or
+						   check:GetAttribute("ResourceNode") or
 						   game:GetService("CollectionService"):HasTag(check, "ResourceNode") then
 							entity = check
 							break

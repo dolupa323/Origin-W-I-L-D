@@ -938,8 +938,8 @@ function SkillTreeUI.Init(parent, UIManager, isMobile)
 	-- 메인 패널
 	local main = Utils.mkWindow({
 		name = "Main",
-		size = UDim2.new(isSmall and 0.98 or 0.82, 0, isSmall and 0.95 or 0.88, 0),
-		maxSize = Vector2.new(1200, 850),
+		size = UDim2.new(0.85, 0, 0.88, 0), -- Proportional
+		maxSize = Vector2.new(1250, 900),
 		pos = UDim2.new(0.5, 0, 0.5, 0),
 		anchor = Vector2.new(0.5, 0.5),
 		bg = C.BG_PANEL,
@@ -947,6 +947,7 @@ function SkillTreeUI.Init(parent, UIManager, isMobile)
 		r = 6,
 		stroke = 1.5,
 		strokeC = C.BORDER,
+		ratio = 1.45, -- Wide layout for skill tree
 		parent = SkillTreeUI.Refs.Frame,
 	})
 
@@ -1049,10 +1050,10 @@ function SkillTreeUI.Init(parent, UIManager, isMobile)
 	})
 
 	-- ============ 좌측 탭 패널 ============
-	local tabWidth = isSmall and 135 or 185
+	local tabWidthScale = 0.16
 	local tabPanel = Utils.mkFrame({
 		name = "TabPanel",
-		size = UDim2.new(0, tabWidth, 1, 0),
+		size = UDim2.new(tabWidthScale, 0, 1, 0),
 		bg = C.BG_DARK,
 		bgT = 0.6,
 		r = 6,
@@ -1128,8 +1129,8 @@ function SkillTreeUI.Init(parent, UIManager, isMobile)
 	-- ============ 우측 콘텐츠 영역 ============
 	local contentArea = Utils.mkFrame({
 		name = "ContentArea",
-		size = UDim2.new(1, -(tabWidth + 12), 1, 0),
-		pos = UDim2.new(0, tabWidth + 8, 0, 0),
+		size = UDim2.new(1 - tabWidthScale - 0.02, 0, 1, 0),
+		pos = UDim2.new(tabWidthScale + 0.015, 0, 0, 0),
 		bg = C.BG_DARK,
 		bgT = 0.6,
 		r = 6,

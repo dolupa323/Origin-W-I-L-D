@@ -308,29 +308,47 @@ local function setupModelForNode(model: Model, position: Vector3, nodeData: any,
 		end
 	end
 	
-	-- PrimaryPart 찾기/설정
-	local primaryPart = model.PrimaryPart
-	if not primaryPart then
-		-- 후보 1: HumanoidRootPart
-		primaryPart = model:FindFirstChild("HumanoidRootPart")
+	-- PrimaryPart 찾기/설정 (모델 자체가 BasePart인 경우 대응)
+	local primaryPart = nil
+	if model:IsA("Model") then
+		primaryPart = model.PrimaryPart
 		if not primaryPart then
-			-- 후보 2: 아무 BasePart
-			primaryPart = model:FindFirstChildWhichIsA("BasePart", true)
+			primaryPart = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChildWhichIsA("BasePart", true)
+			if primaryPart then model.PrimaryPart = primaryPart end
 		end
-		if primaryPart then
-			model.PrimaryPart = primaryPart
-		end
+	elseif model:IsA("BasePart") then
+		primaryPart = model
+	end
+	
+	-- [수정] 섬유(GROUND_FIBER) 모델이 눕는 현상 수정 (모델 자체가 90도 회전된 경우 대응)
+	local rotationOffset = CFrame.Angles(0, 0, 0)
+	if nodeData and nodeData.id == "GROUND_FIBER" then
+		-- 섬유 모델이 X축으로 90도 누워있다고 판단될 경우 보정
+		-- 이미지상 옆으로 누워있으므로 X축 90도 회전 시도
+		rotationOffset = CFrame.Angles(math.rad(90), 0, 0)
 	end
 	
 	-- 위치 설정 (자동 스폰일 때만 Y축 하단 정렬 및 위치 지정)
 	if primaryPart and isAutoSpawn then
+		-- [수정] 기본 회전 보정 적용 (섬유 등 눕는 모델 대응)
+		if rotationOffset ~= CFrame.Angles(0,0,0) then
+			model:PivotTo(model:GetPivot() * rotationOffset)
+		end
+
 		-- 모델 하단이 지면에 닿도록 조정 (모든 파트 중 가장 낮은 Y값 추적)
 		local minY = math.huge
+		local currentModelCF, _ = model:GetBoundingBox()
+		
+		-- 모델 자체가 BasePart인 경우와 자식들이 있는 경우 모두 대응
+		local partsToCheck = {}
+		if model:IsA("BasePart") then table.insert(partsToCheck, model) end
 		for _, p in ipairs(model:GetDescendants()) do
-			if p:IsA("BasePart") then
-				local pMinY = p.Position.Y - (p.Size.Y / 2)
-				if pMinY < minY then minY = pMinY end
-			end
+			if p:IsA("BasePart") then table.insert(partsToCheck, p) end
+		end
+
+		for _, p in ipairs(partsToCheck) do
+			local pMinY = p.Position.Y - (p.Size.Y / 2)
+			if pMinY < minY then minY = pMinY end
 		end
 		
 		if minY == math.huge then
@@ -345,7 +363,7 @@ local function setupModelForNode(model: Model, position: Vector3, nodeData: any,
 		local randomYRot = math.rad(math.random(0, 359))
 		
 		-- 지면(position)에서 pivotOffset만큼 위로 띄워야 하단이 지면에 맞음
-		local targetCF = CFrame.new(position) * CFrame.Angles(0, randomYRot, 0) * CFrame.new(0, pivotOffset, 0)
+		local targetCF = CFrame.new(position + Vector3.new(0, pivotOffset, 0)) * CFrame.Angles(0, randomYRot, 0) * rotationOffset
 		model:PivotTo(targetCF)
 		
 		-- [수정] 0.5 유격 제거 (물리 낙하 효과 제거 및 지면 밀착)
@@ -364,12 +382,19 @@ local function setupModelForNode(model: Model, position: Vector3, nodeData: any,
 	
 	-- 모든 파트를 Anchored로 (AI 없음, 자원 노드는 고정)
 	-- ★ CanCollide = false: R키 상호작용이므로 물리 충돌 불필요 (이동 방해 제거)
-	for _, part in ipairs(model:GetDescendants()) do
+	local allParts = {}
+	if model:IsA("BasePart") then table.insert(allParts, model) end
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then table.insert(allParts, d) end
+	end
+	
+	for _, part in ipairs(allParts) do
+		part.Anchored = true
+		part.CanCollide = false
+		part.CanQuery = true
+		part.CanTouch = true
 		if part:IsA("BasePart") then
-			part.Anchored = true
-			part.CanCollide = false
-			part.CanQuery = true
-			part.CanTouch = true
+			part.CastShadow = false
 		end
 	end
 	
@@ -403,6 +428,11 @@ local function setupModelForNode(model: Model, position: Vector3, nodeData: any,
 	
 	-- CollectionService 태그 추가 (Raycast 필터링용)
 	CollectionService:AddTag(model, "ResourceNode")
+	-- 히트박스 속성 및 태그 설정 (InteractController가 히트박스를 직접 감지할 수 있도록 함)
+	if hitbox then
+		hitbox:SetAttribute("ResourceNode", true)
+		CollectionService:AddTag(hitbox, "ResourceNode")
+	end
 	
 	return model
 end
@@ -506,12 +536,13 @@ function HarvestService.spawnNodeModel(nodeId: string, position: Vector3, nodeUI
 		CollectionService:AddTag(model, "ResourceNode")
 	end
 	
-	-- 속성 설정
-	model:SetAttribute("NodeId", nodeId)
-	model:SetAttribute("NodeUID", nodeUID or "") -- 필수: 상호작용 UID
+	-- [수정] applyNodeIdentity를 사용하여 속성 및 태그 일관성 확보
+	applyNodeIdentity(model, nodeId, nodeUID or "", false)
+	
+	-- 추가 속성 (spawnNodeModel 특화)
 	model:SetAttribute("NodeType", nodeData.nodeType or "UNKNOWN")
 	model:SetAttribute("OptimalTool", nodeData.optimalTool or "")
-	model:SetAttribute("Depleted", false)
+	model:SetAttribute("AutoSpawned", true)
 	
 	return model
 end
@@ -2091,6 +2122,15 @@ applyNodeIdentity = function(nodeInstance: Instance?, nodeId: string, nodeUID: s
 	end
 
 	CollectionService:AddTag(nodeInstance, "ResourceNode")
+	
+	-- [수정] 히트박스가 있으면 히트박스에도 속성 전파 (InteractController 대응)
+	local hitbox = nodeInstance:FindFirstChild("Hitbox")
+	if hitbox then
+		hitbox:SetAttribute("NodeId", nodeId)
+		hitbox:SetAttribute("NodeUID", nodeUID)
+		hitbox:SetAttribute("ResourceNode", true)
+		CollectionService:AddTag(hitbox, "ResourceNode")
+	end
 end
 
 ensureHiddenNodeFolder = function(): Folder

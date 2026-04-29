@@ -136,7 +136,7 @@ end
 local function buildPanel(parent, panelName, title, titleColor, isSmall)
 	local panel = Utils.mkFrame({
 		name = panelName,
-		size = isSmall and UDim2.new(1, 0, 0.48, 0) or UDim2.new(0.5, -10, 1, 0),
+		size = UDim2.new(0.5, -10, 1, 0), -- Always side-by-side
 		bg = C.BG_PANEL,
 		bgT = T.PANEL,
 		r = 6,
@@ -149,7 +149,7 @@ local function buildPanel(parent, panelName, title, titleColor, isSmall)
 		size = UDim2.new(1, -16, 0, 26),
 		pos = UDim2.new(0, 10, 0, 6),
 		color = titleColor,
-		ts = isSmall and 15 or 16,
+		ts = 16,
 		font = F.TITLE,
 		ax = Enum.TextXAlignment.Left,
 		parent = panel,
@@ -157,7 +157,7 @@ local function buildPanel(parent, panelName, title, titleColor, isSmall)
 
 	local goldWrap = Utils.mkFrame({
 		name = "GoldWrap",
-		size = UDim2.new(1, -16, 0, isSmall and 58 or 62),
+		size = UDim2.new(1, -16, 0, 62),
 		pos = UDim2.new(0, 8, 0, 34),
 		bg = C.BG_DARK,
 		bgT = 0.18,
@@ -171,7 +171,7 @@ local function buildPanel(parent, panelName, title, titleColor, isSmall)
 		text = "골드: 0",
 		size = UDim2.new(1, -110, 0, 22),
 		pos = UDim2.new(0, 10, 0, 8),
-		ts = isSmall and 13 or 14,
+		ts = 14,
 		color = C.GOLD,
 		font = F.NUM,
 		ax = Enum.TextXAlignment.Left,
@@ -182,7 +182,7 @@ local function buildPanel(parent, panelName, title, titleColor, isSmall)
 		text = "아이템과 별도로 보관되는 골드입니다.",
 		size = UDim2.new(1, -20, 0, 16),
 		pos = UDim2.new(0, 10, 0, 30),
-		ts = isSmall and 10 or 11,
+		ts = 11,
 		color = C.GRAY,
 		ax = Enum.TextXAlignment.Left,
 		parent = goldWrap,
@@ -190,7 +190,7 @@ local function buildPanel(parent, panelName, title, titleColor, isSmall)
 
 	local scroll = Instance.new("ScrollingFrame")
 	scroll.Name = panelName .. "Scroll"
-	scroll.Size = UDim2.new(1, -8, 1, -(104 + (isSmall and 0 or 0)))
+	scroll.Size = UDim2.new(1, -8, 1, -104)
 	scroll.Position = UDim2.new(0, 4, 0, 100)
 	scroll.BackgroundTransparency = 1
 	scroll.BorderSizePixel = 0
@@ -207,8 +207,8 @@ local function buildPanel(parent, panelName, title, titleColor, isSmall)
 	pad.Parent = scroll
 
 	local grid = Instance.new("UIGridLayout")
-	grid.CellSize = isSmall and UDim2.new(0, 54, 0, 54) or UDim2.new(0, 60, 0, 60)
-	grid.CellPadding = isSmall and UDim2.new(0, 5, 0, 5) or UDim2.new(0, 6, 0, 6)
+	grid.CellSize = UDim2.new(0, 60, 0, 60)
+	grid.CellPadding = UDim2.new(0, 6, 0, 6)
 	grid.Parent = scroll
 
 	return panel, scroll, goldWrap, goldLabel, goldDesc
@@ -271,7 +271,7 @@ function StorageUI.Init(parent, UIManager, isMobile)
 
 	local main = Utils.mkWindow({
 		name = "StorageWindow",
-		size = isSmall and UDim2.new(0.96, 0, 0.9, 0) or UDim2.new(0, 860, 0, 620),
+		size = UDim2.new(0.85, 0, 0.88, 0), -- Proportional scale
 		pos = UDim2.new(0.5, 0, 0.5, 0),
 		anchor = Vector2.new(0.5, 0.5),
 		bg = C.BG_PANEL,
@@ -279,6 +279,7 @@ function StorageUI.Init(parent, UIManager, isMobile)
 		r = 6,
 		stroke = 1.5,
 		strokeC = C.BORDER,
+		ratio = 1.38, -- Maintain storage aspect ratio
 		parent = StorageUI.Refs.Frame,
 	})
 

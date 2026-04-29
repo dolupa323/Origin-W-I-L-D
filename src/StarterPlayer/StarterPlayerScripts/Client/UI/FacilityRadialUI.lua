@@ -21,7 +21,7 @@ local FacilityRadialUI = {}
 --========================================
 -- Constants
 --========================================
-local HEX_SIZE = 100
+local HEX_SIZE = 110
 local CLOSE_HEX_SIZE = 80
 local INTERACT_DISTANCE = (Balance.HARVEST_RANGE or 10) + 6
 local BILLBOARD_MAX_DIST = 50

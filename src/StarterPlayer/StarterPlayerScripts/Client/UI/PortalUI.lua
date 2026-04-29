@@ -21,13 +21,15 @@ function PortalUI.Init(parent, UIManager, isMobile)
 
 	local window = Utils.mkWindow({
 		name = "PortalGoldWindow",
-		size = UDim2.new(0, 360, 0, 240),
+		size = UDim2.new(0.5, 0, 0.5, 0), -- Proportional
+		maxSize = Vector2.new(500, 350),
 		pos = UDim2.new(0.5, 0, 0.5, 0),
 		anchor = Vector2.new(0.5, 0.5),
 		bg = C.BG_PANEL,
 		bgT = 0.5,
 		stroke = 1,
 		strokeC = C.BORDER,
+		ratio = 1.5,
 		vis = false,
 		parent = parent,
 	})

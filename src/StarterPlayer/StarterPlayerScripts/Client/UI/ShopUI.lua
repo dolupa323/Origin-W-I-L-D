@@ -70,7 +70,7 @@ end
 local function makeSectionHeader(parent: Instance, title: string, subtitle: string?)
 	local header = Utils.mkFrame({
 		name = "SectionHeader",
-		size = UDim2.new(1, 0, 0, ShopUI.IsMobile and 52 or 58),
+		size = UDim2.new(1, 0, 0, 58),
 		bg = C.BG_DARK,
 		bgT = 0.65, -- [Refinement]
 		r = 8,
@@ -83,7 +83,7 @@ local function makeSectionHeader(parent: Instance, title: string, subtitle: stri
 		text = title,
 		size = UDim2.new(1, -18, 0, 24),
 		pos = UDim2.new(0, 10, 0, 6),
-		ts = ShopUI.IsMobile and 15 or 17,
+		ts = 17,
 		bold = true,
 		color = C.WHITE,
 		ax = Enum.TextXAlignment.Left,
@@ -109,7 +109,7 @@ end
 local function makeEmptyState(parent: Instance, text: string)
 	local frame = Utils.mkFrame({
 		name = "EmptyState",
-		size = UDim2.new(1, 0, 0, ShopUI.IsMobile and 64 or 72),
+		size = UDim2.new(1, 0, 0, 72),
 		bg = C.BG_DARK,
 		bgT = 0.72, -- [Refinement]
 		r = 8,
@@ -130,10 +130,10 @@ local function makeEmptyState(parent: Instance, text: string)
 end
 
 local function makeItemRow(parent: Instance, itemId: string, nameText: string, detailText: string, priceText: string, accentText: string?, iconResolver: (string) -> string, actionLabel: string?, actionCallback: (() -> ())?)
-	local rowHeight = ShopUI.IsMobile and 92 or 98
-	local iconSize = ShopUI.IsMobile and 48 or 54
-	local actionWidth = ShopUI.IsMobile and 72 or 88
-	local priceWidth = ShopUI.IsMobile and 86 or 110
+	local rowHeight = 98
+	local iconSize = 54
+	local actionWidth = 88
+	local priceWidth = 110
 	local actionReservedWidth = actionCallback and actionWidth or 0
 	local textRightPadding = 26 + actionReservedWidth + priceWidth
 
@@ -175,7 +175,7 @@ local function makeItemRow(parent: Instance, itemId: string, nameText: string, d
 		text = nameText,
 		size = UDim2.new(1, -iconSize - textRightPadding, 0, 24),
 		pos = UDim2.new(0, iconSize + 24, 0, 10),
-		ts = ShopUI.IsMobile and 14 or 16,
+		ts = 16,
 		bold = true,
 		color = C.WHITE,
 		ax = Enum.TextXAlignment.Left,
@@ -211,7 +211,7 @@ local function makeItemRow(parent: Instance, itemId: string, nameText: string, d
 		size = UDim2.new(0, priceWidth, 0, 22),
 		pos = UDim2.new(1, -(actionReservedWidth + 12), 0, 12),
 		anchor = Vector2.new(1, 0),
-		ts = ShopUI.IsMobile and 13 or 15,
+		ts = 15,
 		color = C.GOLD,
 		ax = Enum.TextXAlignment.Right,
 		parent = row,
@@ -220,12 +220,12 @@ local function makeItemRow(parent: Instance, itemId: string, nameText: string, d
 	if actionCallback then
 		Utils.mkBtn({
 			text = actionLabel or "선택",
-			size = UDim2.new(0, actionWidth, 0, ShopUI.IsMobile and 32 or 34),
+			size = UDim2.new(0, actionWidth, 0, 34),
 			pos = UDim2.new(1, -12, 0.5, 0),
 			anchor = Vector2.new(1, 0.5),
 			bg = C.BTN,
 			hbg = C.BTN_H,
-			ts = ShopUI.IsMobile and 12 or 13,
+			ts = 13,
 			r = 8,
 			parent = row,
 			fn = actionCallback,
@@ -388,8 +388,8 @@ function ShopUI.Init(parent, UIManager, isMobile)
 
 	local main = Utils.mkWindow({
 		name = "Main",
-		size = ShopUI.IsMobile and UDim2.new(0.96, 0, 0.92, 0) or UDim2.new(0.9, 0, 0.84, 0),
-		maxSize = ShopUI.IsMobile and Vector2.new(760, 980) or Vector2.new(1220, 780),
+		size = UDim2.new(0.85, 0, 0.88, 0),
+		maxSize = Vector2.new(1280, 900),
 		pos = UDim2.new(0.5, 0, 0.5, 0),
 		anchor = Vector2.new(0.5, 0.5),
 		bg = C.BG_PANEL,
@@ -397,11 +397,12 @@ function ShopUI.Init(parent, UIManager, isMobile)
 		r = 8,
 		stroke = 1.5,
 		strokeC = C.BORDER,
+		ratio = 1.5, -- Wide ratio for trade comparison
 		parent = ShopUI.Refs.Frame,
 	})
 	ShopUI.Refs.Main = main
 
-	local topBarHeight = ShopUI.IsMobile and 88 or 78
+	local topBarHeight = 78
 	local topBar = Utils.mkFrame({
 		name = "TopBar",
 		size = UDim2.new(1, -28, 0, topBarHeight),
@@ -412,9 +413,9 @@ function ShopUI.Init(parent, UIManager, isMobile)
 
 	ShopUI.Refs.Title = Utils.mkLabel({
 		text = "교역상",
-		size = UDim2.new(1, ShopUI.IsMobile and -48 or -220, 0, 28),
+		size = UDim2.new(1, -220, 0, 28),
 		pos = UDim2.new(0, 0, 0, 0),
-		ts = ShopUI.IsMobile and 21 or 24,
+		ts = 24,
 		bold = true,
 		color = C.WHITE,
 		ax = Enum.TextXAlignment.Left,
@@ -423,7 +424,7 @@ function ShopUI.Init(parent, UIManager, isMobile)
 
 	ShopUI.Refs.Subtitle = Utils.mkLabel({
 		text = "상점 정보를 확인하세요.",
-		size = UDim2.new(1, ShopUI.IsMobile and -48 or -220, 0, 36),
+		size = UDim2.new(1, -220, 0, 36),
 		pos = UDim2.new(0, 0, 0, 30),
 		ts = ShopUI.IsMobile and 11 or 12,
 		color = C.GRAY,
@@ -434,12 +435,12 @@ function ShopUI.Init(parent, UIManager, isMobile)
 
 	ShopUI.Refs.GoldLabel = Utils.mkLabel({
 		text = "0 G",
-		size = ShopUI.IsMobile and UDim2.new(1, -48, 0, 20) or UDim2.new(0, 180, 0, 24),
-		pos = ShopUI.IsMobile and UDim2.new(0, 0, 1, -20) or UDim2.new(1, -54, 0, 2),
-		anchor = ShopUI.IsMobile and Vector2.new(0, 1) or Vector2.new(1, 0),
-		ts = ShopUI.IsMobile and 14 or 18,
+		size = UDim2.new(0, 180, 0, 24),
+		pos = UDim2.new(1, -54, 0, 2),
+		anchor = Vector2.new(1, 0),
+		ts = 18,
 		color = C.GOLD,
-		ax = ShopUI.IsMobile and Enum.TextXAlignment.Left or Enum.TextXAlignment.Right,
+		ax = Enum.TextXAlignment.Right,
 		parent = topBar,
 	})
 

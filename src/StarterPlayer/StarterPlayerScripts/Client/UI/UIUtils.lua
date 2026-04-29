@@ -11,16 +11,17 @@ local T = Theme.Transp
 local UIUtils = {}
 
 --- 비율 고정된 최상위 윈도우 랩퍼
+--- 비율 고정된 최상위 윈도우 랩퍼
 function UIUtils.mkWindow(p)
 	local win = UIUtils.mkFrame({
 		name = p.name,
-		size = p.size,
-		pos = p.pos,
-		anchor = p.anchor,
+		size = p.size or UDim2.new(0.8, 0, 0.85, 0), -- Default to relative scale
+		pos = p.pos or UDim2.new(0.5, 0, 0.5, 0),
+		anchor = p.anchor or Vector2.new(0.5, 0.5),
 		bg = p.bg,
 		bgT = p.bgT,
 		r = p.r,
-		stroke = p.stroke or 2.5, -- Main windows must have a stroke
+		stroke = p.stroke or 2.5,
 		strokeC = p.strokeC or C.BORDER,
 		strokeT = p.strokeT,
 		useCanvas = p.useCanvas,
@@ -28,11 +29,21 @@ function UIUtils.mkWindow(p)
 		vis = p.vis,
 		parent = p.parent
 	})
+	
+	-- Perfect Ratio Persistence
 	if p.ratio then
 		local ratio = Instance.new("UIAspectRatioConstraint")
 		ratio.AspectRatio = p.ratio
+		ratio.AspectType = Enum.AspectType.FitWithinMaxSize
 		ratio.Parent = win
 	end
+	
+	if p.maxSize then
+		local c = Instance.new("UISizeConstraint")
+		c.MaxSize = p.maxSize
+		c.Parent = win
+	end
+	
 	return win
 end
 
@@ -404,6 +415,22 @@ function UIUtils.AddShadow(guiObject, thickness)
 	s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	s.Parent = guiObject
 	return s
+end
+
+--- 해상도에 따른 동적 스케일링 유틸리티
+function UIUtils.autoScale(gui, baseWidth)
+	local base = baseWidth or 1280
+	local scale = Instance.new("UIScale")
+	scale.Parent = gui
+	
+	local function update()
+		local vw = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize.X or base
+		scale.Scale = math.clamp(vw / base, 0.5, 2.5) -- Prevent extreme scaling
+	end
+	
+	workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(update)
+	update()
+	return scale
 end
 
 function UIUtils.CreateCloseButton(UIManager, winId)

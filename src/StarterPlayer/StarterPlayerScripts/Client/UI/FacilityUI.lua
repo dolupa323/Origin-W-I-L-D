@@ -70,8 +70,8 @@ function FacilityUI.Init(parent, UIManager, isMobile)
 	-- 2. Main Window (Translucent)
 	local main = Utils.mkWindow({
 		name = "FacilityWindow",
-		size = UDim2.new(isSmall and 0.95 or 0.75, 0, isSmall and 0.9 or 0.85, 0),
-		maxSize = Vector2.new(1000, 850),
+		size = UDim2.new(0.85, 0, 0.88, 0), -- Proportional scale
+		maxSize = Vector2.new(1200, 900),
 		pos = UDim2.new(0.5, 0, 0.5, 0),
 		anchor = Vector2.new(0.5, 0.5),
 		bg = C.BG_PANEL,
@@ -79,6 +79,7 @@ function FacilityUI.Init(parent, UIManager, isMobile)
 		r = 6,
 		stroke = 1.5,
 		strokeC = C.BORDER,
+		ratio = 1.4, -- Balanced ratio for crafting
 		parent = FacilityUI.Refs.Frame
 	})
 	
@@ -120,8 +121,8 @@ function FacilityUI.Init(parent, UIManager, isMobile)
 
 	for _, tabInfo in ipairs(TABS) do
 		local tBtn = Utils.mkBtn({
-			text = UILocalizer.Localize(tabInfo.name), size = UDim2.new(0, 140, 1, 0),
-			bg = C.BG_SLOT, ts = 14, font = F.TITLE, r = 4,
+			text = UILocalizer.Localize(tabInfo.name), size = UDim2.new(0, 150, 1, 0),
+			bg = C.BG_SLOT, ts = 15, font = F.TITLE, r = 4,
 			parent = tabBar
 		})
 
@@ -174,7 +175,12 @@ function FacilityUI.Init(parent, UIManager, isMobile)
 	scroll.Parent = leftPanel
 	
 	local grid = Instance.new("UIGridLayout")
-	grid.CellSize = UDim2.new(0, 80, 0, 80); grid.CellPadding = UDim2.new(0, 8, 0, 8); grid.Parent = scroll
+	grid.CellSize = UDim2.new(0.18, 0, 0.18, 0)
+	grid.CellPadding = UDim2.new(0.015, 0, 0.015, 0)
+	grid.Parent = scroll
+	
+	local gridRatio = Instance.new("UIAspectRatioConstraint", grid)
+	gridRatio.AspectRatio = 1
 
 	local rPad = Instance.new("UIPadding")
 	rPad.PaddingTop = UDim.new(0, 4); rPad.PaddingLeft = UDim.new(0, 4)
@@ -210,39 +216,43 @@ function FacilityUI.Init(parent, UIManager, isMobile)
 	FacilityUI.Refs.DetailFrame = rightPanel
 
 	-- Result Icon (responsive: top area, centered)
+	local iconSize = 0.28
 	local iconFrame = Utils.mkFrame({
-		name="IconFrame", size=UDim2.new(0, 90, 0, 90), pos=UDim2.new(0.5, 0, 0, 15), anchor=Vector2.new(0.5, 0),
-		bg=C.GOLD, r=45, parent=rightPanel
+		name="IconFrame", size=UDim2.new(iconSize, 0, iconSize, 0), pos=UDim2.new(0.5, 0, 0.04, 0), anchor=Vector2.new(0.5, 0),
+		bg=C.GOLD, r="full", parent=rightPanel
 	})
+	local iconRatio = Instance.new("UIAspectRatioConstraint", iconFrame)
+	iconRatio.AspectRatio = 1
+	
 	FacilityUI.Refs.Detail.Icon = Instance.new("ImageLabel")
-	FacilityUI.Refs.Detail.Icon.Size = UDim2.new(0, 70, 0, 70); FacilityUI.Refs.Detail.Icon.Position = UDim2.new(0.5, 0, 0.5, 0)
+	FacilityUI.Refs.Detail.Icon.Size = UDim2.new(0.75, 0, 0.75, 0); FacilityUI.Refs.Detail.Icon.Position = UDim2.new(0.5, 0, 0.5, 0)
 	FacilityUI.Refs.Detail.Icon.AnchorPoint = Vector2.new(0.5, 0.5); FacilityUI.Refs.Detail.Icon.BackgroundTransparency = 1; FacilityUI.Refs.Detail.Icon.Parent = iconFrame
 
 	FacilityUI.Refs.Detail.Name = Utils.mkLabel({
-		text=UILocalizer.Localize("아이템 이름"), size=UDim2.new(1, -20, 0, 28), pos=UDim2.new(0.5, 0, 0, 115),
+		text=UILocalizer.Localize("아이템 이름"), size=UDim2.new(0.9, 0, 0.1, 0), pos=UDim2.new(0.5, 0, 0.35, 0),
 		anchor=Vector2.new(0.5, 0), color=C.GOLD, ts=22, font=F.TITLE, ax=Enum.TextXAlignment.Center, parent=rightPanel
 	})
 
 	-- Bag Count (inline below name: "보유: N")
 	FacilityUI.Refs.Detail.BagCount = Utils.mkLabel({
-		text="", pos=UDim2.new(0.5, 0, 0, 145), anchor=Vector2.new(0.5, 0), size=UDim2.new(1, -20, 0, 18),
+		text="", pos=UDim2.new(0.5, 0, 0.44, 0), anchor=Vector2.new(0.5, 0), size=UDim2.new(0.9, 0, 0.06, 0),
 		color=C.GRAY, ts=13, font=F.BODY, ax=Enum.TextXAlignment.Center, parent=rightPanel
 	})
 
 	FacilityUI.Refs.Detail.Time = Utils.mkLabel({
-		text=UILocalizer.Localize("맡김 제작 : 0초"), size=UDim2.new(1, -20, 0, 20), pos=UDim2.new(0.5, 0, 0, 165),
+		text=UILocalizer.Localize("맡김 제작 : 0초"), size=UDim2.new(0.9, 0, 0.06, 0), pos=UDim2.new(0.5, 0, 0.50, 0),
 		anchor=Vector2.new(0.5, 0), color=C.GRAY, ts=14, ax=Enum.TextXAlignment.Center, parent=rightPanel
 	})
 
 	-- Qty controls (anchored to bottom, responsive)
 	local qtyWrap = Utils.mkFrame({
-		name="QtyWrap", size=UDim2.new(0, 240, 0, 36), pos=UDim2.new(0.5, 0, 1, -80), anchor=Vector2.new(0.5, 1),
+		name="QtyWrap", size=UDim2.new(0.6, 0, 0.1, 0), pos=UDim2.new(0.5, 0, 0.82, 0), anchor=Vector2.new(0.5, 1),
 		bgT=1, parent=rightPanel
 	})
 	FacilityUI.Refs.Detail.QtyWrap = qtyWrap
 
 	local qtyMinus = Utils.mkBtn({
-		text="-", size=UDim2.new(0, 36, 0, 36), pos=UDim2.new(0, 0, 0, 0),
+		text="-", size=UDim2.new(0.2, 0, 1, 0), pos=UDim2.new(0, 0, 0, 0),
 		bg=C.BTN, ts=20, font=F.TITLE, parent=qtyWrap
 	})
 	FacilityUI.Refs.Detail.QtyMinus = qtyMinus

@@ -487,11 +487,17 @@ function UIManager.getSelectedSlot()
 	return selectedSlot
 end
 
-local ITEM_ICONS_FOLDER = nil
+local ICON_FOLDERS = {}
 task.spawn(function()
 	local assets = ReplicatedStorage:WaitForChild("Assets", 5)
 	if assets then
-		ITEM_ICONS_FOLDER = assets:WaitForChild("ItemIcons", 3) or assets:WaitForChild("Images", 2) or assets:WaitForChild("Icons", 2)
+		local folderNames = {"ItemIcons", "UIIcons", "Images", "Icons"}
+		for _, name in ipairs(folderNames) do
+			local f = assets:FindFirstChild(name)
+			if f then
+				table.insert(ICON_FOLDERS, f)
+			end
+		end
 	end
 	
 	-- 아이콘 폴더가 로드되면 UI를 한 번 새로고침 해줍니다. (처음에 안 보이던 아이템 렌더링 복구)
@@ -556,22 +562,23 @@ local function getItemIcon(itemId: string): string
 		end
 	end
 	
-	-- 1. 로드된 아이콘 폴더에서 검색
-	if ITEM_ICONS_FOLDER then
+	-- 1. 로드된 아이콘 폴더들에서 검색
+	for _, folder in ipairs(ICON_FOLDERS) do
 		local iconObj = nil
 		for _, candidate in ipairs(expandedCandidates) do
-			iconObj = ITEM_ICONS_FOLDER:FindFirstChild(candidate)
+			iconObj = folder:FindFirstChild(candidate)
 			if iconObj then
 				break
 			end
 		end
+		
 		if not iconObj then
 			-- Case & Underscore insensitive search
 			local targetMap = {}
 			for _, candidate in ipairs(expandedCandidates) do
 				targetMap[candidate:lower():gsub("_", "")] = true
 			end
-			for _, child in ipairs(ITEM_ICONS_FOLDER:GetChildren()) do
+			for _, child in ipairs(folder:GetChildren()) do
 				local cname = child.Name:lower():gsub("_", "")
 				if targetMap[cname] then
 					iconObj = child
@@ -692,6 +699,18 @@ end
 
 function UIManager.toggleInventory(startTab)
 	WindowManager.toggle("INV", startTab)
+end
+
+function UIManager.toggleQuest()
+	WindowManager.toggle("QUEST")
+end
+
+function UIManager._onOpenQuest()
+	QuestUI:Open()
+end
+
+function UIManager._onCloseQuest()
+	QuestUI:Close()
 end
 
 function UIManager.refreshInventory()
@@ -3086,7 +3105,7 @@ function UIManager.Init()
 			finalScale = finalScale * 1.15
 		end
 		
-		uiScale.Scale = math.clamp(finalScale, 0.7, 1.5)
+		uiScale.Scale = math.clamp(finalScale, 0.5, 2.5)
 	end
 	
 	updateScale()
@@ -3162,6 +3181,7 @@ function UIManager.Init()
 	WindowManager.register("TOTEM", UIManager._onOpenTotem, UIManager._onCloseTotem)
 	WindowManager.register("PORTAL", UIManager._onOpenPortal, UIManager._onClosePortal)
 	WindowManager.register("SKILL", UIManager._onOpenSkillTree, UIManager._onCloseSkillTree)
+	WindowManager.register("QUEST", UIManager._onOpenQuest, UIManager._onCloseQuest)
 
 	-- ★ 오픈/닫기 애니메이션용 메인 패널 프레임 등록
 	-- 오버레이 구조(INV, BUILD 등): 첫 자식 윈도우가 애니 대상
@@ -3187,6 +3207,7 @@ function UIManager.Init()
 		WindowManager.registerFrame("FACILITY", findMainPanel(FacilityUI.Refs.Frame))
 
 		WindowManager.registerFrame("SKILL", findMainPanel(SkillTreeUI.Refs.Frame))
+		WindowManager.registerFrame("QUEST", findMainPanel(QuestUI.Refs.Frame))
 
 		-- 직접 윈도우 구조 UI들 (Refs.Frame이 곧 패널)
 		WindowManager.registerFrame("TOTEM", TotemUI.Refs.Frame)

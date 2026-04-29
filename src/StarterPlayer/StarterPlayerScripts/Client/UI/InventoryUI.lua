@@ -64,20 +64,21 @@ InventoryUI.Refs = {
 function InventoryUI.Init(parent, UIManager, isMobile)
 	local isSmall = isMobile
 	-- 반응형 텍스트 크기 변수
-	local TS_TITLE = isSmall and 18 or 20
-	local TS_BODY = isSmall and 16 or 18
-	local TS_SMALL = isSmall and 14 or 16
-	local TS_DETAIL_NAME = isSmall and 20 or 24
-	local TS_DETAIL_DESC = isSmall and 14 or 16
-	local TS_DETAIL_STAT = isSmall and 15 or 17
-	local TS_BADGE = isSmall and 12 or 14
-	local TS_BTN = isSmall and 16 or 18
-	local TS_BTN_SUB = isSmall and 14 or 16
-	local TS_DUR = isSmall and 10 or 12
-	local TS_TAB = isSmall and 16 or 18
-	local TS_SLOT_COUNT = isSmall and 12 or 14
-	local TS_HOTBAR = isSmall and 11 or 13
-	local TS_HOTBAR_TAG = isSmall and 7 or 8
+	-- [Responsive] UIScale(UIManager)에 의존하므로 폰트 크기를 PC 기준으로 통일하여 완벽한 비율 유지
+	local TS_TITLE = 20
+	local TS_BODY = 18
+	local TS_SMALL = 16
+	local TS_DETAIL_NAME = 24
+	local TS_DETAIL_DESC = 16
+	local TS_DETAIL_STAT = 17
+	local TS_BADGE = 14
+	local TS_BTN = 18
+	local TS_BTN_SUB = 16
+	local TS_DUR = 12
+	local TS_TAB = 18
+	local TS_SLOT_COUNT = 14
+	local TS_HOTBAR = 13
+	local TS_HOTBAR_TAG = 8
 	
 	-- 반응형 수치 보관
 	InventoryUI._ts = {
@@ -98,15 +99,17 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	})
 	
 	-- Main Panel (Modern Sleek Panel)
+	-- Main Panel (PC 비율을 완벽하게 유지하며 전체 화면의 85% 수준으로 고정)
 	local main = Utils.mkWindow({
 		name = "Main",
-		size = UDim2.new(isSmall and 0.98 or 0.8, 0, isSmall and 0.93 or 0.85, 0),
-		maxSize = Vector2.new(1100, 850),
+		size = UDim2.new(0.85, 0, 0.88, 0),
+		maxSize = Vector2.new(1200, 900),
 		pos = UDim2.new(0.5, 0, 0.5, 0),
 		anchor = Vector2.new(0.5, 0.5),
 		bg = C.BG_PANEL,
 		bgT = T.PANEL,
 		r = 6, stroke = 1.5, strokeC = C.BORDER,
+		ratio = 1.45, -- 황금 비율 유지
 		parent = InventoryUI.Refs.Frame
 	})
 
@@ -166,8 +169,13 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	-- [Content Area]
 	local content = Utils.mkFrame({name="Content", size=UDim2.new(1, -20, 1, -(headerH + 5)), pos=UDim2.new(0, 10, 0, headerH - 5), bgT=1, parent=main})
 	
-	-- Left Side: Item Grid (반응형 - 모바일은 전체 너비)
-	local gridArea = Utils.mkFrame({name="GridArea", size=isSmall and UDim2.new(1, 0, 1, 0) or UDim2.new(1, -330, 1, 0), bgT=1, parent=content})
+	-- Item Grid (Always shared layout)
+	local gridArea = Utils.mkFrame({
+		name = "GridArea",
+		size = UDim2.new(0.68, 0, 1, 0), -- Always 68%
+		bgT = 1,
+		parent = content
+	})
 	InventoryUI.Refs.BagFrame = gridArea
 	
 	local scroll = Instance.new("ScrollingFrame")
@@ -179,12 +187,15 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	scroll.Parent = gridArea
 	
 	local grid = Instance.new("UIGridLayout")
-	local cellSize = isSmall and 70 or 75
-	grid.CellSize = UDim2.new(0, cellSize, 0, cellSize)
-	grid.CellPadding = UDim2.new(0, isSmall and 8 or 10, 0, isSmall and 8 or 10)
+	-- [Responsive Grid] Scale 기반으로 변경하여 화면 크기에 따라 슬롯 크기 자동 조절
+	grid.CellSize = UDim2.new(0.18, 0, 0.18, 0) 
+	grid.CellPadding = UDim2.new(0.015, 0, 0.015, 0)
 	grid.HorizontalAlignment = Enum.HorizontalAlignment.Left
 	grid.SortOrder = Enum.SortOrder.LayoutOrder
 	grid.Parent = scroll
+	
+	local gridRatio = Instance.new("UIAspectRatioConstraint", grid)
+	gridRatio.AspectRatio = 1
 	
 	local pad = Instance.new("UIPadding")
 	pad.PaddingTop = UDim.new(0, 10); pad.PaddingLeft = UDim.new(0, 12); pad.PaddingRight = UDim.new(0, 20)
@@ -301,12 +312,11 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 	end
 	
 	-- Right Side: Detail Panel (Responsive)
-	local detailSize = isSmall and 280 or 340
 	local detail = Utils.mkFrame({
 		name="Detail", 
-		size = isSmall and UDim2.new(1, -16, 0.82, 0) or UDim2.new(0, detailSize, 1, -16),
-		pos = isSmall and UDim2.new(0.5, 0, 0.5, 0) or UDim2.new(1, -detailSize - 12, 0, 8),
-		anchor = isSmall and Vector2.new(0.5, 0.5) or Vector2.new(0, 0),
+		size = UDim2.new(0.3, 0, 1, -10), -- Always 30%
+		pos = UDim2.new(1, -5, 0.5, 0),
+		anchor = Vector2.new(1, 0.5),
 		bg = C.BG_PANEL, bgT = 0, r = 6, stroke = 1.5, strokeC = C.BORDER,
 		vis = false,
 		z = 10,

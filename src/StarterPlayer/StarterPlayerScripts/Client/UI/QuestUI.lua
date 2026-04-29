@@ -12,8 +12,12 @@ local UIUtils = require(script.Parent.UIUtils)
 local DataHelper = require(Shared.Util.DataHelper)
 local UserInputService = game:GetService("UserInputService")
 local isMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
+local WindowManager = require(script.Parent.Parent.Utils.WindowManager)
 
 local QuestUI = {}
+QuestUI.Refs = {
+	Frame = nil,
+}
 
 --========================================
 -- State
@@ -29,8 +33,8 @@ local UIManager = nil
 --========================================
 -- Layout Constants
 --========================================
-local PANEL_SIZE = isMobile and UDim2.new(0.95, 0, 0.85, 0) or UDim2.new(0, 900, 0, 560)
-local CARD_SIZE = isMobile and UDim2.new(1, -20, 0, 120) or UDim2.new(0, 420, 0, 180)
+local PANEL_SIZE = UDim2.new(0.85, 0, 0.85, 0)
+local CARD_SIZE = UDim2.new(0.46, 0, 0.46, 0)
 
 -- 아이콘 폴더 캐시 (최초 1회 로드)
 local cachedFolders = {}
@@ -140,7 +144,7 @@ local function createQuestCard(parent, questData, index)
 	card.Parent = parent
 	
 	local corner = Instance.new("UICorner", card)
-	corner.CornerRadius = UDim.new(0, 8)
+	corner.CornerRadius = UDim.new(0.05, 0)
 	
 	local stroke = Instance.new("UIStroke", card)
 	stroke.Thickness = 1.2
@@ -165,8 +169,8 @@ local function createQuestCard(parent, questData, index)
 
 	-- 제목 (좌측 상단)
 	local title = Instance.new("TextLabel")
-	title.Size = UDim2.new(1, -20, 0, 30)
-	title.Position = UDim2.new(0, 15, 0, 15)
+	title.Size = UDim2.new(0.85, 0, 0.2, 0)
+	title.Position = UDim2.new(0.05, 0, 0.08, 0)
 	title.BackgroundTransparency = 1
 	title.Text = questData.title or "퀘스트 제목"
 	title.TextColor3 = UITheme.Colors.WHITE
@@ -177,8 +181,8 @@ local function createQuestCard(parent, questData, index)
 
 	-- 설명
 	local desc = Instance.new("TextLabel")
-	desc.Size = UDim2.new(1, -30, 0, 60)
-	desc.Position = UDim2.new(0, 15, 0, 45)
+	desc.Size = UDim2.new(0.85, 0, 0.4, 0)
+	desc.Position = UDim2.new(0.05, 0, 0.3, 0)
 	desc.BackgroundTransparency = 1
 	desc.Text = questData.desc or ""
 	desc.TextColor3 = UITheme.Colors.INK
@@ -194,27 +198,31 @@ local function createQuestCard(parent, questData, index)
 	if targetId then
 		local iconImg = Instance.new("ImageLabel")
 		iconImg.Name = "TargetIcon"
-		iconImg.Size = isMobile and UDim2.new(0, 50, 0, 50) or UDim2.new(0, 64, 0, 64)
-		iconImg.Position = UDim2.new(1, -15, 0.5, 0)
+		iconImg.Size = UDim2.fromScale(0.35, 0.35)
+		iconImg.Position = UDim2.new(0.95, 0, 0.5, 0)
 		iconImg.AnchorPoint = Vector2.new(1, 0.5)
 		iconImg.BackgroundTransparency = 1
 		iconImg.Image = getIcon(targetId, questData)
 		iconImg.Parent = card
 		
+		local iRatio = Instance.new("UIAspectRatioConstraint", iconImg)
+		iRatio.AspectRatio = 1
+
 		-- 텍스트 영역 조정 (아이콘 공간 확보)
-		title.Size = UDim2.new(1, -85, 0, 30)
-		desc.Size = UDim2.new(1, -85, 0, 60)
+		title.Size = UDim2.new(0.65, 0, 0.2, 0)
+		desc.Size = UDim2.new(0.65, 0, 0.4, 0)
 	end
 
 	-- 보상 정보 (하단)
 	local rewardLabel = Instance.new("TextLabel")
-	rewardLabel.Size = UDim2.new(1, -20, 0, 24)
-	rewardLabel.Position = UDim2.new(0, 15, 1, -30)
+	rewardLabel.Size = UDim2.new(0.9, 0, 0.15, 0)
+	rewardLabel.Position = UDim2.new(0.05, 0, 0.92, 0)
+	rewardLabel.AnchorPoint = Vector2.new(0, 1)
 	rewardLabel.BackgroundTransparency = 1
 	rewardLabel.Text = string.format("보상: %d 골드", questData.rewardGold or 0)
 	rewardLabel.TextColor3 = UITheme.Colors.GOLD
 	rewardLabel.Font = UITheme.Fonts.NORMAL
-	rewardLabel.TextSize = isMobile and 12 or 14
+	rewardLabel.TextSize = 14
 	rewardLabel.TextXAlignment = Enum.TextXAlignment.Left
 	rewardLabel.Parent = card
 
@@ -291,6 +299,7 @@ function QuestUI:Open(npcModel)
 	mainOverlay.BackgroundTransparency = 1
 	mainOverlay.Active = true
 	mainOverlay.Parent = playerGui:WaitForChild("GameUI")
+	QuestUI.Refs.Frame = mainOverlay
 	
 	TweenService:Create(mainOverlay, TweenInfo.new(0.3), {BackgroundTransparency = 0.4}):Play()
 
@@ -306,6 +315,10 @@ function QuestUI:Open(npcModel)
 	local pStroke = Instance.new("UIStroke", panel)
 	pStroke.Color = UITheme.Colors.BORDER
 	pStroke.Thickness = 1.5
+
+	local ratio = Instance.new("UIAspectRatioConstraint")
+	ratio.AspectRatio = 1.6
+	ratio.Parent = panel
 
 	-- 상단 헤더
 	local header = Instance.new("TextLabel")
@@ -329,7 +342,9 @@ function QuestUI:Open(npcModel)
 	closeX.Font = UITheme.Fonts.TITLE
 	closeX.TextSize = 24
 	closeX.Parent = panel
-	closeX.MouseButton1Click:Connect(function() QuestUI:Close() end)
+	closeX.MouseButton1Click:Connect(function() 
+		WindowManager.close("QUEST") 
+	end)
 
 	-- [Admin] 탭 바
 	local tabBar = Instance.new("Frame")
@@ -371,34 +386,19 @@ function QuestUI:Open(npcModel)
 	gridContainer.CanvasSize = UDim2.new(0, 0, 0, 0) -- 자동 조절
 	gridContainer.Parent = panel
 	
-	local uiList = Instance.new("UIListLayout", gridContainer)
-	uiList.SortOrder = Enum.SortOrder.LayoutOrder
-	uiList.Padding = UDim.new(0, 10)
-	if not isMobile then
-		-- PC에서는 그리드 레이아웃 유지 (수동 구성)
-		gridContainer:ClearAllChildren()
-		local uigrid = Instance.new("UIGridLayout", gridContainer)
-		uigrid.CellSize = CARD_SIZE
-		uigrid.CellPadding = UDim2.new(0, 15, 0, 15)
-		uigrid.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	end
+	local uigrid = Instance.new("UIGridLayout", gridContainer)
+	uigrid.CellSize = CARD_SIZE
+	uigrid.CellPadding = UDim2.new(0, 15, 0, 15)
+	uigrid.HorizontalAlignment = Enum.HorizontalAlignment.Center
 
 	function QuestUI:UpdateDisplay(tier, adminMode, done)
 		gridContainer:ClearAllChildren()
 		
-		-- 레이아웃 설정 (한 번만 수행하거나 ClearAllChildren 이후 재생성)
-		if isMobile then
-			local uiList = Instance.new("UIListLayout")
-			uiList.Padding = UDim.new(0, 10)
-			uiList.HorizontalAlignment = Enum.HorizontalAlignment.Center
-			uiList.Parent = gridContainer
-		else
-			local uigrid = Instance.new("UIGridLayout")
-			uigrid.CellSize = CARD_SIZE
-			uigrid.CellPadding = UDim2.new(0, 15, 0, 15)
-			uigrid.HorizontalAlignment = Enum.HorizontalAlignment.Center
-			uigrid.Parent = gridContainer
-		end
+		local uigrid = Instance.new("UIGridLayout")
+		uigrid.CellSize = CARD_SIZE
+		uigrid.CellPadding = UDim2.new(0, 15, 0, 15)
+		uigrid.HorizontalAlignment = Enum.HorizontalAlignment.Center
+		uigrid.Parent = gridContainer
 
 		for i = 1, 4 do
 			local qData = questPool[i] or { kind = "NONE", desc = "아직 준비된 임무가 없습니다." }
@@ -483,6 +483,19 @@ function QuestUI:Close()
 	if mainOverlay then
 		mainOverlay:Destroy()
 		mainOverlay = nil
+		QuestUI.Refs.Frame = nil
+	end
+end
+
+function QuestUI:IsOpen()
+	return isOpen
+end
+
+function QuestUI:Toggle()
+	if isOpen then
+		self:Close()
+	else
+		self:Open()
 	end
 end
 

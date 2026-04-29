@@ -243,7 +243,7 @@ function PortalRadialUI:Open(portalData)
 	billboardGui.ResetOnSpawn = false
 	billboardGui.Active = true
 	billboardGui.Adornee = adornee
-	billboardGui.Parent = player.PlayerGui
+	billboardGui.Parent = player.PlayerGui:WaitForChild("GameUI")
 
 	local container = Instance.new("Frame")
 	container.Size = UDim2.fromScale(1, 1)

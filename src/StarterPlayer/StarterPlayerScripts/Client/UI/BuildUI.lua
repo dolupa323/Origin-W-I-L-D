@@ -49,8 +49,8 @@ function BuildUI.Init(parent, UIManager, isMobile)
 	-- 2. Main Window (Translucent Concept)
 	local main = Utils.mkWindow({
 		name = "BuildWindow",
-		size = UDim2.new(isSmall and 1 or 0.7, 0, isSmall and 1 or 0.85, 0),
-		maxSize = Vector2.new(950, 850),
+		size = UDim2.new(0.85, 0, 0.88, 0), -- Proportional scale
+		maxSize = Vector2.new(1200, 950),
 		pos = UDim2.new(0.5, 0, 0.5, 0),
 		anchor = Vector2.new(0.5, 0.5),
 		bg = C.BG_PANEL,
@@ -58,6 +58,7 @@ function BuildUI.Init(parent, UIManager, isMobile)
 		r = 6,
 		stroke = 1.5,
 		strokeC = C.BORDER,
+		ratio = 1.45, -- Blueprint standard ratio
 		parent = BuildUI.Refs.Frame
 	})
 	
@@ -105,41 +106,47 @@ function BuildUI.Init(parent, UIManager, isMobile)
 	-- 4. Right Side: Detail Panel
 	local detailScale = 0.35
 	local detail = Utils.mkFrame({
-		name="Detail", size=UDim2.new(detailScale, -4, 1, -8),
-		pos=UDim2.new(1 - detailScale, 0, 0, 4),
+		name="Detail", 
+		size=UDim2.new(detailScale, 0, 1, 0),
+		pos=UDim2.new(1, 0, 0.5, 0),
+		anchor=Vector2.new(1, 0.5),
 		bg=C.BG_PANEL, bgT=T.PANEL, r=6, stroke=false,
 		parent=content
 	})
 	BuildUI.Refs.DetailFrame = detail
 	
 	local dtHead = Utils.mkLabel({
-		text=UILocalizer.Localize("설계도 상세"), size=UDim2.new(1,0,0,40),
+		text=UILocalizer.Localize("설계도 상세"), size=UDim2.new(1,0,0.1,0),
 		bg=C.BG_DARK, bgT=0.3, color=C.GOLD, ts=16, font=F.TITLE,
 		parent=detail
 	})
 	
 	BuildUI.Refs.Detail.Name = Utils.mkLabel({
-		text=UILocalizer.Localize("시설을 선택하세요"), size=UDim2.new(1,-30,0,40), pos=UDim2.new(0,15,0,50),
+		text=UILocalizer.Localize("시설을 선택하세요"), size=UDim2.new(0.9,0,0.1,0), pos=UDim2.new(0.05,0,0.12,0),
 		color=C.WHITE, ts=22, font=F.TITLE, ax=Enum.TextXAlignment.Left, parent=detail
 	})
 	
 	BuildUI.Refs.Detail.Icon = Instance.new("ImageLabel")
-	BuildUI.Refs.Detail.Icon.Size = UDim2.new(0, 90, 0, 90); BuildUI.Refs.Detail.Icon.Position = UDim2.new(0,15,0,95)
+	BuildUI.Refs.Detail.Icon.Size = UDim2.new(0.28, 0, 0.28, 0)
+	BuildUI.Refs.Detail.Icon.Position = UDim2.new(0.05,0,0.24,0)
 	BuildUI.Refs.Detail.Icon.BackgroundTransparency = 1; BuildUI.Refs.Detail.Icon.Visible = false; BuildUI.Refs.Detail.Icon.Parent = detail
 	
+	local iconRatio = Instance.new("UIAspectRatioConstraint", BuildUI.Refs.Detail.Icon)
+	iconRatio.AspectRatio = 1
+
 	BuildUI.Refs.Detail.Desc = Utils.mkLabel({
-		text="", size=UDim2.new(1,-120,0,100), pos=UDim2.new(0,115,0,95),
+		text="", size=UDim2.new(0.6,0,0.28,0), pos=UDim2.new(0.35,0,0.24,0),
 		color=C.GRAY, ts=16, wrap=true,
 		ax=Enum.TextXAlignment.Left, ay=Enum.TextYAlignment.Top, parent=detail
 	})
 	
 	BuildUI.Refs.Detail.Mats = Utils.mkLabel({
-		text="", size=UDim2.new(1,-30,1,-310), pos=UDim2.new(0,15,0,240),
+		text="", size=UDim2.new(0.9,0,0.3,0), pos=UDim2.new(0.05,0,0.54,0),
 		ts=16, color=C.GOLD, ax=Enum.TextXAlignment.Left, ay=Enum.TextYAlignment.Top, wrap=true, rich=true, parent=detail
 	})
 	
 	local buildBtn = Utils.mkBtn({
-		text=UILocalizer.Localize("건설 하기"), size=UDim2.new(1,-30,0,50), pos=UDim2.new(0.5,0,1,-15), anchor=Vector2.new(0.5,1),
+		text=UILocalizer.Localize("건설 하기"), size=UDim2.new(0.9,0,0.1,0), pos=UDim2.new(0.5,0,0.96,0), anchor=Vector2.new(0.5,1),
 		bg=C.GOLD, r=5, ts=20, font=F.TITLE, color=C.BG_DARK, vis=false, parent=detail
 	})
 	BuildUI.Refs.Detail.Btn = buildBtn
@@ -161,10 +168,13 @@ function BuildUI.Init(parent, UIManager, isMobile)
 	scroll.Parent = gridArea
 	
 	local grid = Instance.new("UIGridLayout")
-	grid.CellSize = UDim2.new(0, 85, 0, 85)
-	grid.CellPadding = UDim2.new(0, 10, 0, 10)
+	grid.CellSize = UDim2.new(0.18, 0, 0.18, 0)
+	grid.CellPadding = UDim2.new(0.02, 0, 0.02, 0)
 	grid.SortOrder = Enum.SortOrder.LayoutOrder
 	grid.Parent = scroll
+	
+	local gridRatio = Instance.new("UIAspectRatioConstraint", grid)
+	gridRatio.AspectRatio = 1
 	
 	local pad = Instance.new("UIPadding")
 	pad.PaddingTop = UDim.new(0, 10); pad.PaddingLeft = UDim.new(0, 10); pad.PaddingRight = UDim.new(0, 20)
