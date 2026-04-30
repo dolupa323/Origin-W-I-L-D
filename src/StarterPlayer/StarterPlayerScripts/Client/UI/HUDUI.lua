@@ -693,18 +693,7 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 		{id="Jump", icon="rbxassetid://6034335017", pos=UDim2.new(1, -135 * hScale, 0.5, 95), size=65 * hScale}, -- 점프 (왼쪽 아래)
 	}
 	
-	-- Interact button separated (higher, above hotbar or near interaction area)
-	local interactBtn = Utils.mkHexBtn({
-		name = "Interact",
-		size = UDim2.new(0, 75 * hScale, 0, 75 * hScale),
-		pos = UDim2.new(1, -180 * hScale, 0.5, -20),
-		anchor = Vector2.new(0.5, 0.5),
-		stroke = true,
-		parent = actionArea
-	})
-	local intIcon = Instance.new("ImageLabel")
-	intIcon.Size = UDim2.new(0.55, 0, 0.55, 0); intIcon.Position = UDim2.new(0.5, 0, 0.5, 0); intIcon.AnchorPoint = Vector2.new(0.5, 0.5); intIcon.BackgroundTransparency = 1; intIcon.Image = "rbxassetid://6034805332"; intIcon.Parent = interactBtn
-	HUDUI.Refs.hex_Interact = interactBtn
+	HUDUI.Refs.hex_Interact = nil
 	
 	for _, hb in ipairs(hexBtns) do
 		local btn = Utils.mkHexBtn({
@@ -895,15 +884,6 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 	HUDUI.Refs.dayNightMoon = moonMarker
 	HUDUI.Refs.phaseLabel = phaseLabel
 	
-	-- Action 버튼 클릭 연동 (모바일/클릭 지원)
-	HUDUI.Refs.hex_Interact.MouseButton1Click:Connect(function()
-		local IC = require(Controllers.InteractController)
-		if IC.onFacilityInteractPress then
-			IC.onFacilityInteractPress()
-		elseif IC.onInteractPress then
-			IC.onInteractPress()
-		end
-	end)
 	HUDUI.Refs.hex_Attack.MouseButton1Click:Connect(function() local CC = require(Controllers.CombatController); if CC.attack then CC.attack() end end)
 
 	-- Dodge & Jump (Mobile Bindings)

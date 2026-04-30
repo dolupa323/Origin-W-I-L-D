@@ -44,6 +44,8 @@ local CAPTURE_KEY = "G"
 local CAPTURE_SCAN_RANGE = Balance and Balance.CAPTURE_RANGE or 30
 local CAPTURE_DISABLED_TRANSPARENCY = 0.7
 local CAPTURE_ACTIVE_COLOR = Color3.fromRGB(255, 200, 40) -- 활성화 시 보더 색 (노란색)
+local INTERACT_DISABLED_TRANSPARENCY = 0.5
+local INTERACT_ACTIVE_COLOR = Color3.fromRGB(255, 255, 255)
 
 -- 3-bar 합성 6각형 상수 (Pointy-Topped 형태로 수정)
 local HEX_BAR_ROTATIONS = { 0, 60, 120 }
@@ -57,6 +59,7 @@ local barFrame
 local slotRefs = {}
 local updateConnection
 local captureRef = nil  -- 포획 버튼 참조
+local interactRef = nil -- 상호작용 버튼 참조
 local captureTarget = nil -- 현재 포획 가능한 크리처 모델
 local captureBlinkTweens = {} -- 깜빡임 트윈 참조
 local NetClient = require(Client.NetClient)
@@ -371,6 +374,97 @@ local function createBar(parent)
 			active = false,
 		}
 	end
+
+	--========================================
+	-- 상호작용 버튼 (포획 버튼 좌측)
+	--========================================
+	do
+		local intX = cx - 4 * dx
+		local intY = cy + 0.5 * dy
+
+		local intFrame = Instance.new("TextButton")
+		intFrame.Name = "InteractButton"
+		intFrame.Size = UDim2.new(0, HEX_SIZE, 0, HEX_SIZE)
+		intFrame.Position = UDim2.new(0, intX, 0, intY)
+		intFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+		intFrame.BackgroundTransparency = 1
+		intFrame.Text = ""
+		intFrame.AutoButtonColor = false
+		intFrame.ZIndex = 0
+		intFrame.Parent = barFrame
+
+		-- [층1] 보더
+		local intStrokeBars = _createHexShape(intFrame, HEX_SIZE, C.BORDER_DIM, 0, 1, 0)
+
+		-- [층1.5] 틈 채움
+		do
+			local p = 3
+			local bw = HEX_SIZE * HEX_BAR_W_RATIO - p * 2
+			local bh = HEX_SIZE * HEX_BAR_H_RATIO - p
+			for _, rot in ipairs(HEX_BAR_ROTATIONS) do
+				local bar = Instance.new("Frame")
+				bar.Size = UDim2.new(0, bw, 0, bh)
+				bar.Position = UDim2.fromScale(0.5, 0.5)
+				bar.AnchorPoint = Vector2.new(0.5, 0.5)
+				bar.Rotation = rot
+				bar.BackgroundColor3 = C.BG_PANEL
+				bar.BackgroundTransparency = 0
+				bar.BorderSizePixel = 0
+				bar.ZIndex = 1
+				bar.Parent = intFrame
+			end
+		end
+
+		-- [층2] 배경
+		local intBgBars = _createHexShape(intFrame, HEX_SIZE, C.BG_PANEL, 0, 2, 3)
+
+		-- [층3] 아이콘 (HUD_ACTION_INTERACT)
+		local intIcon = Instance.new("ImageLabel")
+		intIcon.Name = "Icon"
+		intIcon.Size = UDim2.new(0.55, 0, 0.55, 0)
+		intIcon.Position = UDim2.new(0.5, 0, 0.5, 0)
+		intIcon.AnchorPoint = Vector2.new(0.5, 0.5)
+		intIcon.BackgroundTransparency = 1
+		intIcon.ScaleType = Enum.ScaleType.Fit
+		intIcon.ZIndex = 3
+		intIcon.Parent = intFrame
+		local intImg = _getIconImage("HUD_ACTION_INTERACT")
+		intIcon.Image = intImg or ""
+
+		-- [층6] 키 라벨
+		local intKeyLabel = Utils.mkLabel({
+			name = "KeyLabel",
+			size = UDim2.new(0, 24, 0, 24),
+			pos = UDim2.new(0.15, 0, 0.12, 0),
+			text = "R",
+			ts = isMobile and 15 or 13,
+			font = F.TITLE,
+			color = C.WHITE,
+			st = 0,
+			ax = Enum.TextXAlignment.Left,
+			ay = Enum.TextYAlignment.Top,
+			z = 6,
+			parent = intFrame,
+		})
+		if isMobile then intKeyLabel.Visible = false end
+
+		-- 클릭 이벤트
+		intFrame.MouseButton1Click:Connect(function()
+			local IC = require(Controllers.InteractController)
+			if IC.onFacilityInteractPress then
+				IC.onFacilityInteractPress()
+			end
+		end)
+
+		interactRef = {
+			frame = intFrame,
+			icon = intIcon,
+			strokeBars = intStrokeBars,
+			bgBars = intBgBars,
+			keyLabel = intKeyLabel,
+			active = false,
+		}
+	end
 end
 
 --========================================
@@ -474,6 +568,25 @@ local function _updateCaptureButton()
 		captureBlinkTweens = {}
 		_setHexBarsColor(captureRef.strokeBars, C.BORDER_DIM)
 		_setHexBarsTransparency(captureRef.bgBars, 0.3)
+	end
+end
+
+local function _updateInteractButton()
+	if not interactRef then return end
+	
+	local IC = require(Controllers.InteractController)
+	local hasTarget = IC.currentTarget ~= nil
+
+	if hasTarget then
+		interactRef.active = true
+		interactRef.icon.ImageTransparency = 0
+		_setHexBarsTransparency(interactRef.bgBars, 0)
+		_setHexBarsColor(interactRef.strokeBars, INTERACT_ACTIVE_COLOR)
+	else
+		interactRef.active = false
+		interactRef.icon.ImageTransparency = INTERACT_DISABLED_TRANSPARENCY
+		_setHexBarsTransparency(interactRef.bgBars, 0.3)
+		_setHexBarsColor(interactRef.strokeBars, C.BORDER_DIM)
 	end
 end
 
@@ -607,11 +720,13 @@ function ActiveSkillBarUI.Init(parent)
 		if gameProcessed then return end
 		if input.KeyCode == Enum.KeyCode.G then
 			ActiveSkillBarUI._tryCapture()
+		elseif input.KeyCode == Enum.KeyCode.R then
+			-- R키 입력 시 버튼 눌림 효과 (선택사항)
 		end
 	end)
 
-	-- 포획 버튼 상태 업데이트 (0.2초 간격)
-	local lastCaptureScan = 0
+	-- 버튼 상태 업데이트 (0.1초 간격)
+	local lastScan = 0
 
 	updateConnection = RunService.Heartbeat:Connect(function()
 		local slots = SkillController.getActiveSkillSlots()
@@ -645,11 +760,12 @@ function ActiveSkillBarUI.Init(parent)
 			end
 		end
 
-		-- ★ 포획 버튼 상태 업데이트 (0.2초 간격으로 부하 절감)
+		-- ★ 버튼 상태 업데이트 (0.1초 간격으로 부하 절감)
 		local now = tick()
-		if now - lastCaptureScan >= 0.2 then
-			lastCaptureScan = now
+		if now - lastScan >= 0.1 then
+			lastScan = now
 			_updateCaptureButton()
+			_updateInteractButton()
 		end
 	end)
 
