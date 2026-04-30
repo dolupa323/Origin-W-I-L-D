@@ -164,14 +164,14 @@ function TotemUI.Init(parent, UIManager, isMobile)
 
 	local window = Utils.mkWindow({
 		name = "TotemWindow",
-		size = UDim2.new(0.35, 0, 0.65, 0), -- Scale relative to screen
+		size = isMobile and UDim2.new(0.75, 0, 0.8, 0) or UDim2.new(0.35, 0, 0.75, 0),
 		pos = UDim2.new(0.5, 0, 0.5, 0),
 		anchor = Vector2.new(0.5, 0.5),
 		bg = C.BG_PANEL,
 		bgT = 0.25,
 		stroke = 1,
 		strokeC = C.BORDER,
-		ratio = 0.84, -- Totem is usually vertical
+		ratio = 0.8, -- Totem is vertical
 		vis = false,
 		parent = parent,
 	})
@@ -180,10 +180,10 @@ function TotemUI.Init(parent, UIManager, isMobile)
 	local title = Utils.mkLabel({
 		name = "Title",
 		text = "거점 토템",
-		size = UDim2.new(0.8, 0, 0.1, 0),
+		size = UDim2.new(0.8, 0, 0.08, 0),
 		pos = UDim2.new(0.05, 0, 0.02, 0),
 		font = F.TITLE,
-		ts = 24,
+		ts = isMobile and 20 or 24,
 		color = C.WHITE,
 		ax = Enum.TextXAlignment.Left,
 		parent = window,
@@ -193,7 +193,7 @@ function TotemUI.Init(parent, UIManager, isMobile)
 	Utils.mkBtn({
 		name = "CloseBtn",
 		text = "X",
-		size = UDim2.new(0.12, 0, 0.08, 0),
+		size = UDim2.new(0.12, 0, 0.07, 0),
 		pos = UDim2.new(0.96, 0, 0.02, 0),
 		anchor = Vector2.new(1, 0),
 		bg = C.BG_SLOT,
@@ -204,11 +204,15 @@ function TotemUI.Init(parent, UIManager, isMobile)
 		parent = window,
 	})
 
+	-- Info Group (Y: 0.11 ~ 0.45)
+	local infoY = 0.11
+	local infoGap = 0.055
+
 	TotemUI.Refs.Status = Utils.mkLabel({
 		text = "보호 상태: 확인 중",
-		size = UDim2.new(0.9, 0, 0.06, 0),
-		pos = UDim2.new(0.05, 0, 0.14, 0),
-		ts = 16,
+		size = UDim2.new(0.9, 0, 0.05, 0),
+		pos = UDim2.new(0.05, 0, infoY, 0),
+		ts = 15,
 		color = C.WHITE,
 		ax = Enum.TextXAlignment.Left,
 		parent = window,
@@ -216,9 +220,9 @@ function TotemUI.Init(parent, UIManager, isMobile)
 
 	TotemUI.Refs.Remaining = Utils.mkLabel({
 		text = "효과 유지 기간: --",
-		size = UDim2.new(0.9, 0, 0.06, 0),
-		pos = UDim2.new(0.05, 0, 0.20, 0),
-		ts = 16,
+		size = UDim2.new(0.9, 0, 0.05, 0),
+		pos = UDim2.new(0.05, 0, infoY + infoGap, 0),
+		ts = 15,
 		color = C.WHITE,
 		ax = Enum.TextXAlignment.Left,
 		parent = window,
@@ -226,9 +230,9 @@ function TotemUI.Init(parent, UIManager, isMobile)
 
 	TotemUI.Refs.Radius = Utils.mkLabel({
 		text = "보호 범위: -- x --",
-		size = UDim2.new(0.9, 0, 0.06, 0),
-		pos = UDim2.new(0.05, 0, 0.26, 0),
-		ts = 16,
+		size = UDim2.new(0.9, 0, 0.05, 0),
+		pos = UDim2.new(0.05, 0, infoY + infoGap*2, 0),
+		ts = 15,
 		color = C.WHITE,
 		ax = Enum.TextXAlignment.Left,
 		parent = window,
@@ -236,9 +240,9 @@ function TotemUI.Init(parent, UIManager, isMobile)
 
 	TotemUI.Refs.Gold = Utils.mkLabel({
 		text = "보유 골드: --",
-		size = UDim2.new(0.9, 0, 0.06, 0),
-		pos = UDim2.new(0.05, 0, 0.32, 0),
-		ts = 16,
+		size = UDim2.new(0.9, 0, 0.05, 0),
+		pos = UDim2.new(0.05, 0, infoY + infoGap*3, 0),
+		ts = 15,
 		color = C.GOLD,
 		ax = Enum.TextXAlignment.Left,
 		parent = window,
@@ -246,18 +250,18 @@ function TotemUI.Init(parent, UIManager, isMobile)
 
 	TotemUI.Refs.ExpandInfo = Utils.mkLabel({
 		text = "확장 정보: 확인 중",
-		size = UDim2.new(0.9, 0, 0.1, 0),
-		pos = UDim2.new(0.05, 0, 0.38, 0),
-		ts = 15,
+		size = UDim2.new(0.9, 0, 0.08, 0),
+		pos = UDim2.new(0.05, 0, infoY + infoGap*4 + 0.01, 0),
+		ts = 14,
 		color = C.WHITE,
 		ax = Enum.TextXAlignment.Left,
 		parent = window,
 	})
-
+	-- Raid Warning (Y: 0.46)
 	local warningFrame = Utils.mkFrame({
 		name = "RaidWarning",
-		size = UDim2.new(0.9, 0, 0.1, 0),
-		pos = UDim2.new(0.05, 0, 0.48, 0),
+		size = UDim2.new(0.9, 0, 0.08, 0),
+		pos = UDim2.new(0.05, 0, 0.46, 0),
 		bg = Color3.fromRGB(100, 25, 28),
 		bgT = 0.2,
 		stroke = 1,
@@ -272,7 +276,7 @@ function TotemUI.Init(parent, UIManager, isMobile)
 		size = UDim2.new(0, 30, 1, 0),
 		pos = UDim2.new(0, 8, 0, 0),
 		font = F.TITLE,
-		ts = 24,
+		ts = 20,
 		color = C.GOLD,
 		ax = Enum.TextXAlignment.Center,
 		parent = warningFrame,
@@ -282,19 +286,23 @@ function TotemUI.Init(parent, UIManager, isMobile)
 		text = "유지비 만료: 현재 약탈 가능 상태",
 		size = UDim2.new(1, -44, 1, 0),
 		pos = UDim2.new(0, 38, 0, 0),
-		ts = 15,
+		ts = 14,
 		color = Color3.fromRGB(220, 215, 210),
 		ax = Enum.TextXAlignment.Left,
 		parent = warningFrame,
 	})
 
+	-- Action Buttons (Y: 0.58)
+	local btnH = 0.075
+	local btnY = 0.58
+
 	Utils.mkBtn({
 		text = "영역 확인",
-		size = UDim2.new(0.44, 0, 0.08, 0),
-		pos = UDim2.new(0.05, 0, 0.62, 0),
+		size = UDim2.new(0.44, 0, btnH, 0),
+		pos = UDim2.new(0.05, 0, btnY, 0),
 		bg = Color3.fromRGB(50, 90, 155),
 		font = F.TITLE,
-		ts = 16,
+		ts = 15,
 		fn = function()
 			if currentUIManager and currentUIManager.highlightTotemZone then
 				currentUIManager.highlightTotemZone()
@@ -305,11 +313,11 @@ function TotemUI.Init(parent, UIManager, isMobile)
 
 	Utils.mkBtn({
 		text = "새로고침",
-		size = UDim2.new(0.44, 0, 0.08, 0),
-		pos = UDim2.new(0.51, 0, 0.62, 0),
+		size = UDim2.new(0.44, 0, btnH, 0),
+		pos = UDim2.new(0.51, 0, btnY, 0),
 		bg = C.BG_SLOT,
 		font = F.TITLE,
-		ts = 16,
+		ts = 15,
 		fn = function()
 			if currentUIManager and currentUIManager.refreshTotem then
 				currentUIManager.refreshTotem()
@@ -320,11 +328,11 @@ function TotemUI.Init(parent, UIManager, isMobile)
 
 	TotemUI.Refs.ExpandToggle = Utils.mkBtn({
 		text = "영토 확장",
-		size = UDim2.new(0.9, 0, 0.08, 0),
-		pos = UDim2.new(0.05, 0, 0.74, 0),
+		size = UDim2.new(0.9, 0, btnH, 0),
+		pos = UDim2.new(0.05, 0, btnY + btnH + 0.02, 0),
 		bg = Color3.fromRGB(90, 120, 165),
 		font = F.TITLE,
-		ts = 16,
+		ts = 15,
 		fn = function()
 			setExpandSelectionVisible(not expandSelectionVisible)
 		end,
@@ -421,14 +429,18 @@ function TotemUI.Init(parent, UIManager, isMobile)
 		parent = expandCards,
 	})
 
+	-- Upkeep Buttons (Y: 0.76 ~ 0.98)
+	local costH = 0.07
+	local costY = 0.76
+
 	TotemUI.Refs.Cost1 = Utils.mkBtn({
 		text = "1일 유지 ~ 100 Gold",
-		size = UDim2.new(0.9, 0, 0.08, 0),
-		pos = UDim2.new(0.05, 0, 0.84, 0),
+		size = UDim2.new(0.9, 0, costH, 0),
+		pos = UDim2.new(0.05, 0, costY, 0),
 		bg = C.GOLD,
 		color = C.BG_DARK,
 		font = F.TITLE,
-		ts = 17,
+		ts = 15,
 		fn = function()
 			if currentUIManager and currentUIManager.requestTotemPay then
 				currentUIManager.requestTotemPay(1)
@@ -439,12 +451,12 @@ function TotemUI.Init(parent, UIManager, isMobile)
 
 	TotemUI.Refs.Cost3 = Utils.mkBtn({
 		text = "3일 유지 ~ 280 Gold",
-		size = UDim2.new(0.9, 0, 0.08, 0),
-		pos = UDim2.new(0.05, 0, 0.93, 0),
+		size = UDim2.new(0.9, 0, costH, 0),
+		pos = UDim2.new(0.05, 0, costY + costH + 0.01, 0),
 		bg = C.GOLD,
 		color = C.BG_DARK,
 		font = F.TITLE,
-		ts = 17,
+		ts = 15,
 		fn = function()
 			if currentUIManager and currentUIManager.requestTotemPay then
 				currentUIManager.requestTotemPay(3)
@@ -455,12 +467,12 @@ function TotemUI.Init(parent, UIManager, isMobile)
 
 	TotemUI.Refs.Cost7 = Utils.mkBtn({
 		text = "7일 유지 ~ 630 Gold",
-		size = UDim2.new(1, -32, 0, 44),
-		pos = UDim2.new(0, 16, 0, 494),
+		size = UDim2.new(0.9, 0, costH, 0),
+		pos = UDim2.new(0.05, 0, costY + (costH + 0.01) * 2, 0),
 		bg = C.GOLD,
 		color = C.BG_DARK,
 		font = F.TITLE,
-		ts = 17,
+		ts = 15,
 		fn = function()
 			if currentUIManager and currentUIManager.requestTotemPay then
 				currentUIManager.requestTotemPay(7)

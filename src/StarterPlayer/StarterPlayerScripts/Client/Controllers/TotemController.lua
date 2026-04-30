@@ -1,5 +1,5 @@
 -- TotemController.lua
--- 거점 토템 상호작용/유지비/범위 프리뷰 제어
+-- Totem interaction / Upkeep / Zone preview control
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -17,22 +17,26 @@ local TotemController = {}
 local initialized = false
 local currentStructureId = nil
 local infoCache = {} -- [structureId] = {data, fetchedAt}
-local previewFolder = nil     -- 울타리 세그먼트 폴더
-local fenceSegments = {}      -- 복제된 울타리 세그먼트 배열
-local fenceTemplate = nil     -- 울타리 모델 원본 (ReplicatedStorage)
-local fenceSegmentWidth = 4   -- 기본값, 실제 모델에서 자동 측정
-local fencePivotOffsetY = 0   -- 피벗~바닥 오프셋
-local prevSegmentCount = 0    -- 세그먼트 수 변경 감지용
+
+-- Structures for multiple zone previews
+-- [zoneId] = { folder, segments, prevCount, lastRenderedAt }
+-- zoneId: "OWN", "STARTER", structureId (for others)
+local activePreviews = {}
+
+local fenceTemplate = nil     -- Original fence model
+local fenceSegmentWidth = 4   -- Measured from model
+local fencePivotOffsetY = 0   -- Pivot to floor offset
 local previewConn = nil
 local ownInfoCache = nil
 local ownInfoFetchedAt = 0
 local ownInfoRequestPending = false
-local isTeleporting = false -- 텔레포트 중 네트워크 요청 중단 플래그
+local isTeleporting = false -- Network request stop flag during teleport
+local _portalCache = {}      -- Portal object cache for preview
 
--- 사유지 진입 알림 상태
-local currentTerritoryOwnerId = nil  -- 현재 위치한 사유지 주인
+-- Territory entry notification state
+local currentTerritoryOwnerId = nil  -- Owner of territory player is currently in
 local territoryNotifyCooldown = {}   -- [ownerId] = lastNotifiedAt
-local TERRITORY_NOTIFY_COOLDOWN = 120 -- 같은 사유지 재알림 대기(초)
+local TERRITORY_NOTIFY_COOLDOWN = 120 -- Cooldown for same territory notification (sec)
 local playerNameCache = {}            -- [userId] = displayName
 
 local PREVIEW_REFRESH_INTERVAL = 0.35
@@ -43,7 +47,15 @@ local PREVIEW_COLOR_INACTIVE = Color3.fromRGB(240, 180, 100)
 local OWN_PREVIEW_COLOR_ACTIVE = Color3.fromRGB(255, 195, 110)
 local OWN_PREVIEW_COLOR_INACTIVE = Color3.fromRGB(235, 175, 95)
 local STARTER_PREVIEW_COLOR = Color3.fromRGB(170, 210, 255)
+local PORTAL_PREVIEW_COLOR = Color3.fromRGB(255, 120, 120) -- Reddish for restriction
 local PREVIEW_BORDER_WIDTH = 1.2
+
+local PORTAL_NAMES = {
+	"Portal_Tropical", "Portal_Return_Tropical",
+	"Portal_Desert", "Portal_Return_Desert",
+	"Portal_Snowy", "Portal_Return_Snowy"
+}
+local PORTAL_RESTRICTION_MARGIN = Balance.PORTAL_RESTRICTION_MARGIN or 10
 
 local function getExtentsFromInfo(info, fallbackRadius)
 	local radius = tonumber(fallbackRadius) or tonumber(info and info.radius) or (Balance.BASE_DEFAULT_RADIUS or 30)
@@ -55,18 +67,30 @@ local function getExtentsFromInfo(info, fallbackRadius)
 	}
 end
 
-local function destroyPreviewParts()
-	for _, seg in ipairs(fenceSegments) do
-		if seg and seg.Parent then
-			seg:Destroy()
+local function destroyPreviewZone(zoneId)
+	local p = activePreviews[zoneId]
+	if not p then return end
+	
+	if p.segments then
+		for _, seg in ipairs(p.segments) do
+			if seg and seg.Parent then seg:Destroy() end
 		end
 	end
-	fenceSegments = {}
-	prevSegmentCount = 0
-	if previewFolder then
-		previewFolder:Destroy()
-		previewFolder = nil
+	if p.folder then
+		p.folder:Destroy()
 	end
+	activePreviews[zoneId] = nil
+end
+
+local function destroyAllPreviews()
+	for zoneId, _ in pairs(activePreviews) do
+		destroyPreviewZone(zoneId)
+	end
+	activePreviews = {}
+end
+
+local function hidePreview()
+	destroyAllPreviews()
 end
 
 local function getFenceTemplate()
@@ -92,17 +116,23 @@ local function getFenceTemplate()
 	return fenceTemplate
 end
 
-local function ensureFolder()
-	if previewFolder and previewFolder.Parent then return end
-	destroyPreviewParts()
+local function ensureZoneFolder(zoneId)
+	if activePreviews[zoneId] and activePreviews[zoneId].folder and activePreviews[zoneId].folder.Parent then
+		return activePreviews[zoneId].folder
+	end
+	
 	local folder = Instance.new("Folder")
-	folder.Name = "TotemZonePreview"
+	folder.Name = "TotemZonePreview_" .. tostring(zoneId)
 	folder.Parent = workspace
-	previewFolder = folder
-end
-
-local function hidePreview()
-	destroyPreviewParts()
+	
+	if not activePreviews[zoneId] then
+		activePreviews[zoneId] = {}
+	end
+	activePreviews[zoneId].folder = folder
+	activePreviews[zoneId].segments = {}
+	activePreviews[zoneId].prevCount = 0
+	
+	return folder
 end
 
 local function findNearestTotem()
@@ -184,7 +214,6 @@ local function requestOwnInfo(callback)
 		return true, data
 	end
 
-	-- 실패 시 기존 캐시를 지우지 않는다 (일시적 네트워크 오류에도 영역 표시 유지)
 	if callback then
 		callback(false, data)
 	end
@@ -246,7 +275,6 @@ local function getCachedOwnInfo()
 	return ownInfoCache
 end
 
--- 플레이어 이름 해석 (온라인 → 캐시)
 local function resolvePlayerName(userId)
 	if playerNameCache[userId] then
 		return playerNameCache[userId]
@@ -256,7 +284,6 @@ local function resolvePlayerName(userId)
 		playerNameCache[userId] = onlinePlayer.DisplayName
 		return onlinePlayer.DisplayName
 	end
-	-- 비동기 조회 (오프라인 플레이어)
 	local ok, name = pcall(function()
 		return Players:GetNameFromUserIdAsync(userId)
 	end)
@@ -267,12 +294,10 @@ local function resolvePlayerName(userId)
 	return "???"
 end
 
--- 사유지 진입 감지 및 알림
 local function checkTerritoryEntry(hrpPos)
 	local localUserId = Players.LocalPlayer.UserId
 	local detectedOwner = nil
 
-	-- 캐시된 모든 토템 정보를 순회하여 현재 위치가 누군가의 사유지 안인지 판별
 	for _, entry in pairs(infoCache) do
 		local info = entry.data
 		if type(info) == "table" and typeof(info.centerPosition) == "Vector3" and info.ownerId then
@@ -290,7 +315,6 @@ local function checkTerritoryEntry(hrpPos)
 	end
 
 	if detectedOwner and detectedOwner ~= currentTerritoryOwnerId then
-		-- 새 사유지 진입
 		currentTerritoryOwnerId = detectedOwner
 		local now = tick()
 		local lastNotified = territoryNotifyCooldown[detectedOwner]
@@ -299,7 +323,7 @@ local function checkTerritoryEntry(hrpPos)
 			task.spawn(function()
 				local ownerName = resolvePlayerName(detectedOwner)
 				local UIManager = require(Client.UIManager)
-				UIManager.sideNotify(ownerName .. " 의 사유지입니다.", Color3.fromRGB(220, 200, 140))
+				UIManager.sideNotify(ownerName .. " 's territory.", Color3.fromRGB(220, 200, 140))
 			end)
 		end
 	elseif not detectedOwner then
@@ -307,14 +331,14 @@ local function checkTerritoryEntry(hrpPos)
 	end
 end
 
-local function renderPreviewRing(centerPos: Vector3, infoOrRadius: any, _color: Color3, transparency: number, _excludeModel: Instance?)
+local function renderPreviewRing(zoneId, centerPos: Vector3, infoOrRadius: any, _color: Color3, transparency: number, _excludeModel: Instance?)
 	local template = getFenceTemplate()
 	if not template then return end
 
 	local centerX, centerY, centerZ = centerPos.X, centerPos.Y, centerPos.Z
 	local extents = type(infoOrRadius) == "table" and getExtentsFromInfo(infoOrRadius) or getExtentsFromInfo(nil, tonumber(infoOrRadius) or (Balance.BASE_DEFAULT_RADIUS or 30))
 
-	-- 지형 높이 추적
+	-- Terrain height tracking
 	local terrainY = centerY
 	local rayParams = RaycastParams.new()
 	rayParams.FilterType = Enum.RaycastFilterType.Include
@@ -324,7 +348,9 @@ local function renderPreviewRing(centerPos: Vector3, infoOrRadius: any, _color: 
 		terrainY = rayResult.Position.Y
 	end
 
-	ensureFolder()
+	local folder = ensureZoneFolder(zoneId)
+	local p = activePreviews[zoneId]
+
 	local west = math.max(1, extents.west - PREVIEW_BORDER_WIDTH)
 	local east = math.max(1, extents.east - PREVIEW_BORDER_WIDTH)
 	local north = math.max(1, extents.north - PREVIEW_BORDER_WIDTH)
@@ -335,12 +361,12 @@ local function renderPreviewRing(centerPos: Vector3, infoOrRadius: any, _color: 
 	local segPerEastWest = math.max(1, math.ceil(sideLenZ / fenceSegmentWidth))
 	local totalNeeded = segPerNorthSouth * 2 + segPerEastWest * 2
 
-	-- 세그먼트 수가 바뀌면 재생성
-	if totalNeeded ~= prevSegmentCount then
-		for _, seg in ipairs(fenceSegments) do
+	-- Recreate segments if count changed
+	if totalNeeded ~= p.prevCount then
+		for _, seg in ipairs(p.segments) do
 			if seg and seg.Parent then seg:Destroy() end
 		end
-		fenceSegments = {}
+		p.segments = {}
 
 		for i = 1, totalNeeded do
 			local clone = template:Clone()
@@ -355,28 +381,27 @@ local function renderPreviewRing(centerPos: Vector3, infoOrRadius: any, _color: 
 					part.CastShadow = false
 				end
 			end
-			clone.Parent = previewFolder
-			fenceSegments[i] = clone
+			clone.Parent = folder
+			p.segments[i] = clone
 		end
-		prevSegmentCount = totalNeeded
+		p.prevCount = totalNeeded
 	end
 
-	-- 투명도 적용 (모델 원본 색상/재질 유지)
-	for _, seg in ipairs(fenceSegments) do
+	-- Apply transparency and color
+	for _, seg in ipairs(p.segments) do
 		if seg and seg.Parent then
 			local parts = seg:IsA("Model") and seg:GetDescendants() or { seg }
 			for _, part in ipairs(parts) do
 				if part:IsA("BasePart") then
 					part.Transparency = transparency
+					part.Color = _color
 				end
 			end
 		end
 	end
 
-	-- 4면에 울타리 배치
+	-- Arrange fences on 4 sides
 	local baseY = terrainY + fencePivotOffsetY
-
-	-- 각 면: {along축, edge오프셋, 회전Y}
 	local sides = {
 		{ axis = "X", count = segPerNorthSouth, offset = Vector3.new((east - west) * 0.5, 0, north), length = sideLenX, rotY = 0 },
 		{ axis = "X", count = segPerNorthSouth, offset = Vector3.new((east - west) * 0.5, 0, -south), length = sideLenX, rotY = math.pi },
@@ -389,7 +414,7 @@ local function renderPreviewRing(centerPos: Vector3, infoOrRadius: any, _color: 
 		local axis, offset, rotY = side.axis, side.offset, side.rotY
 		for s = 1, side.count do
 			idx += 1
-			local seg = fenceSegments[idx]
+			local seg = p.segments[idx]
 			if not seg then continue end
 
 			local along = ((s - 0.5) / side.count - 0.5) * side.length
@@ -408,10 +433,12 @@ local function renderPreviewRing(centerPos: Vector3, infoOrRadius: any, _color: 
 			end
 		end
 	end
+	
+	p.lastRenderedAt = tick()
 end
 
 local function refreshNearbyPreview()
-	if isTeleporting then return end -- 텔레포트 중에는 불필요한 네트워크 요청 및 UI 갱신 방지
+	if isTeleporting then return end 
 
 	local character = Players.LocalPlayer and Players.LocalPlayer.Character
 	local hrp = character and character:FindFirstChild("HumanoidRootPart")
@@ -419,77 +446,150 @@ local function refreshNearbyPreview()
 		hidePreview()
 		return
 	end
+	
+	local now = tick()
+	local hrpPos = hrp.Position
 
-	-- 근처 토템 정보를 항상 캐시 (사유지 진입 감지용)
-	local nearestTotem = findNearestTotem()
-	if nearestTotem then
-		local sid = nearestTotem:GetAttribute("StructureId") or nearestTotem.Name
-		if not getCachedInfo(sid) then
-			task.spawn(function()
-				requestInfo(sid)
-			end)
-		end
-	end
-
-	-- 타인 사유지 진입 감지
-	checkTerritoryEntry(hrp.Position)
-
-	-- 본인 토템(사유지)은 상시 표시한다.
+	-- 1. Own territory
 	local ownInfo = getCachedOwnInfo()
 	if not ownInfo then
-		task.spawn(function()
-			requestOwnInfo()
-		end)
+		task.spawn(function() requestOwnInfo() end)
 	end
-	-- 캐시 만료 시에도 이전 데이터로 계속 표시
 	ownInfo = ownInfo or ownInfoCache
 	if type(ownInfo) == "table" and typeof(ownInfo.centerPosition) == "Vector3" then
 		local ownActive = ownInfo.upkeep and ownInfo.upkeep.active
 		renderPreviewRing(
+			"OWN",
 			ownInfo.centerPosition,
 			ownInfo,
 			ownActive and OWN_PREVIEW_COLOR_ACTIVE or OWN_PREVIEW_COLOR_INACTIVE,
-			ownActive and 0.3 or 0.5,
-			nil
+			ownActive and 0.3 or 0.5
 		)
-		return
 	end
 
-	local totemModel = nearestTotem
-	if not totemModel then
-		local starterZone = getStarterZoneInfo()
-		if not starterZone then
-			hidePreview()
-			return
-		end
-
+	-- 2. Starter zone
+	local starterZone = getStarterZoneInfo()
+	if starterZone then
 		local showRange = Balance.STARTER_PROTECTION_SHOW_RANGE or 130
-		if (hrp.Position - starterZone.centerPosition).Magnitude > showRange then
-			hidePreview()
-			return
+		if (hrpPos - starterZone.centerPosition).Magnitude <= showRange then
+			renderPreviewRing("STARTER", starterZone.centerPosition, starterZone, STARTER_PREVIEW_COLOR, 0.3)
+		else
+			destroyPreviewZone("STARTER")
+		end
+	end
+
+	-- 2.5 Portal restricted zones
+	local PORTAL_COLORS = {
+		Portal_Tropical = Color3.fromRGB(120, 255, 120),
+		Portal_Return_Tropical = Color3.fromRGB(120, 255, 120),
+		Portal_Desert = Color3.fromRGB(255, 240, 120),
+		Portal_Return_Desert = Color3.fromRGB(255, 240, 120),
+		Portal_Snowy = Color3.fromRGB(255, 255, 255),
+		Portal_Return_Snowy = Color3.fromRGB(255, 255, 255),
+	}
+
+	for _, portalName in ipairs(PORTAL_NAMES) do
+		-- Use a more robust cache and search
+		local portal = _portalCache[portalName]
+		if not (portal and portal.Parent) then
+			-- Try direct workspace first, then recursive
+			portal = workspace:FindFirstChild(portalName) or workspace:FindFirstChild(portalName, true)
+			if portal then
+				_portalCache[portalName] = portal
+			end
 		end
 
-		renderPreviewRing(starterZone.centerPosition, starterZone, STARTER_PREVIEW_COLOR, 0.3, nil)
-		return
+		if portal then
+			local pp = nil
+			if portal:IsA("Model") then
+				pp = portal.PrimaryPart or portal:FindFirstChildWhichIsA("BasePart")
+			elseif portal:IsA("BasePart") then
+				pp = portal
+			end
+			
+			if pp then
+				local dist = (hrpPos - pp.Position).Magnitude
+				if dist <= 130 then
+					local boxCFrame, boxSize
+					if portal:IsA("Model") then
+						boxCFrame, boxSize = portal:GetBoundingBox()
+					else
+						boxCFrame, boxSize = portal.CFrame, portal.Size
+					end
+					
+					-- Use a simple box extent for rendering (Portal zone is usually larger than the model)
+					local radius = (math.max(boxSize.X, boxSize.Z) * 0.5) + PORTAL_RESTRICTION_MARGIN
+					local portalColor = PORTAL_COLORS[portalName] or PORTAL_PREVIEW_COLOR
+					
+					renderPreviewRing(
+						"PORTAL_" .. portalName,
+						boxCFrame.Position,
+						{ radius = radius },
+						portalColor,
+						0.4
+					)
+				else
+					destroyPreviewZone("PORTAL_" .. portalName)
+				end
+			end
+		end
 	end
 
-	local pp
-	if totemModel:IsA("Model") then
-		pp = totemModel.PrimaryPart or totemModel:FindFirstChildWhichIsA("BasePart")
-	elseif totemModel:IsA("BasePart") then
-		pp = totemModel
+	-- 3. Nearby other players' territories
+	local facilities = workspace:FindFirstChild("Facilities")
+	if facilities then
+		local maxDist = Balance.TOTEM_PROXIMITY_SHOW_RANGE or 65
+		local localUserId = Players.LocalPlayer.UserId
+		
+		for _, obj in ipairs(facilities:GetChildren()) do
+			if obj:GetAttribute("FacilityId") ~= "CAMP_TOTEM" then continue end
+			
+			local sid = obj:GetAttribute("StructureId") or obj.Name
+			local pp = nil
+			if obj:IsA("Model") then
+				pp = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+			elseif obj:IsA("BasePart") then
+				pp = obj
+			end
+			
+			if not pp then continue end
+			
+			local dist = (hrpPos - pp.Position).Magnitude
+			if dist <= maxDist then
+				local info = getCachedInfo(sid)
+				if not info then
+					task.spawn(function() requestInfo(sid) end)
+				else
+					if tonumber(info.ownerId) ~= localUserId then
+						local active = info.upkeep and info.upkeep.active
+						local centerPos = info.centerPosition or pp.Position
+						renderPreviewRing(
+							sid, 
+							centerPos, 
+							info, 
+							active and PREVIEW_COLOR_ACTIVE or PREVIEW_COLOR_INACTIVE, 
+							active and 0.3 or 0.5
+						)
+					end
+				end
+			else
+				if sid ~= "OWN" and sid ~= "STARTER" then
+					destroyPreviewZone(sid)
+				end
+			end
+		end
 	end
-	if not pp then
-		hidePreview()
-		return
+	
+	-- 4. Cleanup old previews
+	for zoneId, p in pairs(activePreviews) do
+		if zoneId ~= "OWN" and zoneId ~= "STARTER" and not tostring(zoneId):find("PORTAL_") then
+			if (now - (p.lastRenderedAt or 0)) > PREVIEW_REFRESH_INTERVAL * 2 then
+				destroyPreviewZone(zoneId)
+			end
+		end
 	end
-
-	local structureId = totemModel:GetAttribute("StructureId") or totemModel.Name
-	local info = getCachedInfo(structureId)
-
-	local active = info and info.upkeep and info.upkeep.active
-	local centerPos = (info and info.centerPosition) or pp.Position
-	renderPreviewRing(centerPos, info or { radius = Balance.BASE_DEFAULT_RADIUS or 30 }, active and PREVIEW_COLOR_ACTIVE or PREVIEW_COLOR_INACTIVE, active and 0.3 or 0.5, totemModel)
+	
+	checkTerritoryEntry(hrpPos)
 end
 
 function TotemController.getCurrentStructureId()
@@ -522,7 +622,7 @@ function TotemController.openTotem(structureId)
 		if ok then
 			UIManager.openTotem(structureId, data)
 		else
-			UIManager.notify("토템 정보를 불러오지 못했습니다.")
+			UIManager.notify("Failed to fetch totem info.")
 		end
 	end)
 end
@@ -582,8 +682,10 @@ function TotemController.requestExpand(direction, callback)
 end
 
 function TotemController.flashPreview()
-	local function setFenceTransparency(t)
-		for _, seg in ipairs(fenceSegments) do
+	local function setFenceTransparency(zoneId, t)
+		local p = activePreviews[zoneId]
+		if not p or not p.segments then return end
+		for _, seg in ipairs(p.segments) do
 			if seg and seg.Parent then
 				local parts = seg:IsA("Model") and seg:GetDescendants() or { seg }
 				for _, part in ipairs(parts) do
@@ -594,9 +696,15 @@ function TotemController.flashPreview()
 			end
 		end
 	end
-	setFenceTransparency(0.1)
+	
+	for zoneId, _ in pairs(activePreviews) do
+		setFenceTransparency(zoneId, 0.1)
+	end
+	
 	task.delay(0.3, function()
-		setFenceTransparency(0.3)
+		for zoneId, p in pairs(activePreviews) do
+			setFenceTransparency(zoneId, 0.3)
+		end
 	end)
 end
 
@@ -605,16 +713,12 @@ function TotemController.Init()
 		return
 	end
 
-	-- 이전 세션/핫리로드 잔존 프리뷰 파트 정리
 	for _, child in ipairs(workspace:GetChildren()) do
-		if child:IsA("Folder") and child.Name == "TotemZonePreview" then
-			child:Destroy()
-		elseif child:IsA("BasePart") and (child.Name == "TotemZonePreviewFill" or child.Name == "TotemZonePreviewBorder" or child.Name == "TotemZonePreviewInner" or child.Name == "TotemZonePreviewBottom") then
+		if child:IsA("Folder") and child.Name:find("TotemZonePreview") then
 			child:Destroy()
 		end
 	end
 
-	-- 텔레포트 대역폭 병목 처리
 	NetClient.On("Portal.Teleporting", function()
 		isTeleporting = true
 		hidePreview()
@@ -679,16 +783,12 @@ function TotemController.Init()
 		end
 
 		local UIManager = require(Client.UIManager)
-		UIManager.notify("⚠ 토템 유지비가 만료되었습니다. 거점이 약탈 가능 상태가 되었습니다.", Color3.fromRGB(255, 120, 120))
-		if UIManager.sideNotify then
-			UIManager.sideNotify("토템 만료: 거점 약탈 가능", Color3.fromRGB(255, 120, 120))
-		end
+		UIManager.notify("Totem upkeep expired! Territory is now lootable.", Color3.fromRGB(255, 120, 120))
 		if currentStructureId and sid and currentStructureId == sid then
 			UIManager.refreshTotem()
 		end
 	end)
 
-	-- 베이스 중심 이동 수신 → 영역 표시 즉시 갱신
 	NetClient.On("Base.Relocated", function(data)
 		if type(data) ~= "table" then
 			return
@@ -706,7 +806,6 @@ function TotemController.Init()
 			if data.southExtent then ownInfoCache.southExtent = data.southExtent end
 			ownInfoFetchedAt = tick()
 		end
-		-- 캐시 없으면 즉시 재요청
 		if not ownInfoCache then
 			task.spawn(function()
 				requestOwnInfo()
@@ -728,26 +827,22 @@ function TotemController.Init()
 		end
 	end)
 
-	-- 토템 철거/이동 시 영역 표시 즉시 갱신
 	NetClient.On("Build.Removed", function(data)
 		if type(data) ~= "table" or not data.id then
 			return
 		end
 		local removedId = data.id
 
-		-- 해당 구조물 캐시 제거
 		if infoCache[removedId] then
 			infoCache[removedId] = nil
 		end
 
-		-- 본인 토템이 철거된 경우 캐시 초기화 + 영역 숨김
 		if type(ownInfoCache) == "table" and ownInfoCache.structureId == removedId then
 			ownInfoCache = nil
 			ownInfoFetchedAt = 0
 			hidePreview()
 		end
 
-		-- 현재 열려있는 토템 UI가 철거된 토템이면 닫기
 		if currentStructureId == removedId then
 			currentStructureId = nil
 			local UIManager = require(Client.UIManager)
@@ -756,7 +851,6 @@ function TotemController.Init()
 			end
 		end
 
-		-- 본인 토템 정보 재요청 (이동/재배치 대응)
 		task.delay(0.5, function()
 			requestOwnInfo()
 		end)
@@ -779,7 +873,6 @@ function TotemController.Init()
 
 	initialized = true
 
-	-- 게임 시작 직후 본인 토템 정보를 미리 가져온다
 	task.delay(1.5, function()
 		requestOwnInfo()
 	end)

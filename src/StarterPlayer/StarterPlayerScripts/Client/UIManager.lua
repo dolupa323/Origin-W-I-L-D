@@ -1724,6 +1724,11 @@ function UIManager._onOpenFacility(structureId, data)
 		blurEffect = Instance.new("BlurEffect"); blurEffect.Size = 15; blurEffect.Parent = Lighting
 	end
 	
+	-- [추가] 시설 유형에 맞는 탭 구성
+	if FacilityUI.SetupTabs then
+		FacilityUI.SetupTabs(currentFacilityType or "", currentFacilityId or "")
+	end
+	
 	UIManager.refreshFacility()
 end
 

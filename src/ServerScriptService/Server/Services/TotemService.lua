@@ -1,5 +1,5 @@
 -- TotemService.lua
--- 거점 토템 유지비/보호효과 서비스
+-- Totem Upkeep / Protection Service
 
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
@@ -18,8 +18,8 @@ local SaveService = nil
 local BaseClaimService = nil
 local BuildService = nil
 local NPCShopService = nil
-local upkeepCache = {} -- [userId] = expiresAt (state 로드 지연 대비 런타임 캐시)
-local expiryNotifiedAt = {} -- [ownerId] = expiresAt (같은 만료 시각 중복 알림 방지)
+local upkeepCache = {} -- [userId] = expiresAt
+local expiryNotifiedAt = {} -- [ownerId] = expiresAt
 
 local ALLOWED_DURATIONS = {
 	[1] = Balance.TOTEM_UPKEEP_COST_1D or 100,
@@ -27,8 +27,12 @@ local ALLOWED_DURATIONS = {
 	[7] = Balance.TOTEM_UPKEEP_COST_7D or 630,
 }
 
-local PORTAL_NAME = "Portal_Tropical"
-local PORTAL_RESTRICTION_MARGIN = Balance.PORTAL_RESTRICTION_MARGIN or 28
+local PORTAL_NAMES = {
+	"Portal_Tropical", "Portal_Return_Tropical",
+	"Portal_Desert", "Portal_Return_Desert",
+	"Portal_Snowy", "Portal_Return_Snowy"
+}
+local PORTAL_RESTRICTION_MARGIN = Balance.PORTAL_RESTRICTION_MARGIN or 10
 
 local function distanceToOrientedBoxSurface(position: Vector3, boxCFrame: CFrame, boxSize: Vector3): number
 	local localPos = boxCFrame:PointToObjectSpace(position)
@@ -44,27 +48,31 @@ local function isInPortalRestrictionZone(position: Vector3): boolean
 		return false
 	end
 
-	local portalObject = Workspace:FindFirstChild(PORTAL_NAME)
-	if not portalObject then
-		return false
+	for _, name in ipairs(PORTAL_NAMES) do
+		local portalObject = Workspace:FindFirstChild(name)
+		if portalObject then
+			local boxCFrame, boxSize
+			if portalObject:IsA("Model") then
+				boxCFrame, boxSize = portalObject:GetBoundingBox()
+			elseif portalObject:IsA("BasePart") then
+				boxCFrame, boxSize = portalObject.CFrame, portalObject.Size
+			end
+
+			if boxCFrame and boxSize then
+				local expandedSize = Vector3.new(
+					boxSize.X + PORTAL_RESTRICTION_MARGIN * 2,
+					math.max(boxSize.Y, 80),
+					boxSize.Z + PORTAL_RESTRICTION_MARGIN * 2
+				)
+
+				if distanceToOrientedBoxSurface(position, boxCFrame, expandedSize) <= 0.001 then
+					return true
+				end
+			end
+		end
 	end
 
-	local boxCFrame, boxSize
-	if portalObject:IsA("Model") then
-		boxCFrame, boxSize = portalObject:GetBoundingBox()
-	elseif portalObject:IsA("BasePart") then
-		boxCFrame, boxSize = portalObject.CFrame, portalObject.Size
-	else
-		return false
-	end
-
-	local expandedSize = Vector3.new(
-		boxSize.X + PORTAL_RESTRICTION_MARGIN * 2,
-		math.max(boxSize.Y, 80),
-		boxSize.Z + PORTAL_RESTRICTION_MARGIN * 2
-	)
-
-	return distanceToOrientedBoxSurface(position, boxCFrame, expandedSize) <= 0.001
+	return false
 end
 
 local function getStarterZoneCenter(): Vector3?
@@ -127,9 +135,8 @@ local function getState(userId)
 	return state
 end
 
--- 토템 캐시: ownerId → { totems = {}, updatedAt = tick() }
 local totemCache = {}
-local TOTEM_CACHE_TTL = 30 -- 30초 TTL
+local TOTEM_CACHE_TTL = 30 
 
 local function invalidateTotemCache(ownerId)
 	if ownerId then
@@ -144,13 +151,11 @@ local function getOwnerTotems(ownerId)
 		return {}
 	end
 
-	-- 캐시 히트 확인
 	local cached = totemCache[ownerId]
 	if cached and (tick() - cached.updatedAt) < TOTEM_CACHE_TTL then
 		return cached.totems
 	end
 
-	-- BuildService.getStructuresByOwner로 해당 유저 건물만 조회 (O(owner) vs O(all))
 	local ownerStructures
 	if BuildService.getStructuresByOwner then
 		ownerStructures = BuildService.getStructuresByOwner(ownerId)
@@ -301,7 +306,7 @@ local function notifyUpkeepExpired(ownerId, expiresAt)
 	end
 end
 
-local UPKEEP_WATCH_INTERVAL = 10 -- 유지비는 시간 단위이므로 1초→10초로 완화
+local UPKEEP_WATCH_INTERVAL = 10 
 
 local function runUpkeepWatcher()
 	task.spawn(function()

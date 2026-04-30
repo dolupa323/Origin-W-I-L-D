@@ -46,11 +46,13 @@ FacilityUI.Refs = {
 	Tabs = {}, -- { [tabId] = { Frame, Label } }
 }
 
-local TABS = {
+local ALL_TABS = {
 	{ id = "BLOCK", name = "블록가공", categories = { "BLOCK_PROCESS" } },
 	{ id = "WEAPON_TOOL", name = "무기, 도구 제작", categories = { "WEAPON", "TOOL", "AMMO" } },
 	{ id = "ARMOR", name = "방어구 제작", categories = { "ARMOR" } },
 	{ id = "PROCESSING", name = "가공", categories = { "RESOURCE" } },
+	{ id = "SMELTING", name = "제련", categories = { "RESOURCE" } },
+	{ id = "COOKING", name = "요리", categories = { "FOOD" } },
 }
 
 function FacilityUI.Init(parent, UIManager, isMobile)
@@ -119,14 +121,14 @@ function FacilityUI.Init(parent, UIManager, isMobile)
 	local tabList = Instance.new("UIListLayout")
 	tabList.FillDirection = Enum.FillDirection.Horizontal; tabList.Padding = UDim.new(0, 8); tabList.Parent = tabBar
 
-	for _, tabInfo in ipairs(TABS) do
+	for _, tabInfo in ipairs(ALL_TABS) do
 		local tBtn = Utils.mkBtn({
 			text = UILocalizer.Localize(tabInfo.name), size = UDim2.new(0, 150, 1, 0),
 			bg = C.BG_SLOT, ts = 15, font = F.TITLE, r = 4,
 			parent = tabBar
 		})
 
-		FacilityUI.Refs.Tabs[tabInfo.id] = { Frame = tBtn }
+		FacilityUI.Refs.Tabs[tabInfo.id] = { Frame = tBtn, Info = tabInfo }
 
 		tBtn.MouseButton1Click:Connect(function()
 			FacilityUI.SetTab(tabInfo.id)
@@ -150,9 +152,40 @@ function FacilityUI.Init(parent, UIManager, isMobile)
 	end
 
 	function FacilityUI.SetTab(tabId)
+		if not tabId then return end
 		currentTab = tabId
 		updateTabVisuals()
 		FacilityUI.Refresh(currentRawRecipeList, nil, UIManagerRef, true) -- 필터링된 리프레시
+	end
+
+	function FacilityUI.SetupTabs(facilityType, facilityId)
+		local visibleTabs = {}
+		if facilityType:find("CRAFTING") then
+			visibleTabs = { "BLOCK", "WEAPON_TOOL", "ARMOR", "PROCESSING" }
+		elseif facilityType:find("SMELTING") then
+			visibleTabs = { "SMELTING", "COOKING" }
+		elseif facilityType == "COOKING" then
+			visibleTabs = { "COOKING" }
+		else
+			-- Fallback
+			visibleTabs = { "PROCESSING" }
+		end
+		
+		-- Show/Hide tab buttons
+		local firstId = nil
+		for _, tabInfo in ipairs(ALL_TABS) do
+			local ref = FacilityUI.Refs.Tabs[tabInfo.id]
+			if ref then
+				local isVisible = table.find(visibleTabs, tabInfo.id) ~= nil
+				ref.Frame.Visible = isVisible
+				if isVisible and not firstId then
+					firstId = tabInfo.id
+				end
+			end
+		end
+		
+		-- Default tab
+		FacilityUI.SetTab(firstId)
 	end
 
 	-- [Content Layout] - Left (Recipes) / Right (Detail)
@@ -349,8 +382,8 @@ function FacilityUI.Refresh(recipeList, getIcon, UIManager, isTabSwitch)
 	
 	-- 탭 필터링
 	local filtered = {}
-	local currentTabInfo = nil
-	for _, t in ipairs(TABS) do if t.id == currentTab then currentTabInfo = t; break end end
+	local ref = FacilityUI.Refs.Tabs[currentTab]
+	local currentTabInfo = ref and ref.Info
 	
 	if currentTabInfo then
 		for _, r in ipairs(currentRawRecipeList) do
