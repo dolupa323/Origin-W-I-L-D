@@ -138,6 +138,11 @@ function StaminaService.setMaxStamina(userId: number, max: number)
 	local oldMax = data.max
 	data.max = max
 	
+	-- 최대치가 늘어났을 때 현재치도 그만큼 채워줌 (로그인 시 초기화 대응)
+	if max > oldMax then
+		data.current = data.current + (max - oldMax)
+	end
+	
 	-- 만약 현재 스태미나가 새로운 최대치를 넘는다면 조정
 	if data.current > max then
 		data.current = max

@@ -84,7 +84,7 @@ local CreatureData = {
 		mountSeatOffset = Vector3.new(0, 10, -5.5),
 		mountSpeedMultiplier = 1.0,
 		mountJumpPower = 48,
-		corpseOffset = 2.0,
+		corpseOffset = -3.0,
 		island = "GRASSLAND",
 	},
 
