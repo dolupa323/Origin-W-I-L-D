@@ -160,7 +160,7 @@ local function createQuestCard(parent, questData, index)
 		lockLabel.Text = questData.desc or "수준이 도달하면 개방됩니다."
 		lockLabel.TextColor3 = UITheme.Colors.DIM
 		lockLabel.Font = UITheme.Fonts.NORMAL
-		lockLabel.TextSize = 14
+		lockLabel.TextSize = 13
 		lockLabel.TextWrapped = true
 		lockLabel.Parent = card
 		card.Active = false
@@ -175,7 +175,7 @@ local function createQuestCard(parent, questData, index)
 	title.Text = questData.title or "퀘스트 제목"
 	title.TextColor3 = UITheme.Colors.WHITE
 	title.Font = UITheme.Fonts.TITLE
-	title.TextSize = 18
+	title.TextSize = 16
 	title.TextXAlignment = Enum.TextXAlignment.Left
 	title.Parent = card
 
@@ -187,7 +187,7 @@ local function createQuestCard(parent, questData, index)
 	desc.Text = questData.desc or ""
 	desc.TextColor3 = UITheme.Colors.INK
 	desc.Font = UITheme.Fonts.NORMAL
-	desc.TextSize = 14
+	desc.TextSize = 13
 	desc.TextXAlignment = Enum.TextXAlignment.Left
 	desc.TextYAlignment = Enum.TextYAlignment.Top
 	desc.TextWrapped = true
@@ -222,7 +222,7 @@ local function createQuestCard(parent, questData, index)
 	rewardLabel.Text = string.format("보상: %d 골드", questData.rewardGold or 0)
 	rewardLabel.TextColor3 = UITheme.Colors.GOLD
 	rewardLabel.Font = UITheme.Fonts.NORMAL
-	rewardLabel.TextSize = 14
+	rewardLabel.TextSize = 13
 	rewardLabel.TextXAlignment = Enum.TextXAlignment.Left
 	rewardLabel.Parent = card
 
@@ -316,6 +316,10 @@ function QuestUI:Open(npcModel)
 	local ratio = Instance.new("UIAspectRatioConstraint")
 	ratio.AspectRatio = 1.6
 	ratio.Parent = panel
+
+	local sizeConstraint = Instance.new("UISizeConstraint")
+	sizeConstraint.MaxSize = Vector2.new(1000, 625)
+	sizeConstraint.Parent = panel
 
 	-- 상단 헤더
 	local header = Instance.new("TextLabel")

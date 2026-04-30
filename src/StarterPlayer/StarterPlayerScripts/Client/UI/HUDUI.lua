@@ -639,14 +639,15 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 
 		-- [중요] '진행도' 글씨 제거 및 타이틀 옆에 수량 강제 병합
 		local titleBase = UILocalizer.Localize("퀘스트")
-		HUDUI.Refs.tutorialTitle.Text = titleBase .. " " .. (_buildProgressText(HUDUI.LastStatus) or "0/1")
+		local progressText = _buildProgressText(HUDUI.LastStatus) or "0/1"
+		HUDUI.Refs.tutorialTitle.Text = string.format("%s (%s)", titleBase, progressText)
 
-		local titleH = 22
+		local titleH = math.ceil(HUDUI.Refs.tutorialTitle.TextSize * 1.3)
 		local stepBounds = TextService:GetTextSize(HUDUI.Refs.tutorialStep.Text or "", HUDUI.Refs.tutorialStep.TextSize, HUDUI.Refs.tutorialStep.Font, Vector2.new(contentWidth, 10000))
-		local stepH = stepBounds.Y + 4
+		local stepH = stepBounds.Y + 6
 
 		local wantedHeight = topPadding + titleH + rowGap + stepH + bottomPadding
-		local panelHeight = isTutorialMinimized and 48 or math.max(40, wantedHeight)
+		local panelHeight = isTutorialMinimized and 40 or math.max(44, wantedHeight)
 
 		panel.Size = UDim2.new(panel.Size.X.Scale, panel.Size.X.Offset, 0, panelHeight)
 
@@ -679,21 +680,21 @@ function HUDUI.Init(parent, UIManager, InputManager, isMobile)
 		tutorialFrame.Size = UDim2.new(0, panelWidth, 0, tutorialFrame.Size.Y.Offset)
 		tutorialFrame.Position = UDim2.new(1, -12, 0, 260) -- 210 -> 260 (위치 내림)
 
-		local titleSize = math.clamp(math.floor(vp.Y * (isSmall and 0.030 or 0.024)), 18, 28)
-		local bodySize = math.clamp(math.floor(vp.Y * (isSmall and 0.024 or 0.020)), 14, 22)
-		local progressSize = math.clamp(math.floor(vp.Y * (isSmall and 0.022 or 0.018)), 13, 20)
+		local titleSize = math.clamp(math.floor(vp.Y * (isSmall and 0.022 or 0.018)), 14, 20)
+		local bodySize = math.clamp(math.floor(vp.Y * (isSmall and 0.018 or 0.015)), 12, 16)
+		local progressSize = math.clamp(math.floor(vp.Y * (isSmall and 0.018 or 0.015)), 12, 16)
 
 		HUDUI.Refs.tutorialTitle.TextSize = titleSize
 		HUDUI.Refs.tutorialStep.TextSize = bodySize
 		HUDUI.Refs.tutorialProgress.TextSize = progressSize
-		HUDUI.Refs.tutorialReward.TextSize = math.clamp(math.floor(vp.Y * (isSmall and 0.025 or 0.022)), 18, 26)
+		HUDUI.Refs.tutorialReward.TextSize = math.clamp(math.floor(vp.Y * (isSmall and 0.022 or 0.020)), 16, 24)
 
-		local panelHeight = math.max(40, tutorialFrame.Size.Y.Offset) -- 170 -> 40 (높이 축소)
+		local panelHeight = math.max(40, tutorialFrame.Size.Y.Offset) 
 		local btnWidth = math.clamp(math.floor(panelWidth * 0.24), 90, 130)
 		local btnHeight = math.clamp(math.floor(panelHeight * 0.24), 28, 42)
 		HUDUI.Refs.tutorialCompleteBtn.Size = UDim2.new(0, btnWidth, 0, btnHeight)
-		HUDUI.Refs.tutorialCompleteBtn.TextSize = math.clamp(math.floor(panelHeight * 0.13), 15, 22)
-		HUDUI.Refs.tutorialReadyHint.TextSize = math.clamp(math.floor(panelHeight * 0.13), 15, 22)
+		HUDUI.Refs.tutorialCompleteBtn.TextSize = math.clamp(math.floor(panelHeight * 0.13), 13, 18)
+		HUDUI.Refs.tutorialReadyHint.TextSize = math.clamp(math.floor(panelHeight * 0.13), 13, 18)
 
 		relayoutTutorialPanel()
 	end

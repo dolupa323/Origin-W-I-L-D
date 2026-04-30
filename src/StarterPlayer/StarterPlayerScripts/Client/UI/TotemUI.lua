@@ -164,14 +164,15 @@ function TotemUI.Init(parent, UIManager, isMobile)
 
 	local window = Utils.mkWindow({
 		name = "TotemWindow",
-		size = isMobile and UDim2.new(0.75, 0, 0.8, 0) or UDim2.new(0.35, 0, 0.75, 0),
+		size = isMobile and UDim2.new(0.85, 0, 0.9, 0) or UDim2.new(0.35, 0, 0.8, 0),
+		maxSize = Vector2.new(500, 750),
 		pos = UDim2.new(0.5, 0, 0.5, 0),
 		anchor = Vector2.new(0.5, 0.5),
 		bg = C.BG_PANEL,
 		bgT = 0.25,
 		stroke = 1,
 		strokeC = C.BORDER,
-		ratio = 0.8, -- Totem is vertical
+		ratio = 0.75, -- Totem is vertical
 		vis = false,
 		parent = parent,
 	})
@@ -250,12 +251,13 @@ function TotemUI.Init(parent, UIManager, isMobile)
 
 	TotemUI.Refs.ExpandInfo = Utils.mkLabel({
 		text = "확장 정보: 확인 중",
-		size = UDim2.new(0.9, 0, 0.08, 0),
-		pos = UDim2.new(0.05, 0, infoY + infoGap*4 + 0.01, 0),
+		size = UDim2.new(0.9, 0, 0.1, 0),
+		pos = UDim2.new(0.05, 0, infoY + infoGap*4, 0),
 		ts = 14,
 		color = C.WHITE,
 		ax = Enum.TextXAlignment.Left,
 		parent = window,
+		wrap = true,
 	})
 	-- Raid Warning (Y: 0.46)
 	local warningFrame = Utils.mkFrame({
@@ -341,16 +343,17 @@ function TotemUI.Init(parent, UIManager, isMobile)
 
 	local expandCards = Utils.mkFrame({
 		name = "ExpandCardFrame",
-		size = UDim2.new(0.6, 0, 0.6, 0),
-		pos = UDim2.new(1.05, 0, 0.5, 0),
-		anchor = Vector2.new(0, 0.5),
-		bg = Color3.fromRGB(30, 34, 42),
-		bgT = 0.05,
+		size = UDim2.new(0.9, 0, 0.75, 0),
+		pos = UDim2.new(0.5, 0, 0.55, 0),
+		anchor = Vector2.new(0.5, 0.5),
+		bg = Color3.fromRGB(20, 24, 32),
+		bgT = 0.02,
 		r = 8,
-		stroke = 1,
-		strokeC = C.BORDER,
+		stroke = 1.5,
+		strokeC = C.GOLD,
 		vis = false,
 		parent = window,
+		z = 10, -- Layer above
 	})
 	TotemUI.Refs.ExpandCardFrame = expandCards
 

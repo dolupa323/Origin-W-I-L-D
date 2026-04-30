@@ -712,8 +712,8 @@ function UIManager.toggleQuest()
 	WindowManager.toggle("QUEST")
 end
 
-function UIManager._onOpenQuest()
-	QuestUI:Open()
+function UIManager._onOpenQuest(npcModel)
+	QuestUI:Open(npcModel)
 end
 
 function UIManager._onCloseQuest()
@@ -1447,7 +1447,7 @@ function UIManager.openShop(shopId)
 end
 
 function UIManager.openQuestList(npcModel)
-	QuestUI:Open(npcModel)
+	WindowManager.open("QUEST", npcModel)
 end
 
 function UIManager._onOpenShop(shopId)

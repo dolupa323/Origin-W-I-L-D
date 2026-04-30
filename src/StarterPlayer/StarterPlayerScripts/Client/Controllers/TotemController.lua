@@ -179,8 +179,9 @@ local function findNearestTotem()
 end
 
 local function requestInfo(structureId, callback)
-	local ok, data = NetClient.Request("Totem.GetInfo.Request", { structureId = structureId })
-	if ok and type(data) == "table" then
+	local ok, result = NetClient.Request("Totem.GetInfo.Request", { structureId = structureId })
+	if ok and type(result) == "table" and result.success then
+		local data = result.data
 		infoCache[structureId] = {
 			data = data,
 			fetchedAt = tick(),
@@ -202,16 +203,19 @@ local function requestOwnInfo(callback)
 	end
 	ownInfoRequestPending = true
 
-	local ok, data = NetClient.Request("Totem.GetInfo.Request", {})
+	local ok, result = NetClient.Request("Totem.GetInfo.Request", {})
 	ownInfoRequestPending = false
 	ownInfoFetchedAt = tick()
 
-	if ok and type(data) == "table" and tonumber(data.ownerId) == Players.LocalPlayer.UserId then
-		ownInfoCache = data
-		if callback then
-			callback(true, data)
+	if ok and type(result) == "table" and result.success then
+		local data = result.data
+		if tonumber(data.ownerId) == Players.LocalPlayer.UserId then
+			ownInfoCache = data
+			if callback then
+				callback(true, data)
+			end
+			return true, data
 		end
-		return true, data
 	end
 
 	if callback then
@@ -538,7 +542,7 @@ local function refreshNearbyPreview()
 	-- 3. Nearby other players' territories
 	local facilities = workspace:FindFirstChild("Facilities")
 	if facilities then
-		local maxDist = Balance.TOTEM_PROXIMITY_SHOW_RANGE or 65
+		local maxDist = Balance.TOTEM_PROXIMITY_SHOW_RANGE or 150
 		local localUserId = Players.LocalPlayer.UserId
 		
 		for _, obj in ipairs(facilities:GetChildren()) do
