@@ -174,7 +174,7 @@ local function createActionSlot(parent, actionId, labelText, posX, posY, size, f
 	textLabel.Text = labelText
 	textLabel.Font = UITheme.Fonts.NORMAL
 	textLabel.TextColor3 = UITheme.Colors.WHITE
-	textLabel.TextSize = actionId == "Close" and 11 or 13
+	textLabel.TextSize = math.floor((actionId == "Close" and 11 or 13) * (slotSize / HEX_SIZE))
 	textLabel.ZIndex = 5
 	textLabel.Parent = frame
 
@@ -272,12 +272,23 @@ function FacilityRadialUI.Open(target)
 	currentTarget = target
 	currentStructureId = target:GetAttribute("StructureId") or target:GetAttribute("id") or target.Name
 	isOpen = true
+	
+	local viewportSize = workspace.CurrentCamera.ViewportSize
+	local baseHeight = 1080
+	local scale = math.clamp(viewportSize.Y / baseHeight, 0.6, 1.1)
+	if UserInputService.TouchEnabled then
+		scale = scale * 0.9 -- 모바일은 살짝 더 작게 (기존에 너무 컸음)
+	end
+	
+	local scaledHexSize = math.floor(HEX_SIZE * scale)
+	local scaledCloseSize = math.floor(CLOSE_HEX_SIZE * scale)
+	local scaledRadius = 135 * scale
 
 	local adornee = target.PrimaryPart or target:FindFirstChildWhichIsA("BasePart") or target
 	
 	billboardGui = Instance.new("BillboardGui")
 	billboardGui.Name = "FacilityRadialBillboard"
-	billboardGui.Size = UDim2.new(0, 500, 0, 500)
+	billboardGui.Size = UDim2.new(0, math.floor(500 * scale), 0, math.floor(500 * scale))
 	billboardGui.StudsOffset = Vector3.new(0, 3, 0)
 	billboardGui.AlwaysOnTop = true
 	billboardGui.MaxDistance = BILLBOARD_MAX_DIST
@@ -295,14 +306,14 @@ function FacilityRadialUI.Open(target)
 
 	-- 시설 이름 표시 (중앙)
 	local title = Instance.new("TextLabel")
-	title.Size = UDim2.new(1, 0, 0, 40)
+	title.Size = UDim2.new(1, 0, 0, math.floor(40 * scale))
 	title.Position = UDim2.fromScale(0.5, 0.5)
 	title.AnchorPoint = Vector2.new(0.5, 0.5)
 	title.BackgroundTransparency = 1
 	title.Text = data.name or "시설"
 	title.TextColor3 = UITheme.Colors.GOLD
 	title.Font = UITheme.Fonts.TITLE
-	title.TextSize = 18
+	title.TextSize = math.floor(18 * scale)
 	title.TextStrokeTransparency = 0.4
 	title.Parent = container
 
@@ -327,7 +338,6 @@ function FacilityRadialUI.Open(target)
 
 	-- 슬롯 생성
 	local numActions = #actions
-	local radius = 135
 	
 	for i, action in ipairs(actions) do
 		local angleDeg = 0
@@ -342,15 +352,15 @@ function FacilityRadialUI.Open(target)
 		end
 		
 		local angle = math.rad(angleDeg)
-		local posX = math.cos(angle) * radius
-		local posY = math.sin(angle) * (radius * 0.8)
+		local posX = math.cos(angle) * scaledRadius
+		local posY = math.sin(angle) * (scaledRadius * 0.8)
 		
-		local btn = createActionSlot(container, action.id, action.label, posX, posY, nil, data)
+		local btn = createActionSlot(container, action.id, action.label, posX, posY, scaledHexSize, data)
 		btn.MouseButton1Click:Connect(action.callback)
 	end
 
 	-- 닫기 버튼 (중앙 아래)
-	local closeBtn = createActionSlot(container, "Close", "닫기", 0, 160, CLOSE_HEX_SIZE)
+	local closeBtn = createActionSlot(container, "Close", "닫기", 0, 160 * scale, scaledCloseSize)
 	closeBtn.MouseButton1Click:Connect(function() FacilityRadialUI.Close() end)
 
 	-- 거리 체크

@@ -558,22 +558,21 @@ function InteractController.startRest()
 	isResting = true
 	NetClient.Request("Facility.Rest.Start", {})
 	
-	-- 애니메이션 재생
-	local animId = AnimationIds.MISC.REST
-	if animId then
-		-- Assets에서 애니메이션 로드
-		local asset = ReplicatedStorage.Assets.Animations:FindFirstChild(animId)
-		if asset then
-			restAnimTrack = humanoid:LoadAnimation(asset)
-			restAnimTrack.Priority = Enum.AnimationPriority.Action
-			restAnimTrack.Looped = false
-			restAnimTrack:Play()
+	-- 애니메이션 재생 (AnimationManager 사용)
+	local AnimationManager = require(Client.Utils.AnimationManager)
+	local animName = AnimationIds.MISC.REST
+	if animName then
+		local track = AnimationManager.play(humanoid, animName)
+		if track then
+			restAnimTrack = track
+			track.Priority = Enum.AnimationPriority.Action
+			track.Looped = false
 			
 			-- 마지막 프레임에서 멈추기 (애니메이션 길이만큼 대기 후 속도 0)
 			task.spawn(function()
-				task.wait(restAnimTrack.Length * 0.95)
-				if isResting and restAnimTrack then
-					restAnimTrack:AdjustSpeed(0)
+				task.wait(track.Length * 0.95)
+				if isResting and restAnimTrack == track then
+					track:AdjustSpeed(0)
 				end
 			end)
 		end
@@ -583,12 +582,26 @@ function InteractController.startRest()
 		UIManager.notify("휴식 중... 이동하면 취소됩니다.", Color3.fromRGB(150, 255, 150))
 	end
 	
-	-- 움직임 감지하여 자동 취소
-	restMovementConn = RunService.Heartbeat:Connect(function()
-		local moveDir = humanoid.MoveDirection
-		if moveDir.Magnitude > 0.1 or humanoid.Jump then
-			InteractController.stopRest()
+	-- [FIX] UI가 닫히는 즉시 움직임 체크를 하면 잔여 입력으로 인해 휴식이 취소될 수 있음
+	-- 0.2초의 유예 기간을 두어 안정적으로 휴식 상태 진입 보장
+	task.delay(0.2, function()
+		if not isResting then return end
+		
+		if restMovementConn then
+			restMovementConn:Disconnect()
 		end
+		
+		restMovementConn = RunService.Heartbeat:Connect(function()
+			if not character or not character.Parent then
+				InteractController.stopRest()
+				return
+			end
+			
+			local moveDir = humanoid.MoveDirection
+			if moveDir.Magnitude > 0.1 or humanoid.Jump then
+				InteractController.stopRest()
+			end
+		end)
 	end)
 end
 

@@ -162,7 +162,7 @@ local function createActionSlot(parent, actionId, labelText, posX, posY, size)
 	textLabel.Text = labelText
 	textLabel.Font = UITheme.Fonts.NORMAL
 	textLabel.TextColor3 = UITheme.Colors.WHITE
-	textLabel.TextSize = actionId == "Close" and 11 or 15
+	textLabel.TextSize = math.floor((actionId == "Close" and 11 or 15) * (slotSize / HEX_SIZE))
 	textLabel.ZIndex = 5
 	textLabel.Parent = frame
 
@@ -242,11 +242,22 @@ function NPCRadialUI.Open(npcModel)
 	currentNPC = npcModel
 	isOpen = true
 
+	local viewportSize = workspace.CurrentCamera.ViewportSize
+	local baseHeight = 1080
+	local scale = math.clamp(viewportSize.Y / baseHeight, 0.6, 1.1)
+	if UserInputService.TouchEnabled then
+		scale = scale * 0.9 -- 모바일 보정
+	end
+	
+	local scaledHexSize = math.floor(HEX_SIZE * scale)
+	local scaledCloseSize = math.floor(CLOSE_HEX_SIZE * scale)
+	local scaledRadius = 145 * scale
+
 	local adornee = npcModel.PrimaryPart or npcModel:FindFirstChildWhichIsA("BasePart") or npcModel
 	
 	billboardGui = Instance.new("BillboardGui")
 	billboardGui.Name = "NPCRadialBillboard"
-	billboardGui.Size = UDim2.new(0, 500, 0, 500)
+	billboardGui.Size = UDim2.new(0, math.floor(500 * scale), 0, math.floor(500 * scale))
 	billboardGui.StudsOffset = Vector3.new(0, 2, 0) -- 머리 위쪽으로 약간 오프셋
 	billboardGui.AlwaysOnTop = true
 	billboardGui.MaxDistance = BILLBOARD_MAX_DIST
@@ -264,30 +275,29 @@ function NPCRadialUI.Open(npcModel)
 
 	-- NPC 이름
 	local title = Instance.new("TextLabel")
-	title.Size = UDim2.new(1, 0, 0, 40)
+	title.Size = UDim2.new(1, 0, 0, math.floor(40 * scale))
 	title.Position = UDim2.fromScale(0.5, 0.5)
 	title.AnchorPoint = Vector2.new(0.5, 0.5)
 	title.BackgroundTransparency = 1
 	title.Text = npcModel:GetAttribute("DisplayName") or npcModel.Name
 	title.TextColor3 = UITheme.Colors.GOLD
 	title.Font = UITheme.Fonts.TITLE
-	title.TextSize = 22
+	title.TextSize = math.floor(22 * scale)
 	title.TextStrokeTransparency = 0.5
 	title.Parent = container
 
 	-- 슬롯 배치 (삼각형 형태)
-	local radius = 145
 	
 	-- 1. 퀘스트 (왼쪽 상단)
-	local questBtn = createActionSlot(container, "Quest", "퀘스트", -radius * 0.86, -radius * 0.5)
+	local questBtn = createActionSlot(container, "Quest", "퀘스트", -scaledRadius * 0.86, -scaledRadius * 0.5, scaledHexSize)
 	questBtn.MouseButton1Click:Connect(handleQuest)
 
 	-- 2. 대화하기 (오른쪽 상단)
-	local talkBtn = createActionSlot(container, "Talk", "대화하기", radius * 0.86, -radius * 0.5)
+	local talkBtn = createActionSlot(container, "Talk", "대화하기", scaledRadius * 0.86, -scaledRadius * 0.5, scaledHexSize)
 	talkBtn.MouseButton1Click:Connect(handleTalk)
 
 	-- 3. 닫기 (하단)
-	local closeBtn = createActionSlot(container, "Close", "닫기", 0, radius * 0.7, CLOSE_HEX_SIZE)
+	local closeBtn = createActionSlot(container, "Close", "닫기", 0, scaledRadius * 0.7, scaledCloseSize)
 	closeBtn.MouseButton1Click:Connect(function() NPCRadialUI.Close() end)
 
 	-- 거리 체크

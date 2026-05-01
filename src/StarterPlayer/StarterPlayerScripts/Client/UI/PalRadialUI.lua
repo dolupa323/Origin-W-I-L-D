@@ -199,7 +199,7 @@ local function createActionSlot(parent, actionId, labelText, layoutOverride)
 	textLabel.Text = labelText
 	textLabel.Font = UITheme.Fonts.NORMAL
 	textLabel.TextColor3 = UITheme.Colors.WHITE
-	textLabel.TextSize = actionId == "Close" and 11 or 12
+	textLabel.TextSize = math.floor((actionId == "Close" and 11 or 12) * (slotSize / HEX_SIZE))
 	textLabel.ZIndex = 5
 	textLabel.Parent = frame
 
@@ -321,7 +321,32 @@ function PalRadialUI.Open(palModel)
 	
 	billboardGui = Instance.new("BillboardGui")
 	billboardGui.Name = "PalRadialBillboard"
-	billboardGui.Size = UDim2.new(0, 450, 0, 450)
+	local viewportSize = workspace.CurrentCamera.ViewportSize
+	local baseHeight = 1080
+	local scale = math.clamp(viewportSize.Y / baseHeight, 0.6, 1.1)
+	if UserInputService.TouchEnabled then
+		scale = scale * 0.9
+	end
+	
+	local scaledHexSize = math.floor(HEX_SIZE * scale)
+	local scaledCloseSize = math.floor(CLOSE_HEX_SIZE * scale)
+
+	local isMountable = palModel:GetAttribute("CanMount") == true
+	local sourceLayout = isMountable and ACTION_LAYOUT or ACTION_LAYOUT_NO_MOUNT
+	
+	-- 스케일이 적용된 레이아웃 생성
+	local scaledLayout = {}
+	for id, data in pairs(sourceLayout) do
+		scaledLayout[id] = {
+			x = data.x * scale,
+			y = data.y * scale,
+			size = (data.size == CLOSE_HEX_SIZE) and scaledCloseSize or scaledHexSize
+		}
+	end
+
+	billboardGui = Instance.new("BillboardGui")
+	billboardGui.Name = "PalRadialBillboard"
+	billboardGui.Size = UDim2.new(0, math.floor(450 * scale), 0, math.floor(450 * scale))
 	
 	-- [수정] 공룡 크기에 따른 동적 오프셋 적용
 	local offsetHeight = 2.5
@@ -346,20 +371,17 @@ function PalRadialUI.Open(palModel)
 	container.Active = true
 	container.Parent = billboardGui
 
-	local isMountable = palModel:GetAttribute("CanMount") == true
-	local layout = isMountable and ACTION_LAYOUT or ACTION_LAYOUT_NO_MOUNT
-
-	local closeSlot = createActionSlot(container, "Close", "닫기", layout)
+	local closeSlot = createActionSlot(container, "Close", "닫기", scaledLayout)
 	closeSlot.frame.MouseButton1Click:Connect(function() PalRadialUI.Close() end)
 
-	local recallSlot = createActionSlot(container, "Recall", "소환 해제", layout)
-	local bagSlot = createActionSlot(container, "Bag", "가방", layout)
+	local recallSlot = createActionSlot(container, "Recall", "소환 해제", scaledLayout)
+	local bagSlot = createActionSlot(container, "Bag", "가방", scaledLayout)
 
 	recallSlot.frame.MouseButton1Click:Connect(handleRecall)
 	bagSlot.frame.MouseButton1Click:Connect(handleBag)
 
 	if isMountable then
-		local mountSlot = createActionSlot(container, "Mount", "타기", layout)
+		local mountSlot = createActionSlot(container, "Mount", "타기", scaledLayout)
 		mountSlot.frame.MouseButton1Click:Connect(handleMount)
 	end
 

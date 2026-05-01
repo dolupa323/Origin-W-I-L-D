@@ -225,26 +225,27 @@ end
 --========================================
 
 --- 대기큐 미니 육각형 생성 (아이콘+이름+시간 포함한 축소판)
-local function createMiniBadge(parent, badgeIndex, itemId, gatherTime)
+local function createMiniBadge(parent, badgeIndex, itemId, gatherTime, miniHexSize)
+	miniHexSize = miniHexSize or MINI_HEX_SIZE
 	local itemInfo = DataHelper.GetData("ItemData", itemId)
 	local displayName = itemInfo and (UILocalizer.LocalizeDataText("ItemData", itemId, "name", itemInfo.name) or itemInfo.name) or itemId
 
 	local badge = Instance.new("Frame")
 	badge.Name = "QueueBadge_" .. badgeIndex
-	badge.Size = UDim2.new(0, MINI_HEX_SIZE, 0, MINI_HEX_SIZE)
+	badge.Size = UDim2.new(0, miniHexSize, 0, miniHexSize)
 	badge.BackgroundTransparency = 1
 	badge.ZIndex = 8
 	badge.Parent = parent
 
 	-- 미니 6각형 테두리
-	createHexBars(badge, MINI_HEX_SIZE, UITheme.Colors.BORDER_DIM, 0, 8, 0)
+	createHexBars(badge, miniHexSize, UITheme.Colors.BORDER_DIM, 0, 8, 0)
 	-- 미니 6각형 배경
-	createHexBars(badge, MINI_HEX_SIZE, UITheme.Colors.BG_PANEL, 0, 9, 2)
+	createHexBars(badge, miniHexSize, UITheme.Colors.BG_PANEL, 0, 9, 2)
 
 	-- 미니 아이콘
 	local miniIcon = Instance.new("ImageLabel")
 	miniIcon.Name = "MiniIcon"
-	miniIcon.Size = UDim2.new(0, MINI_HEX_SIZE * 0.5, 0, MINI_HEX_SIZE * 0.5)
+	miniIcon.Size = UDim2.new(0, miniHexSize * 0.5, 0, miniHexSize * 0.5)
 	miniIcon.Position = UDim2.new(0.5, 0, 0.35, 0)
 	miniIcon.AnchorPoint = Vector2.new(0.5, 0.5)
 	miniIcon.BackgroundTransparency = 1
@@ -261,12 +262,12 @@ local function createMiniBadge(parent, badgeIndex, itemId, gatherTime)
 	-- 미니 채집 시간
 	local miniTime = Instance.new("TextLabel")
 	miniTime.Name = "MiniTime"
-	miniTime.Size = UDim2.new(1, 0, 0, 10)
+	miniTime.Size = UDim2.new(1, 0, 0, math.floor(10 * (miniHexSize/MINI_HEX_SIZE)))
 	miniTime.Position = UDim2.new(0.5, 0, 0.72, 0)
 	miniTime.AnchorPoint = Vector2.new(0.5, 0)
 	miniTime.BackgroundTransparency = 1
 	miniTime.TextColor3 = UITheme.Colors.GRAY
-	miniTime.TextSize = 8
+	miniTime.TextSize = math.max(6, math.floor(8 * (miniHexSize/MINI_HEX_SIZE)))
 	miniTime.Font = UITheme.Fonts.NUM
 	miniTime.Text = string.format("%.1fs", gatherTime)
 	miniTime.ZIndex = 10
@@ -391,7 +392,9 @@ local function getNodeTopOffset(nodeModel, adorneePart)
 	return BILLBOARD_OFFSET, false
 end
 
-local function createSlotFrame(parent, index, itemData, count, gatherTime)
+local function createSlotFrame(parent, index, itemData, count, gatherTime, hexSize, miniHexSize)
+	hexSize = hexSize or HEX_SIZE
+	miniHexSize = miniHexSize or MINI_HEX_SIZE
 	local itemId = itemData.itemId
 	local itemInfo = DataHelper.GetData("ItemData", itemId)
 	local displayName = itemInfo and (UILocalizer.LocalizeDataText("ItemData", itemId, "name", itemInfo.name) or itemInfo.name) or itemId
@@ -399,7 +402,7 @@ local function createSlotFrame(parent, index, itemData, count, gatherTime)
 	-- 6각형 컨테이너 (클릭 가능)
 	local frame = Instance.new("TextButton")
 	frame.Name = "Slot_" .. index
-	frame.Size = UDim2.new(0, HEX_SIZE, 0, HEX_SIZE)
+	frame.Size = UDim2.new(0, hexSize, 0, hexSize)
 	frame.BackgroundTransparency = 1
 	frame.BorderSizePixel = 0
 	frame.Text = ""
@@ -407,13 +410,13 @@ local function createSlotFrame(parent, index, itemData, count, gatherTime)
 	frame.Parent = parent
 
 	-- 6각형 테두리 (바깥 — 골드 보더)
-	createHexBars(frame, HEX_SIZE, UITheme.Colors.BORDER_DIM, 0, 1, 0)
+	createHexBars(frame, hexSize, UITheme.Colors.BORDER_DIM, 0, 1, 0)
 
 	-- 6각형 배경 채움 (안쪽 — 어두운 패널)
-	createHexBars(frame, HEX_SIZE, UITheme.Colors.BG_PANEL, 0, 2, 3)
+	createHexBars(frame, hexSize, UITheme.Colors.BG_PANEL, 0, 2, 3)
 
 	-- 6각형 프로그레스 오버레이 (ClipsDescendants — 아래→위 차오르는 모션)
-	local progressClip = createHexProgressClip(frame, HEX_SIZE)
+	local progressClip = createHexProgressClip(frame, hexSize)
 
 	-- 콘텐츠 레이어
 	local content = Instance.new("Frame")
@@ -428,7 +431,7 @@ local function createSlotFrame(parent, index, itemData, count, gatherTime)
 	-- 아이콘
 	local icon = Instance.new("ImageLabel")
 	icon.Name = "Icon"
-	icon.Size = UDim2.new(0, HEX_SIZE * 0.45, 0, HEX_SIZE * 0.45)
+	icon.Size = UDim2.new(0, hexSize * 0.45, 0, hexSize * 0.45)
 	icon.Position = UDim2.new(0.5, 0, 0.3, 0)
 	icon.AnchorPoint = Vector2.new(0.5, 0.5)
 	icon.BackgroundTransparency = 1
@@ -446,14 +449,14 @@ local function createSlotFrame(parent, index, itemData, count, gatherTime)
 	-- 수량 뱃지 (우측 상단)
 	local countBadge = Instance.new("TextLabel")
 	countBadge.Name = "Count"
-	countBadge.Size = UDim2.new(0, 22, 0, 18)
+	countBadge.Size = UDim2.new(0, math.floor(22 * (hexSize/HEX_SIZE)), 0, math.floor(18 * (hexSize/HEX_SIZE)))
 	countBadge.Position = UDim2.new(1, 0, 0, 0)
 	countBadge.AnchorPoint = Vector2.new(1, 0)
 	countBadge.BackgroundColor3 = UITheme.Colors.BG_DARK
 	countBadge.BackgroundTransparency = 0.2
 	countBadge.BorderSizePixel = 0
 	countBadge.TextColor3 = UITheme.Colors.WHITE
-	countBadge.TextSize = 12
+	countBadge.TextSize = math.max(9, math.floor(12 * (hexSize/HEX_SIZE)))
 	countBadge.Font = UITheme.Fonts.NUM
 	countBadge.Text = tostring(count)
 	countBadge.ZIndex = 7
@@ -463,12 +466,12 @@ local function createSlotFrame(parent, index, itemData, count, gatherTime)
 	-- 아이템 이름
 	local nameLabel = Instance.new("TextLabel")
 	nameLabel.Name = "ItemName"
-	nameLabel.Size = UDim2.new(1, 0, 0, 14)
+	nameLabel.Size = UDim2.new(1, 0, 0, math.floor(14 * (hexSize/HEX_SIZE)))
 	nameLabel.Position = UDim2.new(0.5, 0, 0.55, 0)
 	nameLabel.AnchorPoint = Vector2.new(0.5, 0)
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.TextColor3 = UITheme.Colors.INK
-	nameLabel.TextSize = 11
+	nameLabel.TextSize = math.max(8, math.floor(11 * (hexSize/HEX_SIZE)))
 	nameLabel.Font = UITheme.Fonts.NORMAL
 	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
 	nameLabel.Text = displayName
@@ -478,12 +481,12 @@ local function createSlotFrame(parent, index, itemData, count, gatherTime)
 	-- 레벨+채집 시간 (ex: "Lv.28   3.5초")
 	local timeLabel = Instance.new("TextLabel")
 	timeLabel.Name = "GatherTime"
-	timeLabel.Size = UDim2.new(1, 0, 0, 12)
+	timeLabel.Size = UDim2.new(1, 0, 0, math.floor(12 * (hexSize/HEX_SIZE)))
 	timeLabel.Position = UDim2.new(0.5, 0, 0.73, 0)
 	timeLabel.AnchorPoint = Vector2.new(0.5, 0)
 	timeLabel.BackgroundTransparency = 1
 	timeLabel.TextColor3 = UITheme.Colors.GRAY
-	timeLabel.TextSize = 10
+	timeLabel.TextSize = math.max(7, math.floor(10 * (hexSize/HEX_SIZE)))
 	timeLabel.Font = UITheme.Fonts.NUM
 	timeLabel.Text = string.format("%.1f초", gatherTime)
 	timeLabel.ZIndex = 6
@@ -497,7 +500,7 @@ local function createSlotFrame(parent, index, itemData, count, gatherTime)
 	checkLabel.AnchorPoint = Vector2.new(0.5, 0.5)
 	checkLabel.BackgroundTransparency = 1
 	checkLabel.TextColor3 = UITheme.Colors.GREEN
-	checkLabel.TextSize = 40
+	checkLabel.TextSize = math.floor(40 * (hexSize/HEX_SIZE))
 	checkLabel.Font = UITheme.Fonts.TITLE
 	checkLabel.Text = "✓"
 	checkLabel.Visible = false
@@ -507,7 +510,7 @@ local function createSlotFrame(parent, index, itemData, count, gatherTime)
 	-- 슬롯 하단 진행도 바 (직관적 시간 표시)
 	local progressBarBg = Instance.new("Frame")
 	progressBarBg.Name = "ProgressBarBg"
-	progressBarBg.Size = UDim2.new(0, HEX_SIZE * 0.7, 0, 6)
+	progressBarBg.Size = UDim2.new(0, hexSize * 0.7, 0, math.max(3, math.floor(6 * (hexSize/HEX_SIZE))))
 	progressBarBg.Position = UDim2.new(0.5, 0, 1, 2)
 	progressBarBg.AnchorPoint = Vector2.new(0.5, 0)
 	progressBarBg.BackgroundColor3 = UITheme.Colors.BG_DARK
@@ -532,8 +535,8 @@ local function createSlotFrame(parent, index, itemData, count, gatherTime)
 	-- 대기큐 컨테이너 (슬롯 아래에 미니 육각형이 줄서는 영역)
 	local queueContainer = Instance.new("Frame")
 	queueContainer.Name = "QueueContainer"
-	queueContainer.Size = UDim2.new(0, HEX_SIZE, 0, MINI_HEX_SIZE + 4)
-	queueContainer.Position = UDim2.new(0.5, 0, 1, 12)  -- 진행도 바 아래로 위치 조정
+	queueContainer.Size = UDim2.new(0, hexSize, 0, miniHexSize + 4)
+	queueContainer.Position = UDim2.new(0.5, 0, 1, math.floor(12 * (hexSize/HEX_SIZE)))  -- 진행도 바 아래로 위치 조정
 	queueContainer.AnchorPoint = Vector2.new(0.5, 0)
 	queueContainer.BackgroundTransparency = 1
 	queueContainer.ZIndex = 8
@@ -563,6 +566,8 @@ local function createSlotFrame(parent, index, itemData, count, gatherTime)
 		gatherTween = nil,
 		progressBarTween = nil,
 		badges = {},
+		hexSize = hexSize, -- 저장하여 나중에 사용
+		miniHexSize = miniHexSize,
 	}
 end
 
@@ -594,17 +599,21 @@ local function refreshQueueLayout(slot)
 	local container = slot.queueContainer
 	if not container then return end
 	local count = #slot.badges
+	local hexSize = slot.hexSize or HEX_SIZE
+	local miniHexSize = slot.miniHexSize or MINI_HEX_SIZE
+	local miniGap = math.floor(MINI_HEX_GAP * (miniHexSize / MINI_HEX_SIZE))
+
 	-- 미니 육각형들을 중앙 정렬하여 가로로 나열
-	local totalW = count * MINI_HEX_SIZE + math.max(0, count - 1) * MINI_HEX_GAP
-	local startX = (HEX_SIZE - totalW) / 2
+	local totalW = count * miniHexSize + math.max(0, count - 1) * miniGap
+	local startX = (hexSize - totalW) / 2
 	for i, badge in ipairs(slot.badges) do
-		badge.Position = UDim2.new(0, startX + (i - 1) * (MINI_HEX_SIZE + MINI_HEX_GAP), 0, 0)
+		badge.Position = UDim2.new(0, startX + (i - 1) * (miniHexSize + miniGap), 0, 0)
 	end
 end
 
 local function addBadge(slot)
 	local idx = #slot.badges + 1
-	local badge = createMiniBadge(slot.queueContainer, idx, slot.itemId, slot.gatherTime)
+	local badge = createMiniBadge(slot.queueContainer, idx, slot.itemId, slot.gatherTime, slot.miniHexSize)
 	table.insert(slot.badges, badge)
 	refreshQueueLayout(slot)
 end
@@ -942,19 +951,30 @@ function HarvestUI.Open(nodeUID, nodeId, nodeModel)
 	end
 	local numItems = #displayResources
 
+	local viewportSize = workspace.CurrentCamera.ViewportSize
+	local baseHeight = 1080
+	local scale = math.clamp(viewportSize.Y / baseHeight, 0.6, 1.1)
+	if UserInputService.TouchEnabled then
+		scale = scale * 0.9 -- 모바일은 살짝 더 작게
+	end
+	
+	local scaledHexSize = math.floor(HEX_SIZE * scale)
+	local scaledMiniHexSize = math.floor(MINI_HEX_SIZE * scale)
+	local scaledHexGap = math.floor(HEX_GAP * scale)
+
 	-- 허니콤 위치 계산 (실제 표시 아이템 수 기준)
-	local hexPositions = getHoneycombPositions(numItems, HEX_SIZE, HEX_GAP)
+	local hexPositions = getHoneycombPositions(numItems, scaledHexSize, scaledHexGap)
 
 	-- 바운딩 박스 계산 (BillboardGui 크기 결정)
 	local minX, minY, maxX, maxY = 0, 0, 0, 0
 	for _, pos in ipairs(hexPositions) do
-		if pos.x - HEX_SIZE / 2 < minX then minX = pos.x - HEX_SIZE / 2 end
-		if pos.x + HEX_SIZE / 2 > maxX then maxX = pos.x + HEX_SIZE / 2 end
-		if pos.y - HEX_SIZE / 2 < minY then minY = pos.y - HEX_SIZE / 2 end
-		if pos.y + HEX_SIZE / 2 + MINI_HEX_SIZE + 8 > maxY then maxY = pos.y + HEX_SIZE / 2 + MINI_HEX_SIZE + 8 end
+		if pos.x - scaledHexSize / 2 < minX then minX = pos.x - scaledHexSize / 2 end
+		if pos.x + scaledHexSize / 2 > maxX then maxX = pos.x + scaledHexSize / 2 end
+		if pos.y - scaledHexSize / 2 < minY then minY = pos.y - scaledHexSize / 2 end
+		if pos.y + scaledHexSize / 2 + scaledMiniHexSize + 8 > maxY then maxY = pos.y + scaledHexSize / 2 + scaledMiniHexSize + 8 end
 	end
-	local bbWidth = (maxX - minX) + 40
-	local bbHeight = (maxY - minY) + 60
+	local bbWidth = (maxX - minX) + math.floor(40 * scale)
+	local bbHeight = (maxY - minY) + math.floor(60 * scale)
 	local centerX = (minX + maxX) / 2
 	local centerY = (minY + maxY) / 2
 
@@ -1011,12 +1031,12 @@ function HarvestUI.Open(nodeUID, nodeId, nodeModel)
 	-- 타이틀 (노드 이름)
 	local title = Instance.new("TextLabel")
 	title.Name = "Title"
-	title.Size = UDim2.new(1, 0, 0, 24)
+	title.Size = UDim2.new(1, 0, 0, math.floor(24 * scale))
 	title.Position = UDim2.new(0.5, 0, 0, 2)
 	title.AnchorPoint = Vector2.new(0.5, 0)
 	title.BackgroundTransparency = 1
 	title.TextColor3 = UITheme.Colors.GOLD
-	title.TextSize = 16
+	title.TextSize = math.floor(16 * scale)
 	title.Font = UITheme.Fonts.TITLE
 	title.TextXAlignment = Enum.TextXAlignment.Center
 	title.TextStrokeTransparency = 0.4
@@ -1028,8 +1048,8 @@ function HarvestUI.Open(nodeUID, nodeId, nodeModel)
 	-- 슬롯 컨테이너 (BillboardGui 내부)
 	local slotContainer = Instance.new("Frame")
 	slotContainer.Name = "SlotContainer"
-	slotContainer.Size = UDim2.new(1, 0, 1, -28)
-	slotContainer.Position = UDim2.new(0, 0, 0, 28)
+	slotContainer.Size = UDim2.new(1, 0, 1, -math.floor(28 * scale))
+	slotContainer.Position = UDim2.new(0, 0, 0, math.floor(28 * scale))
 	slotContainer.BackgroundTransparency = 1
 	slotContainer.Active = true -- 배경 클릭 시 닫기 방지
 	slotContainer.Parent = billboard
@@ -1040,7 +1060,8 @@ function HarvestUI.Open(nodeUID, nodeId, nodeModel)
 		local resource = entry.resource
 		local count = entry.count
 
-		local slotData = createSlotFrame(slotContainer, i, resource, count, gatherTime)
+		-- [수정] scaledHexSize를 전달하여 슬롯 생성 시 크기 반영
+		local slotData = createSlotFrame(slotContainer, i, resource, count, gatherTime, scaledHexSize, scaledMiniHexSize)
 
 		local pos = hexPositions[i]
 		local finalPos = UDim2.new(
@@ -1051,7 +1072,7 @@ function HarvestUI.Open(nodeUID, nodeId, nodeModel)
 		-- 카드 펼침: 초기에는 중앙에 모여있고, 축소 + 투명 상태
 		slotData.frame.AnchorPoint = Vector2.new(0.5, 0.5)
 		slotData.frame.Position = UDim2.new(0.5, 0, 0.5, 0) -- 중앙
-		slotData.frame.Size = UDim2.new(0, HEX_SIZE * 0.3, 0, HEX_SIZE * 0.3) -- 축소
+		slotData.frame.Size = UDim2.new(0, scaledHexSize * 0.3, 0, scaledHexSize * 0.3) -- 축소
 		slotData.frame.Rotation = -15 + (i - 1) * 10  -- 카드처럼 살짝 기울임
 
 		table.insert(slots, slotData)
@@ -1085,7 +1106,7 @@ function HarvestUI.Open(nodeUID, nodeId, nodeModel)
 				local tweenInfo = TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 				local sizeTween = TweenService:Create(slot.frame, tweenInfo, {
 					Position = finalPos,
-					Size = UDim2.new(0, HEX_SIZE, 0, HEX_SIZE),
+					Size = UDim2.new(0, scaledHexSize, 0, scaledHexSize),
 					Rotation = 0,
 				})
 				sizeTween:Play()

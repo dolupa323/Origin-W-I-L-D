@@ -165,7 +165,7 @@ local function createActionSlot(parent, actionId, labelText, posX, posY, size)
 	textLabel.Text = labelText
 	textLabel.Font = UITheme.Fonts.NORMAL
 	textLabel.TextColor3 = UITheme.Colors.WHITE
-	textLabel.TextSize = actionId == "Close" and 11 or 14
+	textLabel.TextSize = math.floor((actionId == "Close" and 11 or 14) * (slotSize / HEX_SIZE))
 	textLabel.ZIndex = 5
 	textLabel.Parent = frame
 
@@ -227,6 +227,18 @@ function PortalRadialUI:Open(portalData)
 	currentPortalId = portalData.portalId
 	currentPortalData = portalData
 	currentIsReturn = portalData.isReturn == true
+	
+	local viewportSize = workspace.CurrentCamera.ViewportSize
+	local baseHeight = 1080
+	local scale = math.clamp(viewportSize.Y / baseHeight, 0.6, 1.1)
+	if UserInputService.TouchEnabled then
+		scale = scale * 0.9 -- 모바일 보정
+	end
+	
+	local scaledHexSize = math.floor(HEX_SIZE * scale)
+	local scaledCloseSize = math.floor(CLOSE_HEX_SIZE * scale)
+	local scaledRadius = 140 * scale
+	
 	isOpen = true
 
 	-- 포탈 오브젝트(Adornee) 찾기
@@ -236,7 +248,7 @@ function PortalRadialUI:Open(portalData)
 
 	billboardGui = Instance.new("BillboardGui")
 	billboardGui.Name = "PortalRadialBillboard"
-	billboardGui.Size = UDim2.new(0, 500, 0, 500)
+	billboardGui.Size = UDim2.new(0, math.floor(500 * scale), 0, math.floor(500 * scale))
 	billboardGui.StudsOffset = Vector3.new(0, 0, 0)
 	billboardGui.AlwaysOnTop = true
 	billboardGui.MaxDistance = BILLBOARD_MAX_DIST
@@ -254,14 +266,14 @@ function PortalRadialUI:Open(portalData)
 
 	-- 포탈 제목
 	local title = Instance.new("TextLabel")
-	title.Size = UDim2.new(1, 0, 0, 40)
+	title.Size = UDim2.new(1, 0, 0, math.floor(40 * scale))
 	title.Position = UDim2.fromScale(0.5, 0.5)
 	title.AnchorPoint = Vector2.new(0.5, 0.5)
 	title.BackgroundTransparency = 1
 	title.Text = portalData.displayName or "고대 포탈"
 	title.TextColor3 = UITheme.Colors.GOLD
 	title.Font = UITheme.Fonts.TITLE
-	title.TextSize = 20
+	title.TextSize = math.floor(20 * scale)
 	title.TextStrokeTransparency = 0.5
 	title.Parent = container
 
@@ -277,7 +289,6 @@ function PortalRadialUI:Open(portalData)
 	end
 
 	-- 슬롯 배치
-	local radius = 140
 	local numActions = #actions
 
 	for i, action in ipairs(actions) do
@@ -289,15 +300,15 @@ function PortalRadialUI:Open(portalData)
 		end
 
 		local angle = math.rad(angleDeg)
-		local posX = math.cos(angle) * radius
-		local posY = math.sin(angle) * (radius * 0.8)
+		local posX = math.cos(angle) * scaledRadius
+		local posY = math.sin(angle) * (scaledRadius * 0.8)
 
-		local btn = createActionSlot(container, action.id, action.label, posX, posY)
+		local btn = createActionSlot(container, action.id, action.label, posX, posY, scaledHexSize)
 		btn.MouseButton1Click:Connect(action.callback)
 	end
 
 	-- 닫기 버튼
-	local closeBtn = createActionSlot(container, "Close", "닫기", 0, 150, CLOSE_HEX_SIZE)
+	local closeBtn = createActionSlot(container, "Close", "닫기", 0, 150 * scale, scaledCloseSize)
 	closeBtn.MouseButton1Click:Connect(function() PortalRadialUI.Close() end)
 
 	-- R키 토글 닫기 지원 (InteractController에서 통합 처리하므로 제거)
