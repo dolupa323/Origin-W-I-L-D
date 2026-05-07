@@ -201,8 +201,18 @@ function InventoryUI.Init(parent, UIManager, isMobile)
 		if absSize.X <= 0 then return end
 		
 		local availableWidth = absSize.X - (pad.PaddingLeft.Offset + pad.PaddingRight.Offset + 24)
-		local cellSize = math.floor(availableWidth * 0.08)
-		local paddingSize = math.floor(availableWidth * 0.008)
+		
+		-- 모바일이나 화면 폭이 좁은 경우 가로 5개 배치로 더 큼직하게, PC는 가로 10개 배치로 시원시원하게 최적화
+		local columns = 10
+		local minSize = 60
+		if isSmall or availableWidth < 600 then
+			columns = 5
+			minSize = 80
+		end
+		
+		-- 최소 터치 셀 크기를 확보하여 뭉개짐 전면 방어 및 크기 대폭 상향
+		local cellSize = math.max(math.floor(availableWidth / columns - 6), minSize)
+		local paddingSize = math.max(math.floor(cellSize * 0.1), 4)
 		
 		grid.CellSize = UDim2.new(0, cellSize, 0, cellSize)
 		grid.CellPadding = UDim2.new(0, paddingSize, 0, paddingSize)
